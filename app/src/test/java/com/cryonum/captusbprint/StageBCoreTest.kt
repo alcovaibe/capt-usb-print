@@ -52,7 +52,7 @@ class StageBCoreTest {
 
     @Test fun parserRejectsOverflowsDuplicatesAndOutOfBounds() {
         assertEquals(listOf(0, 1, 2, 4, 7, 0, 1, 2, 4, 7),
-            JobSpecification.create(10, "1-3, 5, 8", 2).outputPageOrder)
+            JobSpecification.create(10, "1–3, 5, 8", 2).outputPageOrder)
         assertEquals(listOf(0, 1, 2), JobSpecification.create(3, "", 1).pageIndices)
         for (range in listOf("0", "3-1", "1,1", "2-4", "1,,2", "9999999999999", "1-2, 2")) {
             assertThrows("Invalid: $range", IllegalArgumentException::class.java) {

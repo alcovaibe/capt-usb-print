@@ -38,7 +38,7 @@ data class JobSpecification private constructor(
                 val seen = mutableSetOf<Int>()
                 val result = ArrayList<Int>()
                 pages.split(',').forEach { token ->
-                    val trimmed = token.trim()
+                    val trimmed = token.trim().replace('–', '-').replace('—', '-')
                     require(trimmed.isNotEmpty())
                     val range = Regex("([0-9]+)(?:\\s*-\\s*([0-9]+))?").matchEntire(trimmed)
                         ?: throw IllegalArgumentException("Invalid page range")

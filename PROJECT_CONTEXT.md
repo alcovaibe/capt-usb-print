@@ -4,7 +4,7 @@ Updated: 2026-10-21. Stage: **A / actual phone report received; OS USB enumerati
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
-- Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, successful physical PrintHand test page. Android build/API/ABI/page size and actual USB descriptors are NOT yet independently measured.
+- Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, successful physical PrintHand test page. Owner's A1.4 report verified API/OS build/ABI/4096-byte page size and USB Host feature. Actual printer USB descriptors and permission remain UNKNOWN (device count 0).
 - No subscription, PrintHand dependence, cloud, INTERNET permission, public release or printer firmware/service commands.
 - Stage A is read-only USB diagnostics, not a printing driver. Physical printing unverified. Stage progression A→B→C→D→E requires owner hardware results.
 
@@ -33,7 +33,7 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 | --- | --- | --- |
 | Printer/cable/phone and PrintHand test | Owner reported | Stage A real phone test |
 | Repository privacy | Confirmed private via GitHub metadata | Recheck on new commit |
-| Device API/build/ABI/page size | Unknown | Stage A report |
+| Device API/build/ABI/page size | Confirmed on owner's A1.4 screenshot | Recheck only if phone OS changes |
 | USB VID/PID/interface/endpoints | Unknown | Stage A report |
 | USB permission/claim | Unknown | Grant/deny/reconnect with Stage A |
 | CAPT status and actual print | Unknown | Stage B guarded implementation + physical paper confirmation |
@@ -83,3 +83,10 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Merge commit `5f433818e560fe1a1918e0f59217273c23e92414` passed run [39662757271](https://github.com/alcovaibe/capt-usb-print/actions/runs/39662757271): assembleDebug, lintDebug, testDebugUnitTest, Python syntax and merged APK permissions check succeeded, internal diagnostic artifact uploaded.
 - Signing availability job succeeded but the permanent-key signed release job skipped because owner's `ANDROID_SIGNING` secret is not yet installed. No new Releases published.
 - Later code changes, if any, require their own CI check. The only first-phone report still shows USB Host=true but 0 enumerated devices; no actual LBP2900 traffic or printed output was claimed.
+
+
+## Verified integration checkpoint (build #10, 2026-10-21)
+- Private `main` source `b8f99f81c4e23135a3c9f47e70bb768c830a4a3c` passed [GitHub Actions run #10](https://github.com/alcovaibe/capt-usb-print/actions/runs/39663011497): debug APK assembly, lint, JVM tests (both foundation suites), Python release script syntax and merged manifest permission audit. Signed-release job correctly **skipped** because owner has not added `ANDROID_SIGNING`. Old A1 debug prerelease is retained as history.
+- Read-only USB probe now reuses tested `UsbLinkSelector` instead of a separate permissive candidate check. Ambiguous/truncated descriptor lists skip interface claim. No new CAPT transport or real print implemented.
+- Zero-result USB writes immediately return uncertain, never silently repeat. Pure range parser accepts the typographic `1–3` example in the original technical specification.
+- Parallel source-only CAPT frame, I/O and job model changes were merged separately and are covered by StageBCoreTest. The components have deliberately not been attached to the live device. Before wiring, consolidate any overlapping prototype models; do not claim real printing from passing mocked tests.
