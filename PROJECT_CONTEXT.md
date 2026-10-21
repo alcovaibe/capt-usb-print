@@ -1,6 +1,6 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-21. Stage: **A / diagnostic debug APK built and CI-verified; hardware verification pending.**
+Updated: 2026-10-21. Stage: **A / actual phone report received; OS USB enumeration (device count 0) blocking real printer protocol. Stage B foundations implemented but not activated.**
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
@@ -58,3 +58,19 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - On every signed release, verify APK signature with the public pinned certificate, non-debuggable package, increasing version code, prior APK signature and Android 16 emulator in-place `adb install -r` (no uninstall). No PrintService or CAPT printing yet.
 - Layout correction following owner screenshot: show USB device cards and concise permission states by default; full technical report collapsible. Share always includes the full anonymized report. First owner phone confirmation required.
 - Existing old A1 debug releases kept for history; they are not part of the signed update chain. We did not modify VK Music Export.
+
+
+## Continuation after first physical report (2026-10-21)
+**Measured by owner's diagnostic APK 0.1.0-a1.4, not assumed from product specs:**
+- Device model `HONOR BRP-NX1`; Android API 36, MagicOS build string `BRP-N21 10.0.0.172(C636E6R4P1)` (as shown in screenshot); ABIs `arm64-v8a, armeabi-v7a, armeabi`; memory page size exactly **4096 bytes**; USB Host feature `true`.
+- **Connected USB device count: 0**; no printer descriptor, no VID:PID, no endpoints, no permission request. Do not blame printer or cable without new evidence. Physical PrintHand test previously succeeded on the same phone/printer/cable, but timing and active connections in this report are not independently established.
+- UI issue: system status bar overlapped activity heading on Android 16; root window now accounts for system-bar/display-cutout insets; long report is collapsed by default (share still exports full report).
+- Device attach is an Activity intent, **not** a broadcast (see https://developer.android.com/reference/android/hardware/usb/UsbManager). The prior dynamic ATTACHED receiver was unreliable; now only foreground list-key observation at 2.5-second intervals (no repeated probe when unchanged), plus a DETACHED broadcast.
+- Redacted count-only `UsbObservation` ring holds 16 changes and exports with each snapshot; zero-device guidance expressly says OS enumeration is a prerequisite for USB permission.
+- Isolated, **unwired** Stage B foundations: pure `UsbLinkSelector` (only unambiguous BULK IN/OUT pair), bounded `BoundedBulkWriter` (partial transfers, timeout and cancellation => uncertain; never blindly resends a whole packet), `JobState` (unknown after interrupted transfer, no automatic restarts, never labels write completion printed), `PagePlan` (bounded ranges, copies, overlapping range rejection). JVM unit tests test deterministic synthetic cases; synthetic outcomes are NOT real CAPT proof.
+- Deliberately no print buttons, no new USB transfers or firmware/service commands while Stage A physical enumeration unverified. No new unsigned APK in private Releases; owner-controlled `ANDROID_SIGNING` secret still required before first release-signature build. Prior A1 remains historically available, not a compatible update.
+- Next hardware step: after owner installs a **signed** build (once secret is configured), leave printer powered and direct cable attached; reopen diagnostics and refresh/reconnect once if zero devices; share full report. Actual VID/PID endpoints and permission/claim must precede CAPT adapter wiring.
+
+## Testing addendum
+- App unit tests: new Stage B pure-function tests covering unique/ambiguous endpoint matching, partial transfer and interrupted outcome, legal job state transitions and invalid page ranges/copies. Added USB event count-ring tests. These are compile/logic tests only; Android hardware printer printing remains **not tested**.
+- Check latest GitHub Actions job and signed release independently; never infer release from source commit.

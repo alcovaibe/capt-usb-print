@@ -13,7 +13,8 @@
     <string name="permission_denied">В разрешении USB отказано</string>
     <string name="permission_pending">Ожидание системного разрешения USB</string>
     <string name="permission_not_requested">Разрешение USB ещё не получено</string>
-    <string name="no_devices">Подключённые USB-устройства не найдены.</string>
+    <string name="no_devices">Android не видит подключённых USB-устройств.</string>
+    <string name="no_devices_hint">Разрешение пока запросить нельзя: USB-устройство должно сначала появиться в системе. Если принтер уже соединён: убедитесь, что он включён, один раз отсоедините и снова подключите кабель, затем нажмите «Обновить». При необходимости проверьте список в PrintHand. Причина пока не установлена.</string>
     <string name="scan_failed">Ошибка диагностики: %1$s</string>
     <string name="export_failed">Не удалось открыть системное меню: %1$s</string>
 </resources>
