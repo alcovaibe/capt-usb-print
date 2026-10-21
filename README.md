@@ -6,7 +6,7 @@ Independent Android USB Host print app for Canon LBP2900, currently **stage A di
 
 Android Studio/SDK platform 36, Build Tools 36.0.0, JDK 21, Gradle Wrapper 9.4.1, Android Gradle Plugin 9.2.1. Kotlin is provided by AGP 9.2 built-in Kotlin. minSdk 29; targetSdk 36. No NDK or CMake yet. Open repository and run \`./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest\`. Debug package: \`com.cryonum.captusbprint.debug\`; no release signing established.
 
-For a local build with commit metadata: \`GITHUB_SHA="$(git rev-parse HEAD)" ./gradlew :app:assembleDebug\`. CI provides GITHUB_SHA automatically. Internal CI build artifact is not a release.
+For a local build with commit metadata: \`GITHUB_SHA="$(git rev-parse HEAD)" ./gradlew :app:assembleDebug\`. CI provides GITHUB_SHA automatically. After successful CI on private `main`, a second job publishes the exact tested debug APK as a **private prerelease** under [Releases](https://github.com/alcovaibe/capt-usb-print/releases). CI run numbers determine increasing versionCode and diagnostic versionName. Pull requests only test, never publish. This debug APK is signed by an ephemeral runner key: subsequent APKs may not install over older ones; export reports before uninstalling. No production/update signing key exists yet.
 
 ## Diagnostic test
 

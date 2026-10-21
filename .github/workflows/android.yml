@@ -8,6 +8,8 @@ permissions:
   contents: read
 jobs:
   android:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -44,3 +46,54 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+  publish-diagnostic-release:
+    name: Private diagnostic prerelease
+    needs: android
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: capt-usb-print-a1-debug
+          path: release-asset
+      - name: Publish tested APK in private Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v0.1.0-a1.build.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          original='release-asset/app-debug.apk'
+          test -s "$original"
+          apk="release-asset/CAPT-USB-Print-0.1.0-a1-build-${GITHUB_RUN_NUMBER}-debug.apk"
+          mv "$original" "$apk"
+          checksum="$(sha256sum "$apk" | awk '{print $1}')"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo 'Release tag already exists; refusing to overwrite an existing release.'
+            exit 1
+          fi
+          {
+            echo '# Диагностическая сборка A1'
+            echo
+            echo 'Приложение обнаруживает USB-устройства, запрашивает разрешение и экспортирует обезличенный диагностический отчёт.'
+            echo '**Печать не реализована. На принтер ничего не отправляется.**'
+            echo
+            echo "- Версия приложения: 0.1.0-a1.${GITHUB_RUN_NUMBER}"
+            echo "- Коммит исходников: ${GITHUB_SHA}"
+            echo "- Проверки: assembleDebug, lintDebug, testDebugUnitTest и аудит разрешений APK в CI #${GITHUB_RUN_NUMBER}."
+            echo "- SHA-256 APK: \`${checksum}\`"
+            echo
+            echo '**Важно:** APK подписан временным debug-ключом GitHub Actions. Подпись следующей CI-сборки может отличаться; обновление поверх предыдущей установки не гарантируется. Перед переустановкой экспортируйте отчёт. Постоянную подпись настроим отдельно под контролем владельца.'
+            echo
+            echo 'Установка: скачайте прикреплённый APK, установите на HONOR X9c, подключите Canon LBP2900, выдайте USB-доступ и отправьте отчёт через системное меню. Совместимость с оборудованием ещё не подтверждена.'
+            echo
+            echo 'Это приватный предварительный релиз. Исходники доступны владельцу в автоматически прикреплённых GitHub source archives.'
+          } > release-notes.md
+          gh release create "$TAG" "$apk" \
+            --target "$GITHUB_SHA" \
+            --title "CAPT USB Print A1 · diagnostic build ${GITHUB_RUN_NUMBER}" \
+            --notes-file release-notes.md \
+            --prerelease --latest=false
+          gh release view "$TAG" --json url,tagName,isPrerelease --jq '{url,tagName,isPrerelease}'

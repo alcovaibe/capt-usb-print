@@ -39,6 +39,12 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 | CAPT status and actual print | Unknown | Stage B guarded implementation + physical paper confirmation |
 | PDF/PrintService/HONOR Documents | Not implemented | Stages C/D |
 
+## Private prereleases
+- Owner authorized publishing test builds to **Releases of this private repository** only; not to a public repo, Play Store or another distribution channel.
+- CI now has two jobs: `android` builds/tests/audits and uploads APK, then `publish-diagnostic-release` (only for private main push or main workflow_dispatch) downloads that exact artifact and creates a prerelease with APK, commit, test summary and inline SHA-256.
+- A1 release tags: `v0.1.0-a1.build.<run_number>`; Gradle versionCode and versionName include the CI run number. GitHub Actions ephemeral debug keys remain non-upgradeable across machines; users must export diagnostic reports before reinstall. Signing owner-controlled key is a separate release task.
+- Verify both CI jobs and actual release asset before saying publication completed. No CAPT code used yet and physical compatibility remains untested.
+
 ## Next actions
 1. Confirm private CI \`assembleDebug\`, lint, tests and merged manifest permission audit; fix failures before sharing APK.
 2. Owner installs A1 and shares anonymized report. Do not send test print or claim device ready from USB permission alone.
