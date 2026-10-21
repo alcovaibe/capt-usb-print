@@ -1,93 +1,35 @@
-import java.util.Properties
-
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.kotlin.serialization)
+    id("com.android.application")
 }
 
 android {
-    namespace = "com.pulse.ai"
-    compileSdk = 37
+    namespace = "com.cryonum.captusbprint"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.pulse.ai"
-        minSdk = 31
-        targetSdk = 37
-        versionCode = 21
-        versionName = "1.0.20"
+        applicationId = "com.cryonum.captusbprint"
+        minSdk = 29
+        targetSdk = 36
+        versionCode = 1
+        versionName = "0.1.0-a1"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        val properties = Properties()
-        val localPropertiesFile = project.rootProject.file("local.properties")
-        if (localPropertiesFile.exists()) {
-            properties.load(localPropertiesFile.inputStream())
-        }
-        buildConfigField("String", "GEMINI_API_KEY", "\"${properties.getProperty("GEMINI_API_KEY") ?: ""}\"")
+        val revision = providers.environmentVariable("GITHUB_SHA")
+            .orElse("local-source").get().take(12)
+        buildConfigField("String", "SOURCE_REVISION", "\"$revision\"")
     }
 
     buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
+        release { isMinifyEnabled = false }
+        debug { applicationIdSuffix = ".debug" }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
+    buildFeatures { buildConfig = true }
 }
 
 dependencies {
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.lifecycle.service)
-    
-    // Retrofit & OkHttp
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
-
-    // Room
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
-
-    // DataStore
-    implementation(libs.androidx.datastore.preferences)
-
-    // Serialization
-    implementation(libs.kotlinx.serialization.json)
-
-    // Coil
-    implementation(libs.coil.compose)
-
-    testImplementation(libs.junit)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.junit)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-    debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 }
