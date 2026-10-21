@@ -78,3 +78,8 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 ## Additional isolated protocol layer (parallel change merged)
 - In parallel with the USB enumeration/engine work above, `core/CaptFrame`, `core/BulkIo`, `core/JobSpecification`, `core/JobLedger` and `StageBCoreTest` were added as bounded, pure Kotlin stage B prep. These are NOT wired to the UI, and their synthetic tests are not real printer proofs. The existing `engine/*` and `UsbObservation` work was retained in the merge; no concurrent work discarded.
 - `docs/STAGE-B-FOUNDATION.md` describes the protocol upstream, hardware gate and limitations.
+
+## Verified source checkpoint
+- Merge commit `5f433818e560fe1a1918e0f59217273c23e92414` passed run [39662757271](https://github.com/alcovaibe/capt-usb-print/actions/runs/39662757271): assembleDebug, lintDebug, testDebugUnitTest, Python syntax and merged APK permissions check succeeded, internal diagnostic artifact uploaded.
+- Signing availability job succeeded but the permanent-key signed release job skipped because owner's `ANDROID_SIGNING` secret is not yet installed. No new Releases published.
+- Later code changes, if any, require their own CI check. The only first-phone report still shows USB Host=true but 0 enumerated devices; no actual LBP2900 traffic or printed output was claimed.
