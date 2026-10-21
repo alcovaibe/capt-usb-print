@@ -21,7 +21,7 @@ Kotlin Android App. Stage A: Activity → single-thread executor → UsbScanner 
 JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with built-in Kotlin (minimum 2.2.10); compileSdk 36, targetSdk 36, minSdk 29 (deliberate development floor, not claim of wider support). No Compose/NDK/CMake needed for read-only diagnostic proof. Inherited Gradle distribution SHA is retained. Runtime no INTERNET; CI requires network to install SDK and dependencies.
 
 ## Known limitations and verification status
-- Source authored; no local Android SDK or network in execution container, thus **local APK build unavailable**. CI workflow on private \`main\` should build, lint, unit-test, scan permissions and retain 7-day private debug APK if green. Do not claim CI succeeded without checking actual run.
+- Source authored; no local Android SDK or network in execution container, thus **local APK build unavailable**. Initial Actions run 39649721266 failed at Android setup because default package `tools` was unavailable; workflow now overrides setup packages to `platform-tools`. CI workflow on private \`main\` should build, lint, unit-test, scan permissions and retain 7-day private debug APK if green. Do not claim CI succeeded without checking actual run.
 - Android platform APIs require physical phone verification for USB enumeration, OS/ABI/page size, request/deny/grant, detach, endpoint selection, raw descriptor read and claim probe.
 - No verified VID/PID, active CAPT protocol trace, paper/RAM profile, printer status interpretations, physical print or HONOR system PrintService.
 - Debug signature is ephemeral, not a stable update signature; no keystore committed. No automatic retry/printing after reconnect.

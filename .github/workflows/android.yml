@@ -18,6 +18,8 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - name: Install Android SDK 36
         run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
       - name: Build, lint and tests
