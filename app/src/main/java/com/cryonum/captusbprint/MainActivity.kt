@@ -8,7 +8,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import android.os.Bundle
-import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
+import android.os.Build
+import android.view.WindowInsets
+import android.util.TypedValue
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.View
@@ -21,6 +25,7 @@ import com.cryonum.captusbprint.usb.PermissionEvents
 import com.cryonum.captusbprint.usb.UsbDiagnostic
 import com.cryonum.captusbprint.usb.UsbRow
 import com.cryonum.captusbprint.usb.UsbSnapshot
+import com.cryonum.captusbprint.usb.UsbObservation
 import com.cryonum.captusbprint.usb.UsbPermissionReceiver
 import java.util.concurrent.Executors
 
@@ -34,12 +39,33 @@ class MainActivity : Activity() {
     private var currentReport: String = ""
     private var scanGeneration = 0
     private var receiverRegistered = false
+    // ACTION_USB_DEVICE_ATTACHED is an ACTIVITY intent, not a normal broadcast.
+    // Observe the UsbManager list only while our Activity is visible; never
+    // repeatedly probe/open a printer when there is no actual enumeration change.
+    private val monitor = Handler(Looper.getMainLooper())
+    private var monitoring = false
+    private var observedKeys: Set<String>? = null
+    private val pollUsb = object : Runnable {
+        override fun run() {
+            if (!monitoring) return
+            val manager = getSystemService(Context.USB_SERVICE) as UsbManager
+            val keys = runCatching { manager.deviceList.keys.toSet() }.getOrNull()
+            if (keys != null && keys != observedKeys) {
+                observedKeys = keys
+                UsbObservation.record(keys.size)
+                refresh()
+            }
+            monitor.postDelayed(this, 2500L)
+        }
+    }
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED ||
-                intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED
-            ) refresh()
+            if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
+                // Wake the list monitor promptly, including when another USB device remains.
+                monitor.removeCallbacks(pollUsb)
+                monitor.post(pollUsb)
+            }
         }
     }
 
@@ -88,16 +114,35 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
         content.addView(reportView)
-        setContentView(ScrollView(this).apply {
+        val scrolling = ScrollView(this).apply {
             isFillViewport = true
             addView(content)
-        })
+        }
+        // Android 15/16 edge-to-edge: leave space for status/navigation bars
+        // and display cutouts, including when font size or orientation changes.
+        scrolling.setOnApplyWindowInsetsListener { _, insets ->
+            if (Build.VERSION.SDK_INT >= 30) {
+                val safe = insets.getInsets(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+                )
+                content.setPadding(dp(16) + safe.left, dp(16) + safe.top,
+                    dp(16) + safe.right, dp(24) + safe.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                content.setPadding(dp(16) + insets.systemWindowInsetLeft,
+                    dp(16) + insets.systemWindowInsetTop,
+                    dp(16) + insets.systemWindowInsetRight,
+                    dp(24) + insets.systemWindowInsetBottom)
+            }
+            insets
+        }
+        setContentView(scrolling)
+        scrolling.requestApplyInsets()
     }
 
     override fun onStart() {
         super.onStart()
         val filter = IntentFilter().apply {
-            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
         if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -112,10 +157,14 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         PermissionEvents.listener = { refresh() }
-        refresh()
+        monitoring = true
+        observedKeys = null
+        monitor.post(pollUsb)
     }
 
     override fun onPause() {
+        monitoring = false
+        monitor.removeCallbacks(pollUsb)
         PermissionEvents.listener = null
         super.onPause()
     }
@@ -153,18 +202,25 @@ class MainActivity : Activity() {
     }
 
     private fun render(snapshot: UsbSnapshot) {
-        currentReport = snapshot.report + "\nLast USB permission event: " +
-            PermissionEvents.outcome + "\n"
+        currentReport = snapshot.report + "\n" + UsbObservation.reportLine() +
+            "\nLast USB permission event: " + PermissionEvents.outcome + "\n"
         status.text = PermissionEvents.outcome
         reportView.text = currentReport
         devices.removeAllViews()
-        if (snapshot.devices.isEmpty()) devices.addView(text(getString(R.string.no_devices)))
+        if (snapshot.devices.isEmpty()) {
+            devices.addView(text(getString(R.string.no_devices)))
+            devices.addView(text(getString(R.string.no_devices_hint)).apply { textSize = 14f })
+        }
         snapshot.devices.forEach { row ->
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(12), dp(12), dp(12))
                 background = GradientDrawable().apply {
-                    setColor(Color.rgb(242, 245, 248))
+                    val background = TypedValue()
+                    theme.resolveAttribute(android.R.attr.colorBackground, background, true)
+                    setColor(background.data)
+                    val border = status.currentTextColor and 0x00ffffff or 0x44000000
+                    setStroke(dp(1), border)
                     cornerRadius = dp(12).toFloat()
                 }
             }
