@@ -1,0 +1,34 @@
+<resources>
+    <string name="app_name">PulseAI</string>
+    <string name="drawer_chats">Чаты</string>
+    <string name="action_new_chat">Новый чат</string>
+    <string name="menu_settings">Настройки</string>
+    <string name="menu_about">О приложении</string>
+    <string name="dialog_delete_chat_title">Удалить чат?</string>
+    <string name="dialog_delete_chat_message">Вы уверены?</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_share">Поделиться</string>
+    <string name="action_pin">Закрепить</string>
+    <string name="action_rename">Переименовать</string>
+    <string name="action_archive">Архивировать</string>
+    <string name="chat_input_hint">Сообщение PulseAI&#8230;</string>
+    <string name="attach_camera">Камера</string>
+    <string name="attach_gallery">Галерея</string>
+    <string name="toast_copied">Скопировано</string>
+    <string name="action_back">Назад</string>
+    <string name="about_version_label">Версия приложения: %1$s</string>
+    <string name="notification_ai_ready">PulseAI: Ответ готов</string>
+    <string name="error_403">Доступ запрещен. Проверьте VPN (нужен регион США).</string>
+    <string name="error_429">429: Лимит запросов исчерпан. Пожалуйста, подождите 60 секунд.</string>
+    <string name="error_400">Ошибка API-ключа. Обновите ключ в local.properties.</string>
+    <string name="error_generic">Ошибка сервера: %1$d</string>
+    <string name="error_empty_ai_response">ИИ вернул пустой ответ. Возможно, запрос заблокирован фильтрами безопасности.</string>
+    <string name="error_no_api_key">API KEY IS EMPTY! Check local.properties and Rebuild.</string>
+    <string name="service_title">Сервис запущен</string>
+    <string name="service_content">PulseAI активен</string>
+    <string name="service_channel_name">Сервис PulseAI</string>
+    <string name="service_channel_desc">Активный сервис PulseAI</string>
+    <string name="cd_menu">Меню</string>
+    <string name="cd_more">Ещё</string>
+</resources>
