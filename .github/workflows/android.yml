@@ -24,6 +24,8 @@ jobs:
           packages: 'platform-tools'
       - name: Install Android SDK 36
         run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Validate Python release automation syntax
+        run: python3 -m py_compile tools/prepare-signing.py tools/signed-release.py
       - name: Build, lint and tests
         run: |
           chmod +x ./gradlew

@@ -85,7 +85,6 @@ class MainActivity : Activity() {
             textSize = 12f
             typeface = Typeface.MONOSPACE
             setHorizontallyScrolling(false)
-            breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
             visibility = View.GONE
         }
         content.addView(reportView)
