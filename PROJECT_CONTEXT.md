@@ -49,3 +49,12 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 1. Confirm private CI \`assembleDebug\`, lint, tests and merged manifest permission audit; fix failures before sharing APK.
 2. Owner installs A1 and shares anonymized report. Do not send test print or claim device ready from USB permission alone.
 3. Model LBP2900 transport responses using observed device interface and verified upstream before Stage B.
+
+
+## Owner-controlled signed updates (2026-10-21)
+- Owner requested permanent upgradeable APKs as in private VK Music Export. **Different signing key** was generated specifically for CAPT USB Print, with a PKCS12 and corresponding public SHA-256 certificate fingerprint `6bb4ec99e2ce17383383a918c4d8b942b2a19ba06660e18ee1e1e606d84fdc5e`. Private keystore/password are NOT in Git; owner must download supplied backup ZIP and install repository Actions secret `ANDROID_SIGNING` with the full JSON.
+- In absence of this secret, CI keeps testing but signed-release job is SKIPPED. Never publish an ephemeral/debug APK as a "release" again. First signed release is conditioned on adding secret and completing CI and emulator install verification.
+- Release package remains `com.cryonum.captusbprint`. Debug remains `com.cryonum.captusbprint.debug` (different package, therefore no misleading update path). Signed versionCode = 1000 + GitHub run number, tagged `v0.1.0-a2-signed.build.<run>`.
+- On every signed release, verify APK signature with the public pinned certificate, non-debuggable package, increasing version code, prior APK signature and Android 16 emulator in-place `adb install -r` (no uninstall). No PrintService or CAPT printing yet.
+- Layout correction following owner screenshot: show USB device cards and concise permission states by default; full technical report collapsible. Share always includes the full anonymized report. First owner phone confirmation required.
+- Existing old A1 debug releases kept for history; they are not part of the signed update chain. We did not modify VK Music Export.

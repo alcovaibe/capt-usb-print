@@ -1,20 +1,26 @@
-# CAPT USB Print (private development)
+# CAPT USB Print — private diagnostics (stage A)
 
-Independent Android USB Host print app for Canon LBP2900, currently **stage A diagnostics only**. Imported PulseAI code has been removed from the compiling application. No PrintHand code, payment workaround, network permission, CAPT commands, or printing functionality is included in this stage.
+Standalone offline Android USB diagnostics for Canon LBP2900 / HONOR X9c. This stage detects attached USB devices, asks for permission and shares anonymized device reports. **It cannot yet print.** No PrintHand or network services are used.
 
-## Build
+## Signed releases and upgrade compatibility
 
-Android Studio/SDK platform 36, Build Tools 36.0.0, JDK 21, Gradle Wrapper 9.4.1, Android Gradle Plugin 9.2.1. Kotlin is provided by AGP 9.2 built-in Kotlin. minSdk 29; targetSdk 36. No NDK or CMake yet. Open repository and run \`./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest\`. Debug package: \`com.cryonum.captusbprint.debug\`; no release signing established.
+Private signed prereleases: [Releases](https://github.com/alcovaibe/capt-usb-print/releases). Future installed **signed** versions upgrade in place via the ordinary Android APK installer, keeping app settings. Signing certificate and `applicationId=com.cryonum.captusbprint` are permanently pinned. `versionCode` increases for each GitHub Actions release build.
 
-For a local build with commit metadata: \`GITHUB_SHA="$(git rev-parse HEAD)" ./gradlew :app:assembleDebug\`. CI provides GITHUB_SHA automatically. After successful CI on private `main`, a second job publishes the exact tested debug APK as a **private prerelease** under [Releases](https://github.com/alcovaibe/capt-usb-print/releases). CI run numbers determine increasing versionCode and diagnostic versionName. Pull requests only test, never publish. This debug APK is signed by an ephemeral runner key: subsequent APKs may not install over older ones; export reports before uninstalling. No production/update signing key exists yet.
+The previous A1 diagnostic prerelease is a **debug app** using `com.cryonum.captusbprint.debug`; it cannot upgrade into a signed release. Install the first permanently signed A2 APK as a separate app, then all newer signed A2+ builds can install over it. There is no automatic in-app updater (private GitHub release requires authorization and the diagnostic app deliberately has no INTERNET permission).
 
-## Diagnostic test
+**Owner setup (one time):** A long-lived key has been generated specifically for this project. Owner must securely download and back up `CAPT_USB_Print_SIGNING_BACKUP.zip` from the conversation; it contains a PKCS12 and the prepared GitHub secret JSON. Do **not** commit, send publicly, upload to Releases or share it.
 
-1. Install only the A1 debug APK from this private repository's successful Actions run.
-2. Launch with the printer connected; inspect the list and press Refresh if necessary.
-3. Tap Request USB access for the printer; try a rejection, then request and allow.
-4. Tap Share report and send the text report back for analysis. No page will print.
+1. Open `alcovaibe/capt-usb-print` → **Settings → Secrets and variables → Actions → New repository secret**.
+2. Secret name: `ANDROID_SIGNING`. Value: the **entire** contents of `ANDROID_SIGNING.secret.json` inside the private backup ZIP (one JSON object).
+3. Save and initiate **Actions → CAPT USB Print checks and signed prerelease → Run workflow** on `main`. On success, the private signed release appears in Releases.
+4. Keep *two separate encrypted backups* of the ZIP. Losing the private key means losing the ability to install later APKs as compatible upgrades.
 
-Report records USB VID/PID, interface classes/endpoints, raw device descriptor header (not string descriptors), OS info, permission and claim results. It never asks for INTERNET and does not include document contents, serial numbers or full USB device paths. Claim probe uses \`claimInterface(false)\` only for a uniquely selectable BULK IN/OUT interface, releases it immediately and never transmits commands or page data.
+CI never generates or changes the private signing key and cannot publish a release without the configured secret. `config/release-certificate.sha256` pins the independently generated public signing certificate, not the secret. Only the release job for trusted `main` has access to signing material, reconstructed outside the checkout and removed on completion. A signed release must pass build/lint/unit tests, APK verification and emulator install or in-place update on API 36 before publishing.
 
-See PROJECT_CONTEXT.md for status, unknowns, and upstream audit. This is unofficial software, not endorsed by Canon.
+## Local development and diagnostics
+
+JDK 21; Android Gradle Plugin 9.2.1; Gradle Wrapper 9.4.1; compileSdk/targetSdk 36; minSdk 29; Android SDK Build Tools 36.0.0. Build debug with `./gradlew :app:assembleDebug`. Debug is NOT upgradeable release. Never use ephemeral debug signing for user-facing Releases.
+
+For hardware testing: connect powered-on LBP2900 by USB-C/USB-B to the HONOR X9c; launch app, refresh the USB list, deny then allow USB permission, tap **Поделиться отчётом**. Technical details are collapsible to improve phone readability, but the shared report remains complete. USB sends no print data at this stage.
+
+See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for audit, limitations and next steps. This is unofficial software not endorsed by Canon.

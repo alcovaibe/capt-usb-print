@@ -3,6 +3,9 @@
     <string name="stage_title">Этап A · USB-диагностика</string>
     <string name="no_printing">Этот прототип ничего не отправляет на печать.</string>
     <string name="refresh">Обновить список USB</string>
+    <string name="report_label">Технический отчёт</string>
+    <string name="show_report">Показать подробности</string>
+    <string name="hide_report">Скрыть подробности</string>
     <string name="share_report">Поделиться отчётом</string>
     <string name="share_title">Отправить диагностический отчёт</string>
     <string name="permission_request">Запросить доступ USB</string>

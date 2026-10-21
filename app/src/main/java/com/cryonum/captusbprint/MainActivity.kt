@@ -8,6 +8,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import android.os.Bundle
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -26,6 +29,8 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var devices: LinearLayout
     private lateinit var reportView: TextView
+    private lateinit var reportToggle: Button
+    private var reportExpanded = false
     private var currentReport: String = ""
     private var scanGeneration = 0
     private var receiverRegistered = false
@@ -67,9 +72,22 @@ class MainActivity : Activity() {
         content.addView(button(getString(R.string.share_report)) { shareReport() })
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(devices)
-        content.addView(text("Обезличенный отчёт:").apply { textSize = 19f })
-        reportView = text("")
-        reportView.textSize = 13f
+        content.addView(text(getString(R.string.report_label)).apply { textSize = 19f })
+        reportToggle = button(getString(R.string.show_report)) {
+            reportExpanded = !reportExpanded
+            reportView.visibility = if (reportExpanded) View.VISIBLE else View.GONE
+            reportToggle.text = getString(
+                if (reportExpanded) R.string.hide_report else R.string.show_report
+            )
+        }
+        content.addView(reportToggle)
+        reportView = text("").apply {
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setHorizontallyScrolling(false)
+            breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
+            visibility = View.GONE
+        }
         content.addView(reportView)
         setContentView(ScrollView(this).apply {
             isFillViewport = true
@@ -143,13 +161,27 @@ class MainActivity : Activity() {
         devices.removeAllViews()
         if (snapshot.devices.isEmpty()) devices.addView(text(getString(R.string.no_devices)))
         snapshot.devices.forEach { row ->
-            devices.addView(text(row.title +
-                if (row.permissionGranted) " — доступ предоставлен" else " — нужен доступ"))
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = GradientDrawable().apply {
+                    setColor(Color.rgb(242, 245, 248))
+                    cornerRadius = dp(12).toFloat()
+                }
+            }
+            card.addView(text(row.title).apply { textSize = 18f })
+            card.addView(text(getString(
+                if (row.permissionGranted) R.string.permission_granted else R.string.permission_not_requested
+            )))
             if (!row.permissionGranted) {
-                devices.addView(button(getString(R.string.permission_request)) {
+                card.addView(button(getString(R.string.permission_request)) {
                     requestUsbAccess(row)
                 })
             }
+            devices.addView(card, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) })
         }
     }
 

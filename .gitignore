@@ -16,3 +16,10 @@ local.properties
 google-services.json
 secrets.xml
 .env
+
+# Release signing: private key and decoded credentials must never enter Git
+ANDROID_SIGNING.secret.json
+*.secret.json
+/capt-usb-print-release.p12
+/release-output/
+/upgrade-input/

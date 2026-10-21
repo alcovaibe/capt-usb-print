@@ -1,4 +1,4 @@
-name: Private Android diagnostic CI
+name: CAPT USB Print checks and signed prerelease
 on:
   push:
     branches: [main]
@@ -46,54 +46,89 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
-  publish-diagnostic-release:
-    name: Private diagnostic prerelease
+  signing-availability:
+    name: Owner signing configuration
     needs: android
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: capt-usb-print-a1-debug
-          path: release-asset
-      - name: Publish tested APK in private Releases
+      - id: check
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: v0.1.0-a1.build.${{ github.run_number }}
+          PRESENT: ${{ secrets.ANDROID_SIGNING != '' }}
         run: |
-          set -euo pipefail
-          original='release-asset/app-debug.apk'
-          test -s "$original"
-          apk="release-asset/CAPT-USB-Print-0.1.0-a1-build-${GITHUB_RUN_NUMBER}-debug.apk"
-          mv "$original" "$apk"
-          checksum="$(sha256sum "$apk" | awk '{print $1}')"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo 'Release tag already exists; refusing to overwrite an existing release.'
-            exit 1
+          echo "enabled=$PRESENT" >> "$GITHUB_OUTPUT"
+          if [ "$PRESENT" != 'true' ]; then
+            echo "::notice::Signed release skipped until owner installs ANDROID_SIGNING secret in private repository Settings."
           fi
-          {
-            echo '# Диагностическая сборка A1'
-            echo
-            echo 'Приложение обнаруживает USB-устройства, запрашивает разрешение и экспортирует обезличенный диагностический отчёт.'
-            echo '**Печать не реализована. На принтер ничего не отправляется.**'
-            echo
-            echo "- Версия приложения: 0.1.0-a1.${GITHUB_RUN_NUMBER}"
-            echo "- Коммит исходников: ${GITHUB_SHA}"
-            echo "- Проверки: assembleDebug, lintDebug, testDebugUnitTest и аудит разрешений APK в CI #${GITHUB_RUN_NUMBER}."
-            echo "- SHA-256 APK: \`${checksum}\`"
-            echo
-            echo '**Важно:** APK подписан временным debug-ключом GitHub Actions. Подпись следующей CI-сборки может отличаться; обновление поверх предыдущей установки не гарантируется. Перед переустановкой экспортируйте отчёт. Постоянную подпись настроим отдельно под контролем владельца.'
-            echo
-            echo 'Установка: скачайте прикреплённый APK, установите на HONOR X9c, подключите Canon LBP2900, выдайте USB-доступ и отправьте отчёт через системное меню. Совместимость с оборудованием ещё не подтверждена.'
-            echo
-            echo 'Это приватный предварительный релиз. Исходники доступны владельцу в автоматически прикреплённых GitHub source archives.'
-          } > release-notes.md
-          gh release create "$TAG" "$apk" \
-            --target "$GITHUB_SHA" \
-            --title "CAPT USB Print A1 · diagnostic build ${GITHUB_RUN_NUMBER}" \
-            --notes-file release-notes.md \
-            --prerelease --latest=false
-          gh release view "$TAG" --json url,tagName,isPrerelease --jq '{url,tagName,isPrerelease}'
+
+  signed-release:
+    name: Permanent-key signed APK and in-place upgrade
+    needs: [android, signing-availability]
+    if: needs.signing-availability.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install SDK 36
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Allocate monotonically increasing signed versionCode
+        run: echo "APP_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+      - name: Restore owner's permanent key to temporary secure runner directory
+        env:
+          ANDROID_SIGNING: ${{ secrets.ANDROID_SIGNING }}
+        run: python3 tools/prepare-signing.py
+      - name: Lint and build signed non-debuggable APK
+        run: ./gradlew --no-daemon :app:lintRelease :app:assembleRelease
+      - name: Verify APK signature, stable package, prior release and versionCode
+        run: python3 tools/signed-release.py verify
+      - name: Verify forbidden Android permissions
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" > release-output/permissions.txt
+          if grep -E 'android.permission.(INTERNET|READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
+            echo "Unexpected release APK permission"; exit 1
+          fi
+      - name: Enable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify initial install or in-place upgrade on Android 16
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash tools/emulator-upgrade-check.sh
+      - name: Publish verified signed APK only after emulator success
+        run: python3 tools/signed-release.py publish
+      - name: Upload nonsecret release and upgrade evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CAPT-USB-Print-signed-release-checks
+          path: release-output/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/capt-usb-print-release.p12"
