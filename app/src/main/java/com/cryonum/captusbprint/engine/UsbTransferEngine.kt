@@ -65,7 +65,6 @@ class BoundedBulkWriter(
     fun send(data: ByteArray, cancelled: () -> Boolean = { false }): BulkOutcome {
         require(data.size <= 1024 * 1024) { "Use bounded CAPT packets, not an entire page." }
         var offset = 0
-        var noProgress = 0
         while (offset < data.size) {
             if (cancelled()) return BulkOutcome.Uncertain(offset, BulkOutcome.Reason.CANCELLED)
             val remaining = minOf(chunkSize, data.size - offset)
@@ -74,11 +73,10 @@ class BoundedBulkWriter(
             when {
                 result < 0 -> return BulkOutcome.Uncertain(offset, BulkOutcome.Reason.TIMEOUT_OR_IO_ERROR)
                 result > remaining -> return BulkOutcome.Uncertain(offset, BulkOutcome.Reason.INVALID_COUNT)
-                result == 0 -> {
-                    noProgress++
-                    if (noProgress >= 2) return BulkOutcome.Uncertain(offset, BulkOutcome.Reason.ZERO_PROGRESS)
-                }
-                else -> { offset += result; noProgress = 0 }
+                // Even zero can represent a timeout with uncertain device effects.
+                // Never silently repeat an already sent part of a command.
+                result == 0 -> return BulkOutcome.Uncertain(offset, BulkOutcome.Reason.ZERO_PROGRESS)
+                else -> offset += result
             }
         }
         return BulkOutcome.Accepted(offset)

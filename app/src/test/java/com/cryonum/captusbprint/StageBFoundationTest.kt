@@ -36,9 +36,11 @@ class StageBFoundationTest {
         assertEquals(BulkOutcome.Uncertain(2, BulkOutcome.Reason.TIMEOUT_OR_IO_ERROR),
             writer.send(ByteArray(8)))
         assertEquals(2, calls)
-        val zero = BoundedBulkWriter(BulkSink { _, _, _, _ -> 0 })
+        var zeros = 0
+        val zero = BoundedBulkWriter(BulkSink { _, _, _, _ -> zeros++; 0 })
         assertEquals(BulkOutcome.Uncertain(0, BulkOutcome.Reason.ZERO_PROGRESS),
             zero.send(ByteArray(3)))
+        assertEquals(1, zeros)
     }
     @Test fun cancelledAfterPartialDoesNotAttemptNextWrite() {
         var calls = 0
@@ -62,7 +64,7 @@ class StageBFoundationTest {
             .advance(PrintStage.COMPLETED).stage)
     }
     @Test fun pageRangesCopyOrderAndValidation() {
-        val p = PagePlan.parse(8, "1-3, 5, 8", 2)
+        val p = PagePlan.parse(8, "1–3, 5, 8", 2)
         assertEquals(listOf(1,2,3,5,8,1,2,3,5,8), p.orderedSheets().toList())
         assertThrows(IllegalArgumentException::class.java) { PagePlan.parse(8, "1-3, 3-4", 1) }
         assertThrows(IllegalArgumentException::class.java) { PagePlan.parse(8, "9", 1) }

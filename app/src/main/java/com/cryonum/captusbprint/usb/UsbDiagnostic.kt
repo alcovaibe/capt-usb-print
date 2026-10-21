@@ -12,6 +12,10 @@ import android.os.SystemClock
 import android.system.Os
 import android.system.OsConstants
 import com.cryonum.captusbprint.BuildConfig
+import com.cryonum.captusbprint.engine.EndpointFact
+import com.cryonum.captusbprint.engine.InterfaceFact
+import com.cryonum.captusbprint.engine.LinkSelection
+import com.cryonum.captusbprint.engine.UsbLinkSelector
 import java.util.Locale
 
 data class UsbRow(
@@ -35,19 +39,6 @@ object UsbDiagnostic {
 
     private fun direction(endpoint: UsbEndpoint): String =
         if (endpoint.direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
-
-    private fun isBidirectionalBulk(iface: UsbInterface): Boolean {
-        var hasIn = false
-        var hasOut = false
-        for (index in 0 until iface.endpointCount) {
-            val endpoint = iface.getEndpoint(index)
-            if (endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                if (endpoint.direction == UsbConstants.USB_DIR_IN) hasIn = true
-                if (endpoint.direction == UsbConstants.USB_DIR_OUT) hasOut = true
-            }
-        }
-        return hasIn && hasOut
-    }
 
     fun scan(context: Context): UsbSnapshot {
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -91,24 +82,39 @@ object UsbDiagnostic {
                 " subclass=" + device.deviceSubclass + " protocol=" + device.deviceProtocol)
             report.appendLine("  USB permission=" + allowed)
             report.appendLine("  interfaces=" + device.interfaceCount)
-            val candidates = mutableListOf<UsbInterface>()
+            val inspected = mutableListOf<UsbInterface>()
+            val facts = mutableListOf<InterfaceFact>()
             for (i in 0 until minOf(device.interfaceCount, 16)) {
                 val iface = device.getInterface(i)
+                inspected += iface
+                val endpointFacts = mutableListOf<EndpointFact>()
                 report.appendLine("  interface[" + i + "] id=" + iface.id +
                     " alt=" + iface.alternateSetting + " class=" + iface.interfaceClass +
                     " subclass=" + iface.interfaceSubclass + " protocol=" + iface.interfaceProtocol)
                 report.appendLine("    endpoints=" + iface.endpointCount)
                 for (j in 0 until minOf(iface.endpointCount, 32)) {
                     val ep = iface.getEndpoint(j)
+                    endpointFacts += EndpointFact(ep.address, ep.type)
                     report.appendLine("    endpoint[" + j + "] addr=0x" +
                         hex(ep.address) + " " + direction(ep) + " " +
                         transferType(ep.type) + " maxPacket=" + ep.maxPacketSize +
                         " interval=" + ep.interval)
                 }
-                if (isBidirectionalBulk(iface)) candidates += iface
+                // A truncated descriptor must not look like a uniquely usable link.
+                if (iface.endpointCount > 32) endpointFacts += EndpointFact(-1, 2)
+                facts += InterfaceFact(iface.id, iface.alternateSetting, endpointFacts)
             }
             if (device.interfaceCount > 16) report.appendLine("  remaining interfaces omitted")
-            report.appendLine("  candidate bidirectional BULK interfaces=" + candidates.size)
+            val selection = if (device.interfaceCount > 16) LinkSelection.Ambiguous
+                else UsbLinkSelector.select(facts)
+            report.appendLine("  validated BULK link selection=" + when (selection) {
+                is LinkSelection.Unique -> "unique interfaceId=" + selection.interfaceId +
+                    " alt=" + selection.alternateSetting +
+                    " IN=0x" + hex(selection.inAddress) +
+                    " OUT=0x" + hex(selection.outAddress)
+                LinkSelection.None -> "none"
+                LinkSelection.Ambiguous -> "ambiguous (no claim)"
+            })
 
             if (!allowed) {
                 report.appendLine("  open/claim=not attempted (no USB permission)")
@@ -129,21 +135,30 @@ object UsbDiagnostic {
                         // Only first 18 bytes of the standard DEVICE descriptor, not
                         // serial string descriptor, print data or complete USB paths.
                         report.appendLine("  device descriptor header=" + safeDeviceDescriptor)
-                        when (candidates.size) {
-                            0 -> report.appendLine("  claim=not attempted (no bidirectional BULK interface)")
-                            1 -> {
-                                val iface = candidates.single()
-                                val claimed = connection.claimInterface(iface, false)
-                                report.appendLine("  claim(interfaceId=" + iface.id + ",force=false)=" + claimed)
-                                if (claimed) {
-                                    try {
-                                        report.appendLine("  claim probe=read-only; no transfer")
-                                    } finally {
-                                        report.appendLine("  release=" + connection.releaseInterface(iface))
+                        when (selection) {
+                            LinkSelection.None -> report.appendLine(
+                                "  claim=not attempted (no bidirectional BULK interface)")
+                            LinkSelection.Ambiguous -> report.appendLine(
+                                "  claim=not attempted (ambiguous descriptors)")
+                            is LinkSelection.Unique -> {
+                                val iface = inspected.singleOrNull {
+                                    it.id == selection.interfaceId &&
+                                        it.alternateSetting == selection.alternateSetting
+                                }
+                                if (iface == null) {
+                                    report.appendLine("  claim=not attempted (interface identity ambiguous)")
+                                } else {
+                                    val claimed = connection.claimInterface(iface, false)
+                                    report.appendLine("  claim(interfaceId=" + iface.id + ",force=false)=" + claimed)
+                                    if (claimed) {
+                                        try {
+                                            report.appendLine("  claim probe=read-only; no transfer")
+                                        } finally {
+                                            report.appendLine("  release=" + connection.releaseInterface(iface))
+                                        }
                                     }
                                 }
                             }
-                            else -> report.appendLine("  claim=not attempted (ambiguous interface selection)")
                         }
                     } finally {
                         connection.close()

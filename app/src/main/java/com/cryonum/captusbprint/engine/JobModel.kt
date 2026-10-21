@@ -46,7 +46,8 @@ data class PagePlan(val pages: List<Int>, val copies: Int) {
             require(range.length <= 300) { "Page range is too long" }
             val selected = LinkedHashSet<Int>()
             range.split(',').forEach { part ->
-                val s = part.trim()
+                val s = part.trim().replace('–', '-').replace('—', '-')
+                    .replace(Regex("\\s*-\\s*"), "-")
                 require(s.matches(Regex("[0-9]+(-[0-9]+)?"))) { "Invalid page range" }
                 val ends = s.split('-')
                 val start = ends[0].toIntOrNull() ?: throw IllegalArgumentException("Invalid start page")
