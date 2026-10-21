@@ -72,11 +72,6 @@ object UsbDiagnostic {
         )
         val rows = mutableListOf<UsbRow>()
         report.appendLine("Connected USB device count: " + allDevices.size)
-        if (allDevices.isEmpty()) {
-            report.appendLine("Android UsbManager.deviceList returned zero devices.")
-            report.appendLine("USB permission cannot be requested before OS enumeration.")
-            report.appendLine("Root cause unknown; no inference about printer/cable failure.")
-        }
         if (allDevices.size > 32) report.appendLine("Only first 32 devices included (bounded report).")
         allDevices.take(32).forEachIndexed { number, device ->
             val vidPid = hex(device.vendorId) + ":" + hex(device.productId)

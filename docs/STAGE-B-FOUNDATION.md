@@ -1,0 +1,22 @@
+# Stage B preparation: no physical print path enabled
+
+This is a deliberately limited software checkpoint, not a claim that stage A or B is complete.
+
+## Hardware evidence received
+The owner's first A1.4 screen report: HONOR BRP-NX1, API 36, MagicOS display BRP-N21 10.0.0.172(C636E6R4P1), supported ABI includes arm64-v8a, measured runtime page size 4096 bytes, USB Host true. **Connected USB device count 0** at the time of the report. Therefore printer VID:PID, endpoints, interface and USB permission/claim remain unknown; the powered-on printer needs to be attached during a later scan.
+
+## Upstream anchor
+Public ValdikSS/captdriver `val` at `892f320c019974a5b737e000fcc2c8582264a131`, examined `src/capt-command.c/.h`, `generic-ops.c`, `prn_lbp2900.c`, and `canon-lbp.drv`. Some routines and comments mix LBP2900 and LBP3000 protocol paths. Do not assume their command profiles are interchangeable. Protocol coding, flow-control details, replies and physical capabilities require separate hardware validation. Upstream source is GPLv3-or-later; **we have not copied its implementation** and any later native port must carry appropriate notices/license/source obligations.
+
+## New source-only offline preparatory components
+- `core/CaptFrame`: bounded LE header and multi-command encoding with structural, command and exact-length reply validation. No control, status, transport, printer output, or BCD variant implemented; invalid/partial input is rejected.
+- `core/BulkIo`: bounded short read/write support, finite deadlines, explicit partial-write uncertainty, no hidden command retry. `BulkChannel` is a unit-test seam, not an Android transport attached to the app.
+- `core/JobSpecification`: validates simple page ranges, duplicates, source bounds, copies and collated order. This is a logical job model only, NOT a verified device profile.
+- `core/JobLedger`: conservative single-job state machine with unknown physical outcome if disconnected in transmission/confirmation; no automatic replay.
+- JVM tests verify independent known frame bytes, malformed frames, edge cases, partial/failing USB operations, job exclusivity and ambiguous outcome.
+- These components are intentionally **not connected to the Activity**. The application still does not print; it cannot claim real compatibility before the printer is enumerated and authenticated for the right interface.
+
+## Subsequent hardware gate
+1. With powered-on Canon LBP2900 connected using existing cable, open the newer signed app (when signing secret is installed) or the existing A1 debug app.
+2. Refresh and grant access to its USB entry, share the full anonymized report via Share.
+3. Only then bind a guarded Android USB channel and select a confirmed LBP2900 CAPT profile; validate known read-only response before any page command.

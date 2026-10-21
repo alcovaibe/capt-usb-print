@@ -74,3 +74,9 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 ## Testing addendum
 - App unit tests: new Stage B pure-function tests covering unique/ambiguous endpoint matching, partial transfer and interrupted outcome, legal job state transitions and invalid page ranges/copies. Added USB event count-ring tests. These are compile/logic tests only; Android hardware printer printing remains **not tested**.
 - Check latest GitHub Actions job and signed release independently; never infer release from source commit.
+
+## Continued implementation: stage B software foundation (no print commands)
+- Owner A1.4 report confirmed API36, `arm64-v8a`, measured 4096-byte memory pages, USB Host supported, device count=0 at capture. This does NOT identify the printer. Stage A hardware acceptance remains pending.
+- Pure Kotlin bounded CAPT framing/reply validation, simulated short USB I/O with finite deadlines and explicit partial-transfer uncertainty, immutable validated page selection/copy intent and single-active-job state machine are implemented under `app/.../core`. These are explicitly NOT wired to the UI/printer. Source-level audit note and hardware gate: `docs/STAGE-B-FOUNDATION.md`.
+- Unit tests cover those components. Do not claim a real print, genuine CAPT state read, Android USB physical endpoint probe, printer readiness, or a release signed with the permanent key.
+- Owner must add repository secret `ANDROID_SIGNING` before a signed release can be published. Old debug releases remain historical.
