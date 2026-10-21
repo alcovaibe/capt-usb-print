@@ -1,6 +1,6 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-21. Stage: **A / diagnostic source prepared; hardware unverified.**
+Updated: 2026-10-21. Stage: **A / diagnostic debug APK built and CI-verified; hardware verification pending.**
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
@@ -22,6 +22,7 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 
 ## Known limitations and verification status
 - Source authored; no local Android SDK or network in execution container, thus **local APK build unavailable**. Initial Actions run 39649721266 failed at Android setup because default package `tools` was unavailable; workflow now overrides setup packages to `platform-tools`. Second run 39649883896 installed SDK and failed at resource linking because platform `@android:drawable/ic_menu_print` is absent; changed manifest to an app-owned vector icon. CI workflow on private \`main\` should build, lint, unit-test, scan permissions and retain 7-day private debug APK if green. Do not claim CI succeeded without checking actual run.
+- CI success: run [39650348245](https://github.com/alcovaibe/capt-usb-print/actions/runs/39650348245), source commit `e624dc09b1ffefe25e2709f13359430bcb8f2de2`. `assembleDebug`, `lintDebug`, `testDebugUnitTest`, merged APK permission checks and private artifact upload passed. Artifact: `capt-usb-print-a1-debug`, ID `12370645206` (7-day retention). No Android device/emulator or printer was available to this run.
 - Android platform APIs require physical phone verification for USB enumeration, OS/ABI/page size, request/deny/grant, detach, endpoint selection, raw descriptor read and claim probe.
 - No verified VID/PID, active CAPT protocol trace, paper/RAM profile, printer status interpretations, physical print or HONOR system PrintService.
 - Debug signature is ephemeral, not a stable update signature; no keystore committed. No automatic retry/printing after reconnect.
