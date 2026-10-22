@@ -43,7 +43,10 @@ object UsbDiagnostic {
     private fun direction(endpoint: UsbEndpoint): String =
         if (endpoint.direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
 
-    fun scan(context: Context): UsbSnapshot {
+    fun scan(context: Context): UsbSnapshot =
+        CaptUsbOwnership.withExclusive { scanExclusive(context) }
+
+    private fun scanExclusive(context: Context): UsbSnapshot {
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
         val report = StringBuilder(4096)
         report.appendLine("CAPT USB Print — read-only USB scan")

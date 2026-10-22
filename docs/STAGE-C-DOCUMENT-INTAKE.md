@@ -174,3 +174,35 @@ raster counts were not provided in that report.
   document bytes, compressed bytes, paths and hashes are not exported.
   A single shared print-job owner, fail-closed physical transport,
   page-counter confirmation and one physical PDF test remain pending.
+
+
+## Owner acceptance of dry-run CAPT frames (HONOR, 2026-10-22)
+
+The owner photographed the unchanged test PDF, page 1 of 11, with all
+expected results: 110 HISCOA bands; 4,349,920 raw 1bpp bytes; 277,764
+compressed bytes; 11,244 largest band; 110 dry-run CAPT video frames and
+278,204 framed bytes at the previously observed 65,280 chunk limit.
+The app explicitly reported **no USB/CAPT commands**. This accepts the
+offline PDF-to-CAPT-frame integration for that specific page, not printer
+output, mechanical margins, mixed PDF pages or other image formats.
+
+## Stage C guarded first-PDF engine (PR, no UI-triggered document print yet)
+
+- Add process-local fail-fast `CaptUsbOwnership` lease for shared non-forced
+  claims: Stage B direct print sessions, future document session, explicit
+  read-only CAPT probes and diagnostic claim scan. A busy device is refused,
+  not queued or silently replayed. This is an in-process guard, not a
+  system-wide lock and does not replace the OS interface claim.
+- Add a separate **unwired** `CaptPdfPrintEngine`, accepting ONLY a fully
+  pre-compressed bounded one-page portrait `PreparedPdfCaptPage`. It follows
+  the proven Stage B guarded A4 job prologue, reads fresh GetPrinterInfo and
+  uses the reported safe transfer chunk, obtains one reservation, checks
+  printer state and a zero post-prologue CAPT page-counter baseline, sends
+  video frames with live buffer backpressure, starts one print, waits for
+  one completed/no outstanding page, ends/releases once. Failures after
+  reservation are reported as uncertain; no automatic retry or recovery.
+- The existing physical Stage B command sequence remains unchanged; only
+  session-level ownership is added. No document print button, PrintService,
+  new permission, automatic print on connect or background job is introduced.
+- Owner must separately consent to and inspect the **first real PDF page**
+  after tests pass and a later PR wires an explicit, confirmable UI action.

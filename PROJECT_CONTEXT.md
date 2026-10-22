@@ -235,3 +235,25 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
   for dry-run; physical work must read fresh GetPrinterInfo. Next step is
   a shared USB owner and separate fail-closed one-page document engine
   using verified CAPT counters; do not modify working Stage B sequencing.
+
+
+## Stage C owner CAPT dry-run confirmation + guarded future PDF engine
+
+- New owner photo confirmed 11-page source at page 1, portrait Auto,
+  rotation off: exactly 110 HISCOA bands, 4,349,920 raw bytes, 277,764
+  compressed, largest band 11,244; 110 offline C0A0 frames, 278,204
+  framed bytes. No USB/CAPT commands. This is *not* a physical print.
+- Main base `7af60bd345e3df6e558279f005dcaff1aac496f9`. Feature
+  `feat/stage-c-guarded-pdf-usb-engine`. User requires **non-Draft PRs**.
+- Process-local `CaptUsbOwnership` lease: session open/close (including
+  owner-tested Stage B sessions), explicit read-only probes, and diagnostics.
+  Fail fast when busy; never replay. This does not claim OS-wide exclusion.
+- Separate `CaptPdfPrintEngine` consumes one complete already prepared
+  portrait A4 compressed PDF page; no UI caller yet. Live printer info,
+  exact profile, post-prologue all-zero counters, buffer backpressure,
+  one-page counter confirmation, and uncertain-after-reservation outcomes.
+  No automatic retry, new permissions, PrintService or PDF print UI.
+- Next: green CI, owner test of UI still stable; separately consented
+  one-sheet first document print behind explicit confirmation, document
+  outcome reporting and shared job lifecycle tests. Do not claim document
+  physical success based on CI.
