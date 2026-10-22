@@ -55,6 +55,20 @@ object CaptFrame {
             .filter { it in 6..maxSize }
     }
 
+    /**
+     * The observed printer replies have LE lengths. A valid LE frame may have
+     * a DIFFERENT plausible BCD reading (0x0038 = 56 LE vs 38 BCD).
+     * Prefer a bounded LE total so we never accept an unfinished LE reply.
+     */
+    fun preferredReplyLength(header: ByteArray, maxSize: Int = 1024): Int {
+        require(header.size >= HEADER_BYTES)
+        require(maxSize in 6..MAX_FRAME_BYTES)
+        val le = u8(header[2]) or (u8(header[3]) shl 8)
+        if (le in 6..maxSize) return le
+        return lengthCandidates(header, maxSize).singleOrNull()
+            ?: throw IllegalArgumentException("CAPT reply length invalid/ambiguous")
+    }
+
     fun headerLengthMatches(header: ByteArray, actualSize: Int): Boolean {
         if (header.size < HEADER_BYTES || actualSize < HEADER_BYTES) return false
         val lo = u8(header[2])

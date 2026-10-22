@@ -1,6 +1,6 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Stage: **A confirmed on the physical phone; manual read-only CAPT status replies are working. Stage B protocol work is active; no page/job printing path is enabled yet.**
+Updated: 2026-10-22. Stage: **A confirmed on physical HONOR; real CAPT stage B one-page candidate in PR, hardware printing unverified.**
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
@@ -144,3 +144,12 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - The scan itself sent no CAPT command. The manual GetInputStatus probe sent no document/page data. No physical print has been attempted by CAPT USB Print.
 - Upstream anchor remains ValdikSS/captdriver commit 892f320c019974a5b737e000fcc2c8582264a131. In that source, the LBP2900 registration uses lbp3000_job_prologue, while its page and job epilogues are shared with the LBP2900 profile. Initialization includes state-changing operations; do not port it as a blind command list.
 - The new feature branch adds a manual read-only GetPrinterInfo probe and optional Start/Printing/Shipped/Printed fields from GetExtendedStatus. It does not send any page/job command. Next hardware gate is to review the actual Blk/Buf reply before wiring transfer sizing.
+
+
+## Stage B physical report and implementation (2026-10-22)
+- User's signed build 41 JSON: GetPrinterInfo exact 56-byte reply, Blk 65520, Buf 64, cap 65280; GetExtendedStatus exact 56-byte reply, Bas=0x31 (offline plus unverified 0x20), secondary=0x88 unknown, free slots=15, Pap=0x80, EngineFlags=0 and page counters=0. Android USB permission/unique endpoints confirmed. Original JSON is in the ChatGPT conversation, not committed to the repo.
+- Feature PR adds vendor GPLv3-or-later HISCOA compression source and JNI through pinned NDK/CMake, with a 600dpi 4960x7016 A4 registration-pattern raster and 64-line bands; one user-triggered real print prototype now exists, but no physical printed sheet has been observed.
+- New code uses bounded single-owner Android USB session, explicit ReserveUnit/job sequence (LBP2900 registered to LBP3000 job prologue upstream), page descriptor/video bands, StartPrint, completion-counter validation and ReleaseUnit only after confirmation. Failure/interrupt state is explicitly unknown and never auto-retried.
+- Fixed an identified diagnostic framing risk: a 56-byte LE length can look like a 38-byte BCD length; new shared preferredReplyLength avoids prematurely accepting the shorter BCD candidate on partial USB reads.
+- Upstream sources are preserved with GPL headers. A single compiler-only local change initializes HISCOA best_cmd to zero for -Wmaybe-uninitialized, documented in THIRD-PARTY-NOTICES.md. The entire combined APK is subject to applicable GPLv3 source and redistribution obligations.
+- Do not claim B complete until owner confirms physical A4 print, orientation and two follow-up jobs. No PDF/PrintService.

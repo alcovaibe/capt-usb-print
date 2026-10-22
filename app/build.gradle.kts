@@ -7,10 +7,20 @@ val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH")
 android {
     namespace = "com.cryonum.captusbprint"
     compileSdk = 36
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
 
     defaultConfig {
         applicationId = "com.cryonum.captusbprint"
         minSdk = 29
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
         targetSdk = 36
         // The GitHub Actions run number is monotonically increasing for private CI APKs.
         // Local debug builds are deliberately not a stable upgrade channel.
