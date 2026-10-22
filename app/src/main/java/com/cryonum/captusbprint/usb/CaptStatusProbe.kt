@@ -139,24 +139,36 @@ object CaptStatusProbe {
         connection: UsbDeviceConnection,
         endpoint: UsbEndpoint
     ): ByteArray {
-        val header = readExactly(connection, endpoint, 6, USB_TIMEOUT_MS)
-        val command = (header[0].toInt() and 0xff) or
-            ((header[1].toInt() and 0xff) shl 8)
+        // Read at least one full USB packet so a 10-byte CAPT reply is not
+        // truncated by asking the host controller for only the 6-byte prefix.
+        val frame = ByteArray(MAX_STATUS_FRAME_BYTES)
+        val initialRequest = maxOf(64, endpoint.maxPacketSize).coerceAtMost(MAX_STATUS_FRAME_BYTES)
+        val firstCount = try {
+            connection.bulkTransfer(endpoint, frame, 0, initialRequest, USB_TIMEOUT_MS)
+        } catch (_: Exception) {
+            throw CaptStatusProbeException("Ошибка чтения ответа CAPT.")
+        }
+        if (firstCount !in 6..initialRequest) {
+            throw CaptStatusProbeException("Ответ CAPT не получен полностью.")
+        }
+        val command = (frame[0].toInt() and 0xff) or
+            ((frame[1].toInt() and 0xff) shl 8)
         if (command != GET_BASIC_STATUS) {
             throw CaptStatusProbeException("Принтер вернул неожиданный CAPT command ID.")
         }
 
-        val candidates = CaptFrame.lengthCandidates(header, MAX_STATUS_FRAME_BYTES)
+        val candidates = CaptFrame.lengthCandidates(frame, MAX_STATUS_FRAME_BYTES)
             .filter { it >= 10 }
         val maximum = candidates.maxOrNull()
             ?: throw CaptStatusProbeException("Длина ответа CAPT некорректна или превышает лимит.")
-        val frame = ByteArray(maximum)
-        header.copyInto(frame)
-        var received = header.size
+        if (firstCount > maximum) {
+            throw CaptStatusProbeException("USB-пакет длиннее объявленного ответа CAPT.")
+        }
+        var received = firstCount
         val deadline = SystemClock.elapsedRealtime() + USB_TIMEOUT_MS
 
         while (true) {
-            if (CaptFrame.headerLengthMatches(header, received)) {
+            if (CaptFrame.headerLengthMatches(frame, received)) {
                 if (received < 10) {
                     throw CaptStatusProbeException("Ответ CAPT короче ожидаемого status-пакета.")
                 }
@@ -169,7 +181,7 @@ object CaptStatusProbe {
             if (remaining <= 0) {
                 throw CaptStatusProbeException("Истёк тайм-аут чтения ответа CAPT.")
             }
-            val requested = maximum - received
+            val requested = minOf(maximum - received, frame.size - received)
             val count = try {
                 connection.bulkTransfer(
                     endpoint, frame, received, requested, minOf(1000, remaining)
@@ -182,36 +194,6 @@ object CaptStatusProbe {
             }
             received += count
         }
-    }
-
-    private fun readExactly(
-        connection: UsbDeviceConnection,
-        endpoint: UsbEndpoint,
-        length: Int,
-        timeoutMillis: Int
-    ): ByteArray {
-        val bytes = ByteArray(length)
-        var offset = 0
-        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
-        while (offset < length) {
-            val remaining = (deadline - SystemClock.elapsedRealtime()).toInt()
-            if (remaining <= 0) {
-                throw CaptStatusProbeException("Истёк тайм-аут чтения заголовка CAPT.")
-            }
-            val requested = length - offset
-            val count = try {
-                connection.bulkTransfer(
-                    endpoint, bytes, offset, requested, minOf(1000, remaining)
-                )
-            } catch (_: Exception) {
-                throw CaptStatusProbeException("Ошибка чтения заголовка CAPT.")
-            }
-            if (count <= 0 || count > requested) {
-                throw CaptStatusProbeException("Заголовок CAPT получен не полностью.")
-            }
-            offset += count
-        }
-        return bytes
     }
 
     private fun hex(value: Int): String =

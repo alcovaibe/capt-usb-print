@@ -297,7 +297,7 @@ class MainActivity : Activity() {
                             "; no print/page data sent."
                     }
                 )
-                currentReport += "\\n" + line + "\\n"
+                currentReport += "\n" + line + "\n"
                 reportView.text = currentReport
                 val message = result.fold(
                     { it.summary },
