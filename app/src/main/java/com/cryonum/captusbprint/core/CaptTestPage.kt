@@ -11,7 +11,12 @@ object CaptTestPage {
     const val LINE_BYTES = WIDTH / 8
     const val BAND_LINES = 64
 
-    fun band(startLine: Int, lines: Int): ByteArray {
+    /** Page 1 is bit-identical to the owner's confirmed physical sheet. Page 2
+     * adds distinct registration bars to detect duplicated or shifted sheets.
+     * This is only offline multi-page preparation; it does not send USB jobs.
+     */
+    fun band(startLine: Int, lines: Int, pageNumber: Int = 1): ByteArray {
+        require(pageNumber in 1..2) { "Only two Stage B test patterns are defined" }
         require(startLine in 0 until HEIGHT && lines in 1..BAND_LINES)
         require(startLine + lines <= HEIGHT)
         val result = ByteArray(LINE_BYTES * lines)
@@ -30,6 +35,12 @@ object CaptTestPage {
             if (y in 1220..1230) horizontal(result, row, 260, 650)
             // Right-side short mark identifies page orientation after printing.
             if (y in 380..410) horizontal(result, row, 4080, 4490)
+            // Two bars distinguish the second physical sheet; the identical
+            // corner target on both sheets makes positional drift visible.
+            if (pageNumber == 2) {
+                if (y in 2080..2140) horizontal(result, row, 300, 1300)
+                if (y in 2240..2300) horizontal(result, row, 300, 1300)
+            }
         }
         return result
     }
