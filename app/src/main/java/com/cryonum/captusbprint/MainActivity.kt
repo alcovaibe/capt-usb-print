@@ -27,6 +27,7 @@ import androidx.core.content.FileProvider
 import com.cryonum.captusbprint.BuildConfig
 import com.cryonum.captusbprint.core.DiagnosticJson
 import com.cryonum.captusbprint.core.CaptTestPagePreparation
+import com.cryonum.captusbprint.usb.CaptTestPrintEngine
 import com.cryonum.captusbprint.usb.PermissionEvents
 import com.cryonum.captusbprint.usb.CaptStatusProbe
 import com.cryonum.captusbprint.usb.CaptStatusProbeException
@@ -41,6 +42,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
@@ -56,6 +58,8 @@ class MainActivity : Activity() {
     private var permissionSharePending = false
     private var captProbeInProgress = false
     private var rasterPreparationInProgress = false
+    private var testPrintInProgress = false
+    private val testPrintCancelled = AtomicBoolean(false)
     private var scanGeneration = 0
     private var receiverRegistered = false
     // ACTION_USB_DEVICE_ATTACHED is an ACTIVITY intent, not a normal broadcast.
@@ -297,6 +301,15 @@ class MainActivity : Activity() {
                 card.addView(button(getString(R.string.prepare_test_page)) {
                     prepareTestPageOffline()
                 })
+                card.addView(button(getString(R.string.test_page_print)) {
+                    printExperimentalTestPage(row)
+                })
+                card.addView(button(getString(R.string.cancel_test_page)) {
+                    if (testPrintInProgress) {
+                        testPrintCancelled.set(true)
+                        status.text = getString(R.string.test_page_cancel_requested)
+                    }
+                })
             }
             devices.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -363,7 +376,7 @@ class MainActivity : Activity() {
         query: () -> com.cryonum.captusbprint.usb.CaptStatusProbeResult
     ) {
         // Avoid duplicate USB commands if the user taps a status action repeatedly.
-        if (captProbeInProgress) return
+        if (captProbeInProgress || testPrintInProgress || rasterPreparationInProgress) return
         captProbeInProgress = true
         status.text = getString(R.string.probe_capt_running, commandName)
         worker.execute {
@@ -413,7 +426,7 @@ class MainActivity : Activity() {
     }
 
     private fun prepareTestPageOffline() {
-        if (rasterPreparationInProgress || captProbeInProgress) return
+        if (rasterPreparationInProgress || captProbeInProgress || testPrintInProgress) return
         rasterPreparationInProgress = true
         status.text = getString(R.string.preparing_test_page)
         worker.execute {
@@ -453,6 +466,44 @@ class MainActivity : Activity() {
                 currentReport += "\n" + details + "\n"
                 reportView.text = currentReport
                 status.text = details
+                shareReport()
+            }
+        }
+    }
+
+    private fun printExperimentalTestPage(row: UsbRow) {
+        if (testPrintInProgress || captProbeInProgress || rasterPreparationInProgress) return
+        testPrintInProgress = true
+        testPrintCancelled.set(false)
+        status.text = getString(R.string.test_page_started)
+        worker.execute {
+            val result = CaptTestPrintEngine.run(applicationContext, row.deviceKey,
+                { testPrintCancelled.get() }) { progress ->
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) status.text = progress
+                }
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                testPrintInProgress = false
+                val last = result.trace.lastOrNull().orEmpty()
+                val detail = "CAPT test print: ${result.outcome}; stage=${result.stage}; " +
+                    "sentPrintDataBytes=${result.sentPrintDataBytes}; " +
+                    "printerCompletedCounter=${result.printerConfirmedPages ?: "unavailable"}; $last"
+                currentReport += "\n" + detail + "\n"
+                reportView.text = currentReport
+                recordEvent("PrintTestPage", result.outcome, result.summary,
+                    result.lastStatusFrameHex,
+                    mapOf<String, Any?>(
+                        "stage" to result.stage,
+                        "sentPrintDataBytes" to result.sentPrintDataBytes,
+                        "compressedSha256" to result.compressedSha256,
+                        "printerConfirmedPages" to result.printerConfirmedPages,
+                        "trace" to result.trace,
+                        "automaticRetry" to false
+                    ), detail)
+                status.text = result.summary
+                Toast.makeText(this, result.summary, Toast.LENGTH_LONG).show()
                 shareReport()
             }
         }
