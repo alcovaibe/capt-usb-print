@@ -88,6 +88,7 @@ internal object PrintQueueRuntime {
     fun removeListener(listener: () -> Unit) { listeners.remove(listener) }
     @Synchronized fun snapshot() = queue.snapshot()
     @Synchronized fun isPaused() = queue.paused
+    @Synchronized fun hasRunnableWork() = queue.hasRunnableWork()
     @Synchronized fun hasWork() = queue.snapshot().any { !it.phase.terminal }
 
     /** Worker-thread only; caller retains its preview source and owns no queue files. */

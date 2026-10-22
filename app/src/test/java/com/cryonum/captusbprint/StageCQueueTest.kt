@@ -10,11 +10,14 @@ class StageCQueueTest {
         val q = DocumentQueue()
         q.add(job(1).copy(ready = false))
         assertNull(q.next())
+        assertFalse(q.hasRunnableWork())
         q.activate(1)
+        assertTrue(q.hasRunnableWork())
         assertEquals(1L, q.next()!!.id)
         val cancelled = DocumentQueue()
         cancelled.add(job(2).copy(ready = false)); cancelled.cancel(2)
         assertNull(cancelled.next())
+        assertFalse(cancelled.hasRunnableWork())
         assertThrows(IllegalStateException::class.java) { cancelled.activate(2) }
     }
 

@@ -17,6 +17,7 @@ internal class DocumentQueue {
     var paused = false; private set
     private var active: Long? = null
     @Synchronized fun snapshot() = records.toList()
+    @Synchronized fun hasRunnableWork() = records.any { !it.phase.terminal && it.ready }
     @Synchronized fun add(record: QueueRecord) {
         require(record.id > 0 && record.sheets in 1..2000)
         check(records.none { it.id == record.id })

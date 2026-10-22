@@ -38,7 +38,7 @@ class PrintQueueService : Service() {
                     } catch (_: Throwable) {
                         PrintQueueRuntime.serviceFailure()
                     } finally {
-                        if (!PrintQueueRuntime.hasWork() || PrintQueueRuntime.isPaused()) {
+                        if (!PrintQueueRuntime.hasRunnableWork() || PrintQueueRuntime.isPaused()) {
                             // A newer startId has its own queued worker command.
                             expectedStop.set(true)
                             if (stopSelfResult(startId)) stopForeground(STOP_FOREGROUND_REMOVE)
