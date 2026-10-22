@@ -2,17 +2,25 @@
 
 Independent offline Android CAPT prototype for the owner's HONOR X9c (Android API 36) and Canon LBP2900. No PrintHand dependency or app-side INTERNET permission. Other Android devices and printers are not claimed supported.
 
-**Verified:** Stage A USB diagnosis and read-only queries; Stage B owner-confirmed A4/600-dpi physical test sheets, repeat sessions and two distinct sheets in one CAPT job (signed build 71, 2026-10-22). **In progress:** Stage C PDF/JPEG/PNG local intake, bounded preview and offline raster preparation. Signed build 89 previewed an 11-page PDF; the owner confirmed seven UI/offline checks on signed build 93, including a PDF mono-raster preparation with no reported error. The experimental implementation exposes a separately confirmed first-PDF single-sheet action; no physical PDF or image sheet has yet been owner-confirmed. Android PrintService and production stabilization are not implemented.
+**Verified on the owner's hardware:** Stage A USB diagnostics; Stage B A4/600-dpi test sheets, repeated separate jobs and two distinct sheets in one CAPT job (signed build 71). On signed build 105 the owner printed actual PDF pages 1 and 2 as two separate jobs after a printer power cycle. Stage C remains in development: the new 2–3-sheet PDF job is not hardware-confirmed, and intermittent ReserveUnit `0x8C` is unresolved. JPEG/PNG intake and preview exist; image printing, the production queue and PrintService are pending.
 
 ## Hardware and bounded diagnostic
 On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, interface 0 / class 7/1/2, BULK OUT 0x01 and IN 0x82, permission and guarded claim verified. Manual CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo responses are tracked in private JSON. Device-list monitoring itself does not send CAPT commands; diagnostics exclude document content and printer serial numbers.
 
 ### Launcher icon
-The launcher now uses an adaptive icon like the Bluetooth Disable project: a solid white background, the approved black printer line-art, a round variant, and a monochrome foreground for themed icons.
+The launcher uses an adaptive white background and black printer line-art, with round and monochrome variants.
 
-### Stage B accepted and Stage C work
+## Stage C: guarded document printing
 
-The exact USB ID 04A9:2676 is mapped to Canon LBP2900. The guarded two-sheet CAPT path is physically owner-accepted; repeat and single-sheet tests also succeeded. New document features do not modify the accepted Stage B print engines. Stage C has user-triggered local preview and a portrait-only offline PDF 64-row print-mode band preparation. The one-sheet PDF engine is now reachable only through strict portrait/single-copy confirmation; owner hardware acceptance remains pending. JPEG/PNG print bands, physical landscape mapping, full job queue and PrintService are still pending.
+Local PDF/JPEG/PNG intake, sampled image previews (including EXIF and white-paper transparency), page selection, collated copy plans, orientation and content rotation are implemented. The owner confirmed preview/insets and offline PDF preparation on signed build 93. Portrait PDF pages are prepared in 64-row bands using the existing HISCOA encoder; a full 600-dpi ARGB page is never allocated.
+
+Single-sheet PDF printing requires exactly the visible page, one copy and portrait A4. The experimental batch requires exactly **2–3 total sheets**, including copies, and the first source page visible in the preview. Each distinct page is prepared before USB, at most 4 MiB compressed per page. Both actions require explicit confirmation and previously granted USB permission.
+
+The batch uses one reservation, sequential page-counter confirmation, **one** continuation after sheet 1 and one end/release. Its separate three-sheet counter checks leave Stage B unchanged. GetBasicStatus `0x88` stops the batch before reservation; this detects the captured condition and does not repair it. No automatic retry, undocumented reset or speculative recovery is performed.
+
+A private JSON marker is written before USB and after each confirmed batch sheet, followed by a terminal result. An unfinished marker remains uncertain even if some sheets were confirmed. Only the explicit report-share button exports it. No document name, URI, raster, content hash or serial number is included.
+
+The 260 px (about 11 mm) FIT inset is provisional, not a measured mechanical margin. Landscape printing, JPEG/PNG print bands, a lifecycle-safe unified queue and Android PrintService are not ready.
 
 ## Signed releases and upgrade compatibility
 
@@ -28,7 +36,7 @@ CI never generates or changes the private signing key and cannot publish a relea
 
 JDK 21; Android Gradle Plugin 9.2.1; Gradle Wrapper 9.4.1; compileSdk/targetSdk 36; minSdk 29; Android SDK Build Tools 36.0.0. Build debug with `./gradlew :app:assembleDebug`. Debug is NOT upgradeable release. Never use ephemeral debug signing for user-facing Releases.
 
-Current next hardware check: confirm Android 16 scroll viewport insets, first-page Auto orientation, separate 90-degree content rotation and optional offline PDF current-page band verification. No new document USB commands. A new signed APK is published only after trusted main CI passes.
+Next hardware checkpoint after an owner-authorized signed release: known PDF, portrait A4, preview page 1, range `1-3`, copies `1`; submit once, check three physical sheets in order, then manually share the latest PDF JSON. Stop after an error or uncertain result. Two copies of one page are a separate later checkpoint; do not combine independent experimental prints without checking the first outcome.
 
 See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for audit, limitations and next steps. This is unofficial software not endorsed by Canon.
 
@@ -45,34 +53,3 @@ The JSON contains app version/revision, a scan text record plus structured numer
 
 The owner confirmed the first A4/600-dpi sheet, two repeat separate jobs, and two distinct sheets in one reserved CAPT job on signed build 71. CAPT completed counters matched each printed test; this is not proof of real PDF printing. Reports are saved locally and sent only by an explicit Share action. No automatic retry. See Stage B docs and THIRD-PARTY-NOTICES.md.
 
-## Current Stage C scope
-
-The owner accepted Stage B after repeat physical test sheets and two distinct
-pages in one CAPT job. Stage C implements offline PDF/JPEG/PNG intake and preview.
-Build 89 displayed an 11-page PDF on HONOR; it does not claim printed PDFs.
-The follow-up branch fixes Android 16 scrolling insets, adds first-page-based
-Auto orientation and explicit content rotation, and begins offline portrait PDF
-64-line band rasterization. Do not infer PrintService or real-document print
-support from this README's older Stage B notes.
-
-### Next offline Stage C checkpoint
-
-A private feature branch reuses the existing Stage B native HISCOA encoder to
-compress each sequential PDF mono band, immediately discarding the result after
-bounded size checks. The UI only reports band counts and byte totals, not
-document data or hashes. There are no new USB/CAPT document commands, no new
-Android permissions, and no automatic print retries. JNI/HISCOA integration on
-the owner's PDF requires a separate signed-device check before real document
-printing is developed.
-
-
-### First PDF hardware checkpoint (experimental implementation)
-
-Only when the selected job contains exactly the currently displayed PDF page, **one copy**, and **portrait A4**, an explicit confirmation can submit a single precompressed page through `CaptPdfPrintEngine`. Initial USB permission must be granted on the main diagnostic screen. No automatic retry, recovery or document-data export is added. A bounded private `capt-pdf-print-latest.json` marker is saved before USB starts and updated on the final outcome; explicit sharing is available from the document screen, including after reopening it. No physical PDF output has been verified yet. A process interruption after the USB marker is uncertain. The accepted Stage B engines are unchanged.
-
-
-### Actual PDF output and guarded multi-sheet pilot
-
-The owner confirmed two separate PDF sheet printouts on signed build 105 after physically power-cycling LBP2900. This does not establish continuous-session stability: previous attempts repeatedly returned ReserveUnit 0x8C, including for previously accepted Stage B patterns. No automatic retry or speculative CAPT recovery is permitted.
-
-The next private Stage C pilot supports **exactly 2–3 portrait A4 PDF sheets in one reserved job**, with explicit confirmation, sequential CAPT counter checks, one preparatory page object per unique source page (maximum 4 MiB each), and durable private diagnostic evidence. Two or three collated copies of one page are allowed. This pilot is NOT yet hardware-verified, does not replace the general queue, and is not a claim that JPEG/PNG, arbitrary copies, landscape or PrintService printing is ready.

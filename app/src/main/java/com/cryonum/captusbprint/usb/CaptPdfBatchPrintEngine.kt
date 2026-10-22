@@ -9,6 +9,7 @@ import com.cryonum.captusbprint.core.CaptExtendedStatusParser
 import com.cryonum.captusbprint.core.CaptJobProtocol
 import com.cryonum.captusbprint.core.CaptPageCounterProgress
 import com.cryonum.captusbprint.core.CaptPageCounters
+import com.cryonum.captusbprint.core.PdfBatchPageProgress
 import com.cryonum.captusbprint.core.CaptPrinterInfoParser
 import java.util.Locale
 import com.cryonum.captusbprint.document.PreparedPdfCaptPage
@@ -21,6 +22,12 @@ import com.cryonum.captusbprint.document.PreparedPdfCaptPage
  * No speculative pipelining: next descriptor follows confirmation of previous
  * shipped/completed counters. No replay, power cycle or recovery on 0x8C.
  */
+internal interface PdfBatchSession : AutoCloseable {
+    fun query(command: Int, payload: ByteArray): ByteArray
+    fun sendFrame(frame: ByteArray)
+    fun sendOnly(command: Int)
+}
+
 internal object CaptPdfBatchPrintEngine {
     private const val WAIT_READY_MS = 15_000L
     private const val WAIT_PAGE_MS = 90_000L
@@ -30,7 +37,32 @@ internal object CaptPdfBatchPrintEngine {
         deviceKey: String,
         prepared: List<PreparedPdfCaptPage>,
         cancelled: () -> Boolean,
-        progress: (String) -> Unit = {}
+        progress: (String) -> Unit = {},
+        checkpoint: (CaptTestPrintResult) -> Unit = {}
+    ): CaptTestPrintResult = runPrepared(
+        prepared, cancelled, progress, checkpoint,
+        openSession = {
+            val usb = CaptUsbSession.open(context, deviceKey, cancelled)
+            object : PdfBatchSession {
+                override fun query(command: Int, payload: ByteArray) = usb.query(command, payload)
+                override fun sendFrame(frame: ByteArray) = usb.sendFrame(frame)
+                override fun sendOnly(command: Int) = usb.sendOnly(command)
+                override fun close() = usb.close()
+            }
+        },
+        now = { SystemClock.elapsedRealtime() },
+        pause = { Thread.sleep(it) }
+    )
+
+    /** Same production sequence with injected I/O and clock for bounded fault tests. */
+    internal fun runPrepared(
+        prepared: List<PreparedPdfCaptPage>,
+        cancelled: () -> Boolean,
+        progress: (String) -> Unit = {},
+        checkpoint: (CaptTestPrintResult) -> Unit = {},
+        openSession: () -> PdfBatchSession,
+        now: () -> Long,
+        pause: (Long) -> Unit
     ): CaptTestPrintResult {
         var stage = "VALIDATING_PDF_BATCH"
         var bytesSent = 0L
@@ -43,7 +75,7 @@ internal object CaptPdfBatchPrintEngine {
             if (trace.size < 180) trace.add(message)
             progress(message)
         }
-        fun guard() { check(!cancelled()) { "Cancelled; job will not be replayed" } }
+        fun guard() { check(!cancelled() && !Thread.currentThread().isInterrupted) { "Cancelled; job will not be replayed" } }
         fun hex(raw: ByteArray): String = raw.joinToString(" ") {
             String.format(Locale.ROOT, "%02X", it.toInt() and 0xff)
         }
@@ -61,7 +93,8 @@ internal object CaptPdfBatchPrintEngine {
             val totalPages = prepared.size
             note("Offline PDF batch ready: $totalPages A4 portrait sheets; no content logged")
             stage = "PREFLIGHT"
-            CaptUsbSession.open(context, deviceKey, cancelled).use { session ->
+            guard()
+            openSession().use { session ->
                 fun query(command: Int, payload: ByteArray = byteArrayOf()): ByteArray {
                     guard()
                     val frame = session.query(command, payload)
@@ -79,7 +112,7 @@ internal object CaptPdfBatchPrintEngine {
                     return s
                 }
                 fun waitState(timeoutMs: Long, accept: (CaptExtendedStatus) -> Boolean): CaptExtendedStatus {
-                    val deadline = SystemClock.elapsedRealtime() + timeoutMs
+                    val deadline = now() + timeoutMs
                     do {
                         guard()
                         val s = state()
@@ -88,8 +121,8 @@ internal object CaptPdfBatchPrintEngine {
                             throw IllegalStateException("Printer status changed while waiting")
                         }
                         if (accept(s)) return s
-                        Thread.sleep(120)
-                    } while (SystemClock.elapsedRealtime() < deadline)
+                        pause(120)
+                    } while (now() < deadline)
                     throw IllegalStateException("Timed out at $stage; result uncertain after job start")
                 }
 
@@ -159,7 +192,7 @@ internal object CaptPdfBatchPrintEngine {
                         if (current.bufferSlots == 0) {
                             if (!startSent) {
                                 waitState(WAIT_READY_MS) {
-                                    CaptPageCounterProgress.pageDecodedSince(initial, it, number)
+                                    PdfBatchPageProgress.decoded(initial, it, number)
                                 }
                                 query(CaptJobProtocol.START_PRINT, CaptJobProtocol.pageNumber(number))
                                 startSent = true
@@ -180,7 +213,7 @@ internal object CaptPdfBatchPrintEngine {
                     session.sendOnly(CaptJobProtocol.BLACK_END)
                     if (!startSent) {
                         waitState(WAIT_READY_MS) {
-                            CaptPageCounterProgress.pageDecodedSince(initial, it, number)
+                            PdfBatchPageProgress.decoded(initial, it, number)
                         }
                         query(CaptJobProtocol.START_PRINT, CaptJobProtocol.pageNumber(number))
                         note("StartPrint($number) after IC_BLACK_END")
@@ -188,13 +221,15 @@ internal object CaptPdfBatchPrintEngine {
 
                     stage = "PAGE_${number}_WAITING_CONFIRMATION"
                     val observed = waitState(WAIT_PAGE_MS) {
-                        CaptPageCounterProgress.pagesCompletedSince(initial, it, number) &&
-                            CaptPageCounterProgress.hasNoOutstandingPage(it) &&
-                            it.pageCompleted == number
+                        PdfBatchPageProgress.completed(initial, it, number)
                     }
                     confirmedPages = number
                     note("PDF page $number/$totalPages: counters agree at completed=${observed.pageCompleted}; visual check is separate")
-                    if (number < totalPages) {
+                    // Persist each confirmed sheet BEFORE another printer command.
+                    // A crash can retain a lower bound, never imply the whole job succeeded.
+                    checkpoint(CaptTestPrintResult("in_progress", "PDF page counter checkpoint",
+                        stage, bytesSent, null, confirmedPages, lastFrame, trace.toList()))
+                    if (number == 1) {
                         // Upstream LBP2900 sends job continuation once after Printed>=1,
                         // between pages, not a second ReserveUnit/GoOnline.
                         stage = "CONTINUING_SAME_JOB"
@@ -230,3 +265,4 @@ internal object CaptPdfBatchPrintEngine {
         }
     }
 }
+

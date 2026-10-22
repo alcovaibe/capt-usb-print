@@ -273,3 +273,14 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Next: PR CI, human inspection, signed build only on an authorized private main merge, then **one** owner 3-page PDF test using page range 1–3 and copies 1. Report actual printed sheet order and export latest JSON manually. Do not immediately retry 0x8C or unknown outcomes. Next full Stage C work: production single queue/lifecycle, arbitrary range/copies, image raster, and stability.
 
 - Additional new-batch pre-reservation read-only GetBasicStatus gate rejects 0x02/0x04/0x08/0x80 flags, explicitly including owner-captured 0x88, before ReserveUnit. This is detection, not an undocumented CAPT reset; Stage B and accepted one-sheet paths are unchanged.
+
+
+## 2026-10-22 — PR #25 review corrections (hardware gate still open)
+
+- Audited PR HEAD `b12aeed0e2e7caf835a41891ed98f6f2f92f84be`: private repo, main still `1a2d348899a2`; Actions run 113 passed build/lint/unit tests and Android 16 emulator **boot**, not installation of the PR APK. Signed jobs correctly skipped for PRs.
+- Found a deterministic third-sheet failure: new batch called Stage B counter helpers restricted to 1..2. Added separate Stage C counter checks for 1..3 with exact expected counts, historical/unfinished-page rejection and no rollover assumptions. Accepted Stage B engines/helpers stay unchanged.
+- Found repeated continuation before sheet 3. Re-read pinned ValdikSS `src/prn_lbp2900.c` at `892f320c019974a5b737e000fcc2c8582264a131`: `sent_job_cont` sends flag 2 ONCE after first completed page. Batch now sends it only after sheet 1, retaining the owner-accepted two-sheet ordering.
+- Injected batch transport and monotonic clock for JVM tests of the actual runner: 3 pages, 2 copies, captured 0x88 and ReserveUnit 0x8C, partial write, paper loss, cancellation, timeout, checkpoint write failure and finalization failure. These model checks do not establish physical printer behavior.
+- Persist a private progress checkpoint after each confirmed batch sheet BEFORE any subsequent command; on process loss USB_ATTEMPT_STARTED remains uncertain with a known lower bound. Failed report writes stop further commands. No automatic retry or reset added.
+- README reconciled with owner's actual one-sheet PDF evidence. Existing signed key, app ID/version scheme and release workflow unchanged. Main publication remains under owner merge control as documented above.
+- Next: green CI on corrected HEAD, then owner-authorized merge/private signed release and ONE range 1–3 / copies 1 / portrait PDF test. Observe physical order and manually send PDF JSON. Stage C remains unaccepted; general queue/lifecycle, image bands/printing and landscape follow this hardware checkpoint.

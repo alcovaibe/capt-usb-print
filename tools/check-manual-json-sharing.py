@@ -40,5 +40,6 @@ assert "Intent.ACTION_SEND" not in batch and "Intent.createChooser(" not in batc
 assert "USB_ATTEMPT_STARTED" in batch and "automaticRetry" in batch
 assert batch.index('persist("USB_ATTEMPT_STARTED")') < batch.index("CaptPdfBatchPrintEngine.run(")
 assert "PreparedPdfCaptPage.MAX_BUFFERED_PAGE_BYTES" in batch_engine
-assert "if (number < totalPages)" in batch_engine
+assert "if (number == 1)" in batch_engine
 print("PDF batch explicit-sharing and USB-marker guards passed.")
+

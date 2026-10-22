@@ -86,6 +86,7 @@ internal object PdfBatchPrintAttempt {
                 }
             }
             var usbStarted = false
+            var lastObserved: CaptTestPrintResult? = null
             return try {
                 persist("PREPARING")
                 val cache = mutableMapOf<Int, PreparedPdfCaptPage>()
@@ -114,7 +115,11 @@ internal object PdfBatchPrintAttempt {
                 persist("USB_ATTEMPT_STARTED")
                 usbStarted = true
                 val result = CaptPdfBatchPrintEngine.run(context, deviceKey, prepared,
-                    cancelled, progress)
+                    cancelled, progress, checkpoint = { observed ->
+                        lastObserved = observed
+                        persist("USB_ATTEMPT_STARTED", observed)
+                    })
+                lastObserved = result
                 persist(when (result.outcome) {
                     "printer_counter_confirmed" -> "PRINTER_COUNTER_CONFIRMED"
                     "failed_before_print_commands" -> "FAILED_BEFORE_PRINT"
@@ -124,7 +129,7 @@ internal object PdfBatchPrintAttempt {
             } catch (error: Throwable) {
                 val saved = runCatching {
                     persist(if (usbStarted) "OUTCOME_UNKNOWN" else "PREPARATION_FAILED",
-                        failure = error.javaClass.simpleName)
+                        result = lastObserved, failure = error.javaClass.simpleName)
                 }.isSuccess
                 val reportText = if (saved) "JSON сохранён." else "Не удалось сохранить JSON."
                 if (usbStarted) "Многостраничное задание прервано; возможна частичная печать. " +
@@ -137,3 +142,4 @@ internal object PdfBatchPrintAttempt {
         }
     }
 }
+
