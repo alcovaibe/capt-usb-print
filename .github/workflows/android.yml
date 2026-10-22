@@ -36,12 +36,12 @@ jobs:
       - name: Validate release and emulator setup scripts
         run: |
           python3 -m py_compile tools/prepare-signing.py tools/signed-release.py
-          bash -n tools/prepare-emulator.sh
+          bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
           # Reproduce duplicate partition-size entries from a device profile.
           fixture="$(mktemp -d)"
           mkdir -p "$fixture/test.avd"
           printf 'hw.cpu.ncore=2\ndisk.dataPartition.size=7200M\ndisk.dataPartition.size=2048M\n' > "$fixture/test.avd/config.ini"
-          ANDROID_AVD_HOME="$fixture" bash tools/prepare-emulator.sh
+          CAPT_SKIP_DISK_CHECK=1 ANDROID_AVD_HOME="$fixture" bash tools/prepare-emulator.sh
           test "$(grep -c '^disk.dataPartition.size=' "$fixture/test.avd/config.ini")" -eq 1
           grep -Fx 'disk.dataPartition.size=2048M' "$fixture/test.avd/config.ini"
           grep -Fx 'hw.cpu.ncore=2' "$fixture/test.avd/config.ini"
@@ -70,6 +70,41 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+  emulator-preflight:
+    name: Android 16 emulator boot smoke on PR
+    needs: android
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Free unrelated GitHub runner toolchains
+        run: bash tools/free-runner-disk.sh
+      - name: Enable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Boot Android 16 and verify ADB connectivity
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 2048M
+          pre-emulator-launch-script: bash tools/prepare-emulator.sh
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -partition-size 2048
+          disable-animations: true
+          script: |
+            adb shell getprop sys.boot_completed | tr -d '\r' | grep -x '1'
+            adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '36'
+
   signing-availability:
     name: Owner signing configuration
     needs: android
@@ -131,6 +166,8 @@ jobs:
           if grep -E 'android.permission.(INTERNET|READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
             echo "Unexpected release APK permission"; exit 1
           fi
+      - name: Free unrelated GitHub runner toolchains before emulator
+        run: bash tools/free-runner-disk.sh
       - name: Enable Android emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -147,13 +184,12 @@ jobs:
           target: default
           arch: x86_64
           profile: pixel_6
-          # The emulator's Pixel 6 default requested 7,372.8 MB of userdata
-          # when only 6,421-7,172 MB remained on GitHub runners (runs 50/52).
-          # An explicit 2 GiB userdata partition is sufficient for two APK
-          # installations and avoids a deterministic AVD boot failure.
+          # Keep AVD userdata modest; this does NOT replace host free-space
+          # cleanup: emulator 37.2.12 requires ~7.37 GB free on the host even
+          # when configured with a 2 GiB userdata partition.
           disk-size: 2048M
-          # Remove the Pixel 6 profile's original large data-partition key.
-          # android-emulator-runner appends overrides instead of replacing keys.
+          # The runner appends disk-size; normalize duplicate AVD config keys
+          # and assert adequate real disk headroom before launching.
           pre-emulator-launch-script: bash tools/prepare-emulator.sh
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -partition-size 2048
           disable-animations: true
