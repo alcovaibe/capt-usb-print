@@ -4,7 +4,7 @@ HISCOA encoder source files vendored from **ValdikSS/captdriver**,
 commit `892f320c019974a5b737e000fcc2c8582264a131`,
 original HISCOA authorship **Alexey Galakhov**, copyright 2013.
 
-Included, unchanged, in `app/src/main/cpp/upstream/`:
+Imported from that revision, with one nonbehavioral Android build fix (`unsigned best_cmd = 0` instead of an uninitialized declaration in `hiscoa-compress.c` to satisfy strict compiler diagnostics), in `app/src/main/cpp/upstream/`:
 `hiscoa-compress.c`, `hiscoa-compress.h`, `hiscoa-common.c`,
 `hiscoa-common.h`, `std.h`, `word.h`.
 
