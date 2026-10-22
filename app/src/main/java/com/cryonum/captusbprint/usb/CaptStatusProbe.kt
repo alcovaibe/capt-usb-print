@@ -209,6 +209,22 @@ object CaptStatusProbe {
             "paperAvailability=0x$paper[$paperName]; engineFlags=0x$engine[$engineNames]; " +
             "no print/page data sent."
         val findings = mutableListOf<String>()
+        if ((status.basicStatusByte and 0x10) != 0) findings += "установлен флаг OFFLINE"
+        if ((status.basicStatusByte and 0x02) != 0) findings += "установлен флаг NOT_READY"
+        if ((status.basicStatusByte and 0x04) != 0) findings += "установлен флаг CMD_BUSY"
+        if ((status.basicStatusByte and 0x08) != 0) findings += "установлен флаг IM_DATA_BUSY"
+        if ((status.basicStatusByte and 0x80) != 0) {
+            findings += "установлен ERROR_BIT; причина по известным полям не определена"
+        }
+        if ((status.basicStatusByte and 0x20) != 0) {
+            findings += "установлен неизвестный бит основного статуса 0x20; его значение не интерпретируется"
+        }
+        if ((status.secondaryByte and 0x02) != 0) {
+            findings += "установлен NEED_INPUT_STATUS — следует запросить GetInputStatus"
+        }
+        if ((status.secondaryByte and 0x01) != 0) {
+            findings += "установлен EXTENDED_STATUS_CHANGED"
+        }
         if ((status.engineFlags and 0x0100) != 0) findings += "флаг замятия бумаги"
         if ((status.engineFlags and 0x4000) != 0) findings += "флаг открытой дверцы"
         if ((status.engineFlags and 0x2000) != 0) findings += "флаг отсутствующего картриджа"
@@ -223,12 +239,11 @@ object CaptStatusProbe {
         if (status.paperAvailabilityByte == 0) findings += "бумага не отмечена как доступная"
         if ((status.auxiliaryByte and 0x02) != 0) findings += "принтер сообщает о занятости"
         if ((status.auxiliaryByte and 0x04) != 0) findings += "идёт подача бумаги"
-        val summary = when {
-            findings.isNotEmpty() -> "Расширенное состояние CAPT: " + findings.joinToString("; ") +
+        val summary = if (findings.isNotEmpty()) {
+            "Расширенное состояние CAPT: " + findings.joinToString("; ") +
                 ". Это декодированные флаги устройства; печать не выполнялась."
-            (status.basicStatusByte and 0x80) != 0 -> "Расширенный ответ получен, но ERROR_BIT остаётся установлен. " +
-                "По известным полям конкретная причина не определена. Печать не выполнялась."
-            else -> "Расширенный ответ CAPT получен; известные флаги аппаратной ошибки не установлены. " +
+        } else {
+            "Расширенный ответ CAPT получен; известные флаги аппаратной ошибки не установлены. " +
                 "Печать не выполнялась."
         }
         return CaptStatusProbeResult(summary, report)
