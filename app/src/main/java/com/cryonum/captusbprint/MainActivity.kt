@@ -26,6 +26,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.cryonum.captusbprint.BuildConfig
 import com.cryonum.captusbprint.core.DiagnosticJson
+import com.cryonum.captusbprint.core.CaptTestPagePreparation
 import com.cryonum.captusbprint.usb.PermissionEvents
 import com.cryonum.captusbprint.usb.CaptStatusProbe
 import com.cryonum.captusbprint.usb.CaptStatusProbeException
@@ -54,6 +55,7 @@ class MainActivity : Activity() {
     private var shareAfterScan = false
     private var permissionSharePending = false
     private var captProbeInProgress = false
+    private var rasterPreparationInProgress = false
     private var scanGeneration = 0
     private var receiverRegistered = false
     // ACTION_USB_DEVICE_ATTACHED is an ACTIVITY intent, not a normal broadcast.
@@ -292,6 +294,9 @@ class MainActivity : Activity() {
                 card.addView(button(getString(R.string.probe_capt_printer_info)) {
                     probeCaptPrinterInfo(row)
                 })
+                card.addView(button(getString(R.string.prepare_test_page)) {
+                    prepareTestPageOffline()
+                })
             }
             devices.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -402,6 +407,52 @@ class MainActivity : Activity() {
                 )
                 status.text = message
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                shareReport()
+            }
+        }
+    }
+
+    private fun prepareTestPageOffline() {
+        if (rasterPreparationInProgress || captProbeInProgress) return
+        rasterPreparationInProgress = true
+        status.text = getString(R.string.preparing_test_page)
+        worker.execute {
+            val prepared = runCatching { CaptTestPagePreparation.prepare() }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                rasterPreparationInProgress = false
+                val details = prepared.fold(
+                    { page ->
+                        "A4 600dpi ${page.widthPixels}x${page.heightPixels}; " +
+                            "bands=${page.bands}; rawBytes=${page.rawBytes}; " +
+                            "compressedBytes=${page.compressedBytes}; " +
+                            "maxBandBytes=${page.maxBandBytes}; " +
+                            "sha256=${page.compressedSha256}; " +
+                            "descriptorBytes=${page.descriptorBytes}; " +
+                            "no page data sent to USB."
+                    },
+                    { error ->
+                        "HISCOA local preparation failed: ${error.javaClass.simpleName}; no USB transfer."
+                    }
+                )
+                val metrics = prepared.getOrNull()?.let { page ->
+                    mapOf<String, Any?>(
+                        "widthPixels" to page.widthPixels,
+                        "heightPixels" to page.heightPixels,
+                        "bands" to page.bands,
+                        "rawBytes" to page.rawBytes,
+                        "compressedBytes" to page.compressedBytes,
+                        "maxBandBytes" to page.maxBandBytes,
+                        "compressedSha256" to page.compressedSha256,
+                        "descriptorBytes" to page.descriptorBytes,
+                        "usbPrintCommandSent" to false
+                    )
+                } ?: emptyMap()
+                recordEvent("PrepareTestPage", if (prepared.isSuccess) "success" else "failed",
+                    details, decoded = metrics, reportLine = details)
+                currentReport += "\n" + details + "\n"
+                reportView.text = currentReport
+                status.text = details
                 shareReport()
             }
         }
