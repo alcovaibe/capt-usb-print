@@ -251,6 +251,9 @@ class MainActivity : Activity() {
                 card.addView(button(getString(R.string.probe_capt_input_status)) {
                     probeCaptInputStatus(row)
                 })
+                card.addView(button(getString(R.string.probe_capt_printer_info)) {
+                    probeCaptPrinterInfo(row)
+                })
             }
             devices.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -300,6 +303,10 @@ class MainActivity : Activity() {
 
     private fun probeCaptInputStatus(row: UsbRow) = runCaptProbe(row, "GetInputStatus") {
         CaptStatusProbe.queryInputStatus(applicationContext, row.deviceKey)
+    }
+
+    private fun probeCaptPrinterInfo(row: UsbRow) = runCaptProbe(row, "GetPrinterInfo") {
+        CaptStatusProbe.queryPrinterInfo(applicationContext, row.deviceKey)
     }
 
     private fun runCaptProbe(

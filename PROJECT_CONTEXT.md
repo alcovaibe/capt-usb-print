@@ -1,10 +1,10 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-21. Stage: **A / actual phone report received; OS USB enumeration (device count 0) blocking real printer protocol. Stage B foundations implemented but not activated.**
+Updated: 2026-10-22. Stage: **A confirmed on the physical phone; manual read-only CAPT status replies are working. Stage B protocol work is active; no page/job printing path is enabled yet.**
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
-- Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, successful physical PrintHand test page. Owner's A1.4 report verified API/OS build/ABI/4096-byte page size and USB Host feature. Actual printer USB descriptors and permission remain UNKNOWN (device count 0).
+- Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, and a successful physical PrintHand test page. Latest signed app report confirms VID/PID 04A9:2676, granted USB permission, interface 0/alt 0 class 7/subclass 1/protocol 2, OUT BULK 0x0001, IN BULK 0x0082, unique link selection, successful non-forced claim, and a valid GetInputStatus response.
 - No subscription, PrintHand dependence, cloud, INTERNET permission, public release or printer firmware/service commands.
 - Stage A is read-only USB diagnostics, not a printing driver. Physical printing unverified. Stage progression A→B→C→D→E requires owner hardware results.
 
@@ -21,40 +21,39 @@ Kotlin Android App. Stage A: Activity → single-thread executor → UsbScanner 
 JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with built-in Kotlin (minimum 2.2.10); compileSdk 36, targetSdk 36, minSdk 29 (deliberate development floor, not claim of wider support). No Compose/NDK/CMake needed for read-only diagnostic proof. Inherited Gradle distribution SHA is retained. Runtime no INTERNET; CI requires network to install SDK and dependencies.
 
 ## Known limitations and verification status
-- Source authored; no local Android SDK or network in execution container, thus **local APK build unavailable**. Initial Actions run 39649721266 failed at Android setup because default package `tools` was unavailable; workflow now overrides setup packages to `platform-tools`. Second run 39649883896 installed SDK and failed at resource linking because platform `@android:drawable/ic_menu_print` is absent; changed manifest to an app-owned vector icon. CI workflow on private \`main\` should build, lint, unit-test, scan permissions and retain 7-day private debug APK if green. Do not claim CI succeeded without checking actual run.
+- No local Android SDK/network is available in the execution container, so no local APK build is claimed. Historical setup/resource-linking failures were fixed. Latest main run 39728843497 passed assembleDebug, lintDebug, unit tests and the merged APK permission audit; its signed-release job also passed Android 16 emulator install/in-place-upgrade verification.
 - CI success: run [39650348245](https://github.com/alcovaibe/capt-usb-print/actions/runs/39650348245), source commit `e624dc09b1ffefe25e2709f13359430bcb8f2de2`. `assembleDebug`, `lintDebug`, `testDebugUnitTest`, merged APK permission checks and private artifact upload passed. Artifact: `capt-usb-print-a1-debug`, ID `12370645206` (7-day retention). No Android device/emulator or printer was available to this run.
 - Android platform APIs require physical phone verification for USB enumeration, OS/ABI/page size, request/deny/grant, detach, endpoint selection, raw descriptor read and claim probe.
-- No verified VID/PID, active CAPT protocol trace, paper/RAM profile, printer status interpretations, physical print or HONOR system PrintService.
+- VID/PID, interface/endpoints and permission/claim are now confirmed. GetBasicStatus (6-byte reply) and GetInputStatus (22-byte reply) have been observed; GetInputStatus payload is opaque. GetPrinterInfo Blk/Buf values, a usable GetExtendedStatus counter response, a page transfer trace, physical print, and HONOR system PrintService remain unverified.
 - Debug signature is ephemeral, not a stable update signature; no keystore committed. No automatic retry/printing after reconnect.
 
 ## Confirmed / unknown / how to check
 
 | Item | State | Method |
 | --- | --- | --- |
-| USB device enumeration / permission | Confirmed: one device 04A9:2676 and USB permission granted (owner screenshot, 2026-10-22) | Full technical report still needed for interface and endpoints |
+| USB enumeration / permission | Confirmed: one device 04A9:2676; permission granted | Owner's signed-build report, 2026-10-22 |
 | Repository privacy | Confirmed private via GitHub metadata | Recheck on new commit |
-| Device API/build/ABI/page size | Confirmed on owner's A1.4 screenshot | Recheck only if phone OS changes |
-| USB VID/PID | Confirmed 04A9:2676 (Canon LBP2900 match) | Owner screenshot, 2026-10-22 |
-| USB interfaces/endpoints/claim result | Not yet recorded in shared evidence | Full anonymized technical report |
-| USB permission | Granted per screenshot; interface claim result unknown | Full technical report |
-| CAPT status and actual print | Unknown | Stage B guarded implementation + physical paper confirmation |
-| PDF/PrintService/HONOR Documents | Not implemented | Stages C/D |
+| Device API/build/ABI/page size | API 36, build BRP-N21 10.0.0.172(C636E6R4P1), ABI includes arm64-v8a, page size 4096 bytes | Owner's report, 2026-10-22 |
+| USB interface/endpoints/claim | Interface 0/alt 0 class 7/subclass 1/protocol 2; OUT 0x0001 and IN 0x0082 BULK; claim succeeds | Owner's report, 2026-10-22 |
+| CAPT responses | GetBasicStatus valid (6 bytes); GetInputStatus valid (22 bytes total, payload opaque) | Owner's reports, 2026-10-22 |
+| GetPrinterInfo transfer parameters | Not yet queried on hardware | New guarded read-only probe in this feature branch |
+| Physical page print | Not implemented / not verified | Stage B, after status and transfer-parameter review |
+| PDF / Android PrintService / HONOR Documents | Not implemented | Stages C/D |
 
 ## Private prereleases
-- Owner authorized publishing test builds to **Releases of this private repository** only; not to a public repo, Play Store or another distribution channel.
-- CI now has two jobs: `android` builds/tests/audits and uploads APK, then `publish-diagnostic-release` (only for private main push or main workflow_dispatch) downloads that exact artifact and creates a prerelease with APK, commit, test summary and inline SHA-256.
-- A1 release tags: `v0.1.0-a1.build.<run_number>`; Gradle versionCode and versionName include the CI run number. GitHub Actions ephemeral debug keys remain non-upgradeable across machines; users must export diagnostic reports before reinstall. Signing owner-controlled key is a separate release task.
-- Verify both CI jobs and actual release asset before saying publication completed. No CAPT code used yet and physical compatibility remains untested.
-
+- Owner authorized test builds in Releases of this private repository only; no public repository, Play Store, or other distribution channel.
+- Current workflow: pull requests run build/lint/unit tests and the merged-manifest permission audit. Only trusted pushes to main or manual main workflow dispatch can access the ANDROID_SIGNING secret and run the signed-release job.
+- Signed release build 33 was published on 2026-10-22: tag v0.1.0-a2-signed.build.33, package com.cryonum.captusbprint, version 0.1.0-a2.33, versionCode 1033. APK asset: CAPT-USB-Print-0.1.0-a2-build-33.apk.
+- Run 39728843497 passed Android build/lint/unit tests, APK permission audit, signing-certificate/version checks, Android 16 emulator install/in-place-upgrade verification, and the release publish step.
+- The feature PR must not be merged automatically: merging to main triggers a new private signed release. Review its PR CI first and merge only when the next signed test build is wanted.
 ## Next actions
-1. Confirm private CI \`assembleDebug\`, lint, tests and merged manifest permission audit; fix failures before sharing APK.
-2. USB enumeration now confirmed (04A9:2676; permission granted). Obtain the full anonymized report with interface/endpoints and claim result before enabling a CAPT status query. Do not send a test print or claim device ready from USB permission alone.
-3. Model LBP2900 transport responses using observed device interface and verified upstream before Stage B.
-
+1. Run PR CI for the read-only GetPrinterInfo probe and extended page-counter parser; do not merge if build, lint, tests or permission audit fail.
+2. After the feature is merged and its signed private build is available, run GetPrinterInfo once and inspect the actual Blk/Buf values.
+3. Continue the LBP2900-specific upstream audit. Do not enable job initialization, error-clearing recovery, page descriptors, HISCOA data, or StartPrint until the required command sequence and response handling have tests and explicit readiness gates.
 
 ## Owner-controlled signed updates (2026-10-21)
-- Owner requested permanent upgradeable APKs as in private VK Music Export. **Different signing key** was generated specifically for CAPT USB Print, with a PKCS12 and corresponding public SHA-256 certificate fingerprint `6bb4ec99e2ce17383383a918c4d8b942b2a19ba06660e18ee1e1e606d84fdc5e`. Private keystore/password are NOT in Git; owner must download supplied backup ZIP and install repository Actions secret `ANDROID_SIGNING` with the full JSON.
-- In absence of this secret, CI keeps testing but signed-release job is SKIPPED. Never publish an ephemeral/debug APK as a "release" again. First signed release is conditioned on adding secret and completing CI and emulator install verification.
+- Owner requested permanent upgradeable APKs as in private VK Music Export. A separate CAPT USB Print key was generated; its public certificate SHA-256 fingerprint is 6bb4ec99e2ce17383383a918c4d8b942b2a19ba06660e18ee1e1e606d84fdc5e. The private keystore/password remain outside Git.
+- ANDROID_SIGNING is now configured. Main run 39728843497 successfully restored the owner-controlled key, verified the signed APK and prior release, passed the Android 16 emulator in-place upgrade check, and published the private signed build 33. Keep two separate encrypted backups of the signing ZIP; losing the key prevents compatible future upgrades.
 - Release package remains `com.cryonum.captusbprint`. Debug remains `com.cryonum.captusbprint.debug` (different package, therefore no misleading update path). Signed versionCode = 1000 + GitHub run number, tagged `v0.1.0-a2-signed.build.<run>`.
 - On every signed release, verify APK signature with the public pinned certificate, non-debuggable package, increasing version code, prior APK signature and Android 16 emulator in-place `adb install -r` (no uninstall). No PrintService or CAPT printing yet.
 - Layout correction following owner screenshot: show USB device cards and concise permission states by default; full technical report collapsible. Share always includes the full anonymized report. First owner phone confirmation required.
@@ -135,3 +134,13 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - The bounded extended parser extracts the basic/secondary status bytes, buffer level, auxiliary engine state, engine communication flags, paper availability and engine flags. The report records raw hex values and known bit names; it does not send page/job data, clear errors, reset the printer or enable printing.
 - Unit tests now cover the status flag decoder and the extended response parser. CI on the pull request must pass before merge. Physical `GetExtendedStatus` response and actual page printing remain unverified.
 - The USB permission event line is explicitly session-local; the screen status now uses the current per-device permission state to avoid showing a stale “not requested” event when Android permission is already granted.
+
+
+## Latest hardware report and Stage B handoff (2026-10-22)
+- Owner tested signed build 0.1.0-a2.33 (versionCode 1033, revision 3c5b6ff8a9f5) on HONOR X9c with the physical Canon LBP2900.
+- Reported phone facts: model HONOR BRP-NX1; API 36; build BRP-N21 10.0.0.172(C636E6R4P1); ABIs arm64-v8a,armeabi-v7a,armeabi; measured page size 4096 bytes; USB Host=true.
+- USB facts: exactly one device VID:PID 04A9:2676, known profile Canon LBP2900; USB permission=true; interface 0/alternate setting 0 class 7/subclass 1/protocol 2; OUT BULK 0x0001, IN BULK 0x0082; unique link selection; open success; claim(interfaceId=0,force=false)=true; release and close completed.
+- Observed response: GetInputStatus valid, total frame 22 bytes, payload 18 bytes: 00 10 C0 00 00 00 00 00 96 00 FD 00 00 00 00 00 00 00. The payload is retained as opaque diagnostic data; do not infer paper/readiness semantics from these bytes.
+- The scan itself sent no CAPT command. The manual GetInputStatus probe sent no document/page data. No physical print has been attempted by CAPT USB Print.
+- Upstream anchor remains ValdikSS/captdriver commit 892f320c019974a5b737e000fcc2c8582264a131. In that source, the LBP2900 registration uses lbp3000_job_prologue, while its page and job epilogues are shared with the LBP2900 profile. Initialization includes state-changing operations; do not port it as a blind command list.
+- The new feature branch adds a manual read-only GetPrinterInfo probe and optional Start/Printing/Shipped/Printed fields from GetExtendedStatus. It does not send any page/job command. Next hardware gate is to review the actual Blk/Buf reply before wiring transfer sizing.
