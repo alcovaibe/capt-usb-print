@@ -47,7 +47,8 @@ class DocumentActivity : Activity() {
         })
         layout.addView(TextView(this).apply {
             text = "Проверка PDF, JPEG и PNG без печати. Файл не передаётся в сеть. " +
-                "Предпросмотр и отправка документа принтеру появятся на следующем шаге."
+                "Можно посмотреть размеры страниц и сформировать план копий. " +
+                "Предпросмотр и отправка документа принтеру ещё не включены."
             textSize = 16f
         })
         layout.addView(Button(this).apply {
@@ -149,16 +150,28 @@ class DocumentActivity : Activity() {
 
     private fun inspect(uri: Uri) {
         val request = ++generation
+        overview = null
+        planButton.isEnabled = false
+        planResult.text = "План доступен после успешной проверки документа."
         message.text = "Проверка выбранного документа… На принтер ничего не отправляется."
         worker.execute {
             val outcome = runCatching { DocumentInspector.inspect(applicationContext, uri) }
             runOnUiThread {
                 if (isFinishing || isDestroyed || request != generation) return@runOnUiThread
                 message.text = outcome.fold({ doc ->
+                    overview = doc
+                    planButton.isEnabled = true
                     val rotation = doc.rotationDegrees?.let { "; EXIF: ${it}°" } ?: ""
-                    "${doc.format.label}: ${doc.pageCount} стр.; " +
+                    val pageDetails = if (doc.format.label == "PDF") {
+                        val displayed = doc.pageSizes.take(20).mapIndexed { index, size ->
+                            "${index + 1}: ${size.width} × ${size.height} pt"
+                        }.joinToString("\n")
+                        "\nРазмер каждой страницы (первые 20):\n" + displayed +
+                            if (doc.pageCount > 20) "\n…ещё ${doc.pageCount - 20} страниц" else ""
+                    } else ""
+                    "${doc.format.label}: ${doc.pageCount} стр.; первая страница " +
                         "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
-                        "${doc.copiedBytes} байт.\n" +
+                        "${doc.copiedBytes} байт." + pageDetails + "\n" +
                         "Проверка успешна. Печать и загрузка в сеть не выполнялись."
                 }, { error ->
                     when (error) {
@@ -169,6 +182,31 @@ class DocumentActivity : Activity() {
                 })
             }
         }
+    }
+
+    private fun createOfflinePlan() {
+        val doc = overview ?: return
+        val copies = copiesInput.text.toString().toIntOrNull() ?: 0
+        val orientation = if (orientationInput.selectedItemPosition == 1)
+            Orientation.LANDSCAPE else Orientation.PORTRAIT
+        val planned = runCatching {
+            JobSpecification.create(doc.pageCount, rangeInput.text.toString(), copies,
+                orientation)
+        }
+        planResult.text = planned.fold({ job ->
+            val order = job.outputPageOrder
+            val sample = order.take(24).joinToString(", ") { (it + 1).toString() }
+            "Только план, без печати. A4, " +
+                (if (job.orientation == Orientation.PORTRAIT) "книжная" else "альбомная") +
+                " ориентация; выбранных страниц: ${job.pageIndices.size}; " +
+                "копий: ${job.copies}; листов в плане: ${order.size}.\n" +
+                "Порядок страниц (первые 24): ${sample}" +
+                (if (order.size > 24) ", …" else "") +
+                "\nНа принтер ничего не отправлено."
+        }, { error ->
+            "Некорректный диапазон или количество копий: " +
+                (error.message ?: "проверь параметры") + ". Печать не выполнялась."
+        })
     }
 
     override fun onDestroy() {
