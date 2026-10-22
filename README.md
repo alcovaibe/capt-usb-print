@@ -1,19 +1,18 @@
-# CAPT USB Print — experimental Stage B
+# CAPT USB Print — Android / Canon LBP2900
 
-Standalone offline Android CAPT prototype for Canon LBP2900 / HONOR X9c. USB discovery, read-only CAPT queries and JSON reports are physically verified. This branch introduces an **experimental one-page print attempt**: it has not yet produced a user-confirmed physical sheet. PDF, images and Android PrintService are not implemented. No PrintHand or network services are used.
+Independent offline Android CAPT prototype for the owner's HONOR X9c (Android API 36) and Canon LBP2900. No PrintHand dependency or app-side INTERNET permission. Other Android devices and printers are not claimed supported.
 
-### Device metadata and the next USB diagnostic
-The latest hardware report (signed build `0.1.0-a2.33`, 2026-10-22) confirms HONOR API 36, build `BRP-N21 10.0.0.172(C636E6R4P1)`, ABI `arm64-v8a`, a measured **4096-byte** memory page and USB Host=true. Android detects Canon LBP2900 VID:PID **04A9:2676**; USB permission is granted, interface 0/alternate setting 0 has class 7/subclass 1/protocol 2, endpoints OUT BULK `0x0001` and IN BULK `0x0082`, and a non-forced claim succeeds. `GetBasicStatus` previously returned a valid six-byte response with status bytes `0x88` and `0x00`. The latest report also confirms a valid 22-byte `GetInputStatus` response (18 payload bytes), but the payload is deliberately kept opaque because the public upstream driver does not document its fields. No page/document data was sent; physical printing remains unverified. The app polls only the device list every 2.5 seconds while visible, records up to sixteen count changes and exports them without USB paths. Android's USB_DEVICE_ATTACHED is an activity intent rather than a normal broadcast; USB_DEVICE_DETACHED is a broadcast (official UsbManager API).
+**Verified:** Stage A USB diagnosis and read-only queries; Stage B owner-confirmed A4/600-dpi physical test sheets, repeat sessions and two distinct sheets in one CAPT job (signed build 71, 2026-10-22). **In progress:** Stage C PDF/JPEG/PNG local intake, bounded preview and offline raster preparation. Signed build 89 previewed an 11-page PDF; no real PDF or image page has been printed through this app. Android PrintService and production stabilization are not implemented.
+
+## Hardware and bounded diagnostic
+On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, interface 0 / class 7/1/2, BULK OUT 0x01 and IN 0x82, permission and guarded claim verified. Manual CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo responses are tracked in private JSON. Device-list monitoring itself does not send CAPT commands; diagnostics exclude document content and printer serial numbers.
 
 ### Launcher icon
 The launcher now uses an adaptive icon like the Bluetooth Disable project: a solid white background, the approved black printer line-art, a round variant, and a monochrome foreground for themed icons.
 
-### Known device identity
-The exact USB ID `04A9:2676` is mapped to Canon LBP2900. A physical test verified a valid six-byte `GetBasicStatus` response (`statusFlags=0x88`, `secondaryFlags=0x00`). The app provides manual, read-only `GetBasicStatus`, `GetExtendedStatus`, and `GetInputStatus` checks, guarded by USB permission, an exact VID:PID match, a unique BULK IN/OUT pair, alternate setting 0, and successful non-forced interface claim. The extended parser also exposes page counters when the reply contains them. This feature branch adds a similarly guarded `GetPrinterInfo` query for the transfer block/buffer parameters needed before a first print attempt. These checks do not print or clear/reset printer errors.
+### Stage B accepted and Stage C work
 
-### Stage B foundations, not a working driver
-Pure Kotlin USB descriptor selection refuses ambiguous BULK pairs; a bounded USB writer handles partial returns and interrupted writes without resending complete CAPT commands; a job state model makes completion contingent on explicit result confirmation and never automatically resumes after interruption. Page ranges and copies are parsed and bounded. All are covered by unit tests. These pure-Kotlin foundations are not wired to a real print job. Only the separately gated, manually triggered status probes send CAPT traffic; no print/page commands are enabled.
-
+The exact USB ID 04A9:2676 is mapped to Canon LBP2900. The guarded two-sheet CAPT path is physically owner-accepted; repeat and single-sheet tests also succeeded. New document features do not modify the accepted Stage B print engines. Stage C has user-triggered local preview and a portrait-only offline PDF 64-row print-mode band preparation. Actual PDF/image CAPT jobs, JPEG/PNG print bands, physical landscape mapping, queue/cancellation and PrintService are still pending.
 
 ## Signed releases and upgrade compatibility
 
@@ -29,23 +28,24 @@ CI never generates or changes the private signing key and cannot publish a relea
 
 JDK 21; Android Gradle Plugin 9.2.1; Gradle Wrapper 9.4.1; compileSdk/targetSdk 36; minSdk 29; Android SDK Build Tools 36.0.0. Build debug with `./gradlew :app:assembleDebug`. Debug is NOT upgradeable release. Never use ephemeral debug signing for user-facing Releases.
 
-After this feature branch is merged and its signed private build is available, the next controlled hardware check is **Получить параметры принтера (GetPrinterInfo, без печати)** once with the powered-on LBP2900 connected. The query is read-only and uses the same exact VID:PID, permission, unique BULK endpoint and interface-claim checks. Share **Поделиться отчётом** afterwards. The result should expose the printer's reported `Blk` and `Buf` values; these must be reviewed before any page/job command is enabled. Technical details are collapsible, but the shared report remains complete. If zero devices are shown, reconnect the existing cable once and refresh. This build still sends no document/page data.
+Current next hardware check: confirm Android 16 scroll viewport insets, first-page Auto orientation, separate 90-degree content rotation and optional offline PDF current-page band verification. No new document USB commands. A new signed APK is published only after trusted main CI passes.
 
 See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for audit, limitations and next steps. This is unofficial software not endorsed by Canon.
 
-### Additional isolated CAPT framing validation
-`core/CaptFrame`, `core/BulkIo`, `core/JobSpecification`, `core/JobLedger` add pure-Kotlin CAPT framing, strict reply and bounded USB operation validation plus a conservative one-job gate. These are intentionally NOT connected to a real device; new tests in `StageBCoreTest`. The earlier `engine` components and USB observation improvements remain preserved; consolidation is pending actual printer descriptors. See `docs/STAGE-B-FOUNDATION.md`.
+### CAPT framing and source attribution
 
+Pure-Kotlin CAPT framing and bounded I/O foundations remain in the core, while owner-tested Stage B hardware engines use the pinned HISCOA encoder. See docs and GPL notices for the separate upstream path and test evidence.
 
 ### JSON diagnostics and Telegram sharing
-Manual actions (USB rescan, permission request after the Android permission result, all four CAPT status/info queries, and the explicit Share button) export a new immutable `.json` snapshot. The Show/Hide Details control and background USB list monitoring never open a share window. If installed, standard Telegram is opened directly as a document share target; the user still selects a chat and confirms sending. If unavailable, Android Sharesheet is used. The app has no INTERNET permission and does not transmit on its own. Files are offered through a nonexported scoped FileProvider with temporary URI read grants (cache reports/ only), not file:// paths.
-The JSON contains app version/revision, a scan text record plus structured numeric VID/PID and permission values, bounded manual event history, full bounded CAPT response frame hex when available (header included), and separate decoded values. Raw data is retained even on field-parse failures after a full reply. The original on-screen diagnostic remains available. There is no printer serial query, document data or automatic page printing. JSON schemaVersion=1; unknown/missing values are null rather than invented.
+Manual actions (USB rescan, permission request, and CAPT queries) append private diagnostic history. The explicit Share button exports a new immutable `.json` snapshot. The Show/Hide Details control and background USB list monitoring never open a share window. If installed, standard Telegram is opened directly as a document share target; the user still selects a chat and confirms sending. If unavailable, Android Sharesheet is used. The app has no INTERNET permission and does not transmit on its own. Files are offered through a nonexported scoped FileProvider with temporary URI read grants (cache reports/ only), not file:// paths.
+The JSON contains app version/revision, a scan text record plus structured numeric VID/PID and permission values, bounded manual event history, full bounded CAPT response frame hex when available (header included), and separate decoded values. Raw data is retained even on field-parse failures after a full reply. The original on-screen diagnostic remains available. There is no printer serial query, document data, or automatic print retry. JSON schemaVersion=1; unknown/missing values are null rather than invented.
 
 
-### Experimental first physical sheet
-This branch introduces a native GPLv3-or-later HISCOA compressor (JNI/NDK), an A4 600dpi one-bit registration page, bounded CAPT job initiation/GoOnline, page descriptor, video data and StartPrint. The printer's read-only GetPrinterInfo and GetExtendedStatus response shapes were checked with the owner's 2026-10-22 raw JSON frames, but the actual job sequence **has not yet been tried on hardware**. The tester must first use **Подготовить тестовый растр (без печати)**, then **Напечатать один тестовый лист (эксперимент)** once. Both actions create JSON reports shared to Telegram; Save/Send is initiated by the user. No automatic print retries. A stale/uncertain job may require printer recovery before another attempt. See [Stage B instructions](docs/STAGE-B-TEST-PRINT.md), [third-party licensing](docs/THIRD-PARTY-NOTICES.md), and [GPLv3 COPYING](COPYING).
+### Physically verified Stage B sheets
 
-## Current Stage C scope (supersedes the historical Stage B introduction above)
+The owner confirmed the first A4/600-dpi sheet, two repeat separate jobs, and two distinct sheets in one reserved CAPT job on signed build 71. CAPT completed counters matched each printed test; this is not proof of real PDF printing. Reports are saved locally and sent only by an explicit Share action. No automatic retry. See Stage B docs and THIRD-PARTY-NOTICES.md.
+
+## Current Stage C scope
 
 The owner accepted Stage B after repeat physical test sheets and two distinct
 pages in one CAPT job. Stage C implements offline PDF/JPEG/PNG intake and preview.
