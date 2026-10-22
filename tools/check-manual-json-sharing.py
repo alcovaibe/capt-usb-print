@@ -32,3 +32,13 @@ assert "Intent.createChooser(" not in document[:document.index("    private fun 
 assert "Intent.ACTION_SEND" not in attempt
 assert "USB_ATTEMPT_STARTED" in attempt and "automaticRetry" in attempt
 print("Explicit PDF-report sharing guard passed.")
+
+# Stage C batch report shares the SAME explicit button, with no implicit send.
+batch = Path("app/src/main/java/com/cryonum/captusbprint/PdfBatchPrintAttempt.kt").read_text()
+batch_engine = Path("app/src/main/java/com/cryonum/captusbprint/usb/CaptPdfBatchPrintEngine.kt").read_text()
+assert "Intent.ACTION_SEND" not in batch and "Intent.createChooser(" not in batch
+assert "USB_ATTEMPT_STARTED" in batch and "automaticRetry" in batch
+assert batch.index('persist("USB_ATTEMPT_STARTED")') < batch.index("CaptPdfBatchPrintEngine.run(")
+assert "PreparedPdfCaptPage.MAX_BUFFERED_PAGE_BYTES" in batch_engine
+assert "if (number < totalPages)" in batch_engine
+print("PDF batch explicit-sharing and USB-marker guards passed.")
