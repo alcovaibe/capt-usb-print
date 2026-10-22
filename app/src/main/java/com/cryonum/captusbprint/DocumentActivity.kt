@@ -54,8 +54,8 @@ class DocumentActivity : Activity() {
             textSize = 22f
         })
         layout.addView(TextView(this).apply {
-            text = "PDF, PNG и JPEG: локальный постраничный предпросмотр и план задания. " +
-                "Файл не передаётся в сеть. Предпросмотр не отправляет документ на принтер."
+            text = "PDF, PNG и JPEG: локальный предпросмотр размещения на A4 и план задания. " +
+                "Файл не передаётся в сеть. Печать документа пока не включена."
             textSize = 16f
         })
         layout.addView(Button(this).apply {
@@ -114,6 +114,10 @@ class DocumentActivity : Activity() {
                 text = "Альбомная"
                 tag = Orientation.LANDSCAPE
             })
+        }
+        orientation.setOnCheckedChangeListener { _, _ ->
+            // Orientation changes re-render the same page on the logical A4 sheet.
+            if (session != null) requestPreview(displayedPage)
         }
         planSection.addView(orientation)
         planSection.addView(Button(this).apply {
@@ -183,6 +187,7 @@ class DocumentActivity : Activity() {
         val previous = session
         session = null
         inspectedDocument = null
+        (orientation.getChildAt(0) as RadioButton).isChecked = true
         displayedBitmap?.let {
             preview.clearImage()
             it.recycle()
@@ -197,7 +202,7 @@ class DocumentActivity : Activity() {
             val outcome = runCatching {
                 val opened = DocumentInspector.openSession(applicationContext, uri)
                 try {
-                    opened to opened.renderPreview(0, 1000, 1450)
+                    opened to opened.renderPreview(0, 1000, 1450, Orientation.PORTRAIT)
                 } catch (error: Throwable) {
                     opened.close()
                     throw error
@@ -221,14 +226,14 @@ class DocumentActivity : Activity() {
                     preview.showBitmap(bitmap, 0, doc.pageCount)
                     pageRange.setText("")
                     copies.setText("1")
-                    (orientation.getChildAt(0) as RadioButton).isChecked = true
                     planResult.text = ""
                     planSection.visibility = View.VISIBLE
                     val rotation = doc.rotationDegrees?.let { "; EXIF: ${it}°" } ?: ""
                     "${doc.format.label}: ${doc.pageCount} стр.; " +
                         "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
                         "${doc.copiedBytes} байт.\n" +
-                        "Предпросмотр готов. Печатные и сетевые команды не выполнялись."
+                        "Предпросмотр A4 (вписать; предварительный отступ около 11 мм) готов. " +
+                        "Фактическая геометрия печати ещё не проверена; USB-команды не выполнялись."
                 }, { error ->
                     preview.visibility = View.GONE
                     when (error) {
@@ -246,10 +251,11 @@ class DocumentActivity : Activity() {
         if (index !in 0 until opened.overview.pageCount) return
         val request = generation
         val previewRequest = ++previewGeneration
+        val requestedOrientation = selectedOrientation()
         preview.setLoading()
         worker.execute {
             if (request != generation) return@execute
-            val outcome = runCatching { opened.renderPreview(index, 1000, 1450) }
+            val outcome = runCatching { opened.renderPreview(index, 1000, 1450, requestedOrientation) }
             runOnUiThread {
                 if (isFinishing || isDestroyed || request != generation ||
                     previewRequest != previewGeneration) {
@@ -279,17 +285,13 @@ class DocumentActivity : Activity() {
             planResult.text = "Укажи целое количество копий от 1 до 20."
             return
         }
-        val selectedOrientation = if ((orientation.getChildAt(1) as RadioButton).isChecked) {
-            Orientation.LANDSCAPE
-        } else {
-            Orientation.PORTRAIT
-        }
+        val chosenOrientation = selectedOrientation()
         val plan = runCatching {
             JobSpecification.create(
                 sourcePageCount = doc.pageCount,
                 pages = pageRange.text.toString(),
                 copies = count,
-                orientation = selectedOrientation
+                orientation = chosenOrientation
             )
         }
         planResult.text = plan.fold({ job ->
@@ -308,6 +310,13 @@ class DocumentActivity : Activity() {
                 "Ограничение — до 2000 итоговых листов. Ничего не напечатано."
         })
     }
+
+    private fun selectedOrientation(): Orientation =
+        if ((orientation.getChildAt(1) as RadioButton).isChecked) {
+            Orientation.LANDSCAPE
+        } else {
+            Orientation.PORTRAIT
+        }
 
     override fun onDestroy() {
         generation++

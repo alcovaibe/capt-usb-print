@@ -66,3 +66,25 @@ The importer and display preview perform *offline actions only*.
    offline use, interruption and recovery before accepting Stage C.
 
 Do not interpret the green app build as validation of physical document printing.
+
+
+## Stage C shared A4 layout proposal (feature branch, not yet merged or hardware-accepted)
+
+- Pure `A4PageGeometry.fit` derives layout from the Stage B physically accepted
+  4960 × 7016 portrait A4 / 600-dpi grid. Landscape is a logical 7016 × 4960
+  sheet; mapping/rotation onto the portrait CAPT wire grid is NOT implemented.
+- The current FIT-only layout uses a symmetric provisional 260-pixel software
+  inset (about 11 mm at 600 dpi). This is a conservative layout choice informed
+  by Stage B registration marks, NOT a measured hardware printable boundary.
+  No 100% physical-size or margin-accuracy claim is made.
+- The display bitmap for each PDF page or EXIF-oriented JPEG/PNG is now composed
+  on a white A4 sheet from that same placement, scaled to bounded display size.
+  Portrait/landscape changes re-render the current page. The preview is still
+  display-quality, not a 600-dpi monochrome or CAPT print raster.
+- Pure JVM geometry tests check both logical orientations, bounds, aspect ratio,
+  preview-to-physical placement mapping, pixel budget and rejected invalid input.
+- Next: verify the new layout on HONOR (portrait/landscape PDF, EXIF JPEG, PNG);
+  implement bounded sequential print rasterization, rotation for landscape CAPT,
+  mono conversion and owner-measured printed scale BEFORE enabling document print.
+- Neither Stage B engines nor USB ownership, signed release, sharing or PrintService
+  are changed by this proposal.
