@@ -13,7 +13,11 @@ assert 'recordEvent("PrepareTestPage"' in main
 for query in ("GetBasicStatus", "GetExtendedStatus", "GetInputStatus", "GetPrinterInfo"):
     assert query in main
 start_of_share = main.index("    private fun shareReport() {")
-assert "startActivity(" not in main[:start_of_share], "Only explicit share handler may open another app"
+prefix = main[:start_of_share]
+assert "Intent.ACTION_SEND" not in prefix, "Implicit JSON send before explicit sharing"
+assert "Intent.createChooser(" not in prefix, "Implicit Android sharing chooser"
+assert "startActivity(telegram)" not in prefix, "Implicit Telegram launch"
+# Internal app navigation (e.g. to DocumentActivity) is intentionally allowed.
 assert "saveDiagnosticSnapshot()" in main and "restoreDiagnosticEvents()" in main
 assert 'File(filesDir, "capt-diagnostic-latest.json")' in main
 print("Manual-only JSON export guard passed.")
