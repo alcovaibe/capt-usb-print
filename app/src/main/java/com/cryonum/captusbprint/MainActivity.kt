@@ -15,8 +15,6 @@ import android.os.Looper
 import android.os.Build
 import android.view.WindowInsets
 import android.util.TypedValue
-import android.util.AtomicFile
-import android.util.Log
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.View
@@ -45,8 +43,6 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import org.json.JSONArray
-import org.json.JSONObject
 
 class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
@@ -65,9 +61,6 @@ class MainActivity : Activity() {
     private val testPrintCancelled = AtomicBoolean(false)
     private var scanGeneration = 0
     private var receiverRegistered = false
-    // ACTION_USB_DEVICE_ATTACHED is an ACTIVITY intent, not a normal broadcast.
-    // Observe the UsbManager list only while our Activity is visible; never
-    // repeatedly probe/open a printer when there is no actual enumeration change.
     private val monitor = Handler(Looper.getMainLooper())
     private var monitoring = false
     private var observedKeys: Set<String>? = null
@@ -88,7 +81,6 @@ class MainActivity : Activity() {
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
-                // Wake the list monitor promptly, including when another USB device remains.
                 monitor.removeCallbacks(pollUsb)
                 monitor.post(pollUsb)
             }
@@ -125,7 +117,6 @@ class MainActivity : Activity() {
             recordEvent("RefreshUsb", "requested", "User requested USB rescan")
             refresh()
         })
-        // External sharing is only triggered by this explicit button.
         content.addView(button(getString(R.string.share_report)) { shareReport() })
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(devices)
@@ -149,8 +140,6 @@ class MainActivity : Activity() {
             isFillViewport = true
             addView(content)
         }
-        // Android 15/16 edge-to-edge: leave space for status/navigation bars
-        // and display cutouts, including when font size or orientation changes.
         scrolling.setOnApplyWindowInsetsListener { _, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
                 val safe = insets.getInsets(
@@ -327,7 +316,6 @@ class MainActivity : Activity() {
 
     private fun requestUsbAccess(row: UsbRow) {
         val manager = getSystemService(Context.USB_SERVICE) as UsbManager
-        // Device path is only used inside the process, never placed into exported report.
         val device = manager.deviceList.values.firstOrNull { it.deviceName == row.deviceKey }
         if (device == null) {
             recordEvent("UsbPermission", "failed", "USB device no longer enumerated")
@@ -343,8 +331,6 @@ class MainActivity : Activity() {
             val permissionIntent = Intent(this, UsbPermissionReceiver::class.java).apply {
                 action = PermissionEvents.ACTION
             }
-            // Explicit receiver avoids implicit mutable PendingIntent restrictions.
-            // MUTABLE permits UsbManager to fill in EXTRA_PERMISSION_GRANTED/EXTRA_DEVICE.
             val pending = PendingIntent.getBroadcast(
                 this, device.deviceId, permissionIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
@@ -382,7 +368,6 @@ class MainActivity : Activity() {
         commandName: String,
         query: () -> com.cryonum.captusbprint.usb.CaptStatusProbeResult
     ) {
-        // Avoid duplicate USB commands if the user taps a status action repeatedly.
         if (captProbeInProgress || testPrintInProgress || rasterPreparationInProgress) return
         captProbeInProgress = true
         status.text = getString(R.string.probe_capt_running, commandName)
@@ -532,8 +517,6 @@ class MainActivity : Activity() {
             "rawResponseFrameHex" to rawFrameHex,
             "decoded" to decoded,
             "reportText" to reportLine,
-            // Counts printer-confirmed pages for this event, not historical total.
-            // Unknown for read-only commands and failed/uncertain print attempts.
             "printedPages" to if (action == "PrintTestPage" &&
                 outcome == "printer_counter_confirmed") 1 else null
         ))
@@ -552,8 +535,6 @@ class MainActivity : Activity() {
                 "versionCode" to BuildConfig.VERSION_CODE,
                 "sourceRevision" to BuildConfig.SOURCE_REVISION
             ),
-            // scan.report is the original device diagnostic, not a reconstruction
-            // from labels. It intentionally excludes complete USB paths and serials.
             "scan" to linkedMapOf(
                 "available" to (snapshot != null),
                 "deviceCount" to snapshot?.devices?.size,
@@ -579,15 +560,23 @@ class MainActivity : Activity() {
         return DiagnosticJson.stringify(report) + "\n"
     }
 
+    private val diagnosticHistory: DiagnosticHistory by lazy {
+        DiagnosticHistory(File(filesDir, "capt-diagnostic-latest.json"))
+    }
+
+    private fun saveDiagnosticSnapshot() {
+        diagnosticHistory.save(jsonReport())
+    }
+
+    private fun restoreDiagnosticEvents() {
+        diagnosticEvents.addAll(diagnosticHistory.loadEvents())
+    }
+
     private fun shareReport() {
-        // Export the current JSON only on an explicit tap; never auto-rescan/share.
         try {
-            // Unique immutable snapshot: a later diagnostic must not overwrite a
-            // file already selected by Telegram or Android Sharesheet.
             val directory = File(cacheDir, "reports").apply { mkdirs() }
             val file = File.createTempFile("capt-diagnostic-", ".json", directory)
             file.writeText(jsonReport(), Charsets.UTF_8)
-            // Keep a bounded set of cache files for grants to previously shared URIs.
             directory.listFiles()?.sortedByDescending { it.lastModified() }
                 ?.drop(24)?.forEach { it.delete() }
             val uri = FileProvider.getUriForFile(
@@ -599,8 +588,6 @@ class MainActivity : Activity() {
                 clipData = ClipData.newUri(contentResolver, file.name, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            // Prefer Telegram proper; Android's chooser remains the fallback when
-            // it is not installed or cannot accept a JSON document on this build.
             val telegram = Intent(send).apply { setPackage("org.telegram.messenger") }
             if (telegram.resolveActivity(packageManager) != null) {
                 try {
