@@ -101,7 +101,7 @@ static unsigned find_msb(unsigned val)
 static bool try_write_longrepeat(struct state *state)
 {
 	unsigned cmd;
-	unsigned best_cmd;
+	unsigned best_cmd = 0; /* Android port: initialize for -Wmaybe-uninitialized. */
 	unsigned best_len = 0;
 
 	for (cmd = 0; cmd < 6; ++cmd) {
