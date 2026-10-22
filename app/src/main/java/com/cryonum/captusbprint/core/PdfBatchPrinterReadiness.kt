@@ -13,11 +13,11 @@ object PdfBatchPrinterReadiness {
     private const val CMD_BUSY = 0x04
     private const val IMAGE_DATA_BUSY = 0x08
     private const val ERROR_BIT = 0x80
-    const val BLOCKING_BITS = NOT_READY or CMD_BUSY or IMAGE_DATA_BUSY or ERROR_BIT
+    private val blockingBits = NOT_READY or CMD_BUSY or IMAGE_DATA_BUSY or ERROR_BIT
 
     fun rejection(statusByte: Int): String? {
         require(statusByte in 0..255)
-        if ((statusByte and BLOCKING_BITS) == 0) return null
+        if ((statusByte and blockingBits) == 0) return null
         val hex = String.format(Locale.ROOT, "%02X", statusByte)
         return "GetBasicStatus=0x$hex: принтер сообщает занятость или ошибку. " +
             "ReserveUnit не отправлялся. Проверь состояние принтера; автоматического сброса нет."
