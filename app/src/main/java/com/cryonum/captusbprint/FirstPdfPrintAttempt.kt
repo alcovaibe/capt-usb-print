@@ -9,6 +9,7 @@ import com.cryonum.captusbprint.usb.CaptPdfPrintEngine
 import com.cryonum.captusbprint.usb.CaptTestPrintResult
 import java.io.File
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Single explicit first-PDF hardware attempt. The private marker survives an
@@ -16,6 +17,7 @@ import java.util.concurrent.CancellationException
  * Document source/path/name/URI and any raster or payload are excluded.
  */
 internal object FirstPdfPrintAttempt {
+    private val active = AtomicBoolean(false)
     fun reportFile(context: Context): File =
         File(context.filesDir, "capt-pdf-print-latest.json")
 
@@ -24,6 +26,12 @@ internal object FirstPdfPrintAttempt {
         rotation: Int, deviceKey: String, cancelled: () -> Boolean,
         progress: (String) -> Unit
     ): String {
+        // A re-created Activity must not overwrite an active attempt's private
+        // marker while another one-page operation is still underway.
+        if (!active.compareAndSet(false, true)) {
+            return "Другая PDF-попытка ещё активна. Новый сеанс не запущен; предыдущий отчёт сохранён."
+        }
+        try {
         val count = source.overview.pageCount
         fun persist(phase: String, result: CaptTestPrintResult? = null, failure: String? = null) {
             val record = linkedMapOf<String, Any?>(
@@ -81,6 +89,9 @@ internal object FirstPdfPrintAttempt {
                 failure = error.javaClass.simpleName)
             if (started) "Попытка прервана: исход печати неизвестен. Проверь принтер перед повтором."
             else "Подготовка не завершена (${error.javaClass.simpleName}); команды печати не отправлялись."
+        }
+        } finally {
+            active.set(false)
         }
     }
 }
