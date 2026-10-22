@@ -1,6 +1,7 @@
 package com.cryonum.captusbprint
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -28,6 +29,7 @@ import com.cryonum.captusbprint.BuildConfig
 import com.cryonum.captusbprint.core.DiagnosticJson
 import com.cryonum.captusbprint.core.CaptTestPagePreparation
 import com.cryonum.captusbprint.usb.CaptTestPrintEngine
+import com.cryonum.captusbprint.usb.CaptTwoPagePrintEngine
 import com.cryonum.captusbprint.usb.PermissionEvents
 import com.cryonum.captusbprint.usb.CaptStatusProbe
 import com.cryonum.captusbprint.usb.CaptStatusProbeException
@@ -294,6 +296,9 @@ class MainActivity : Activity() {
                 card.addView(button(getString(R.string.test_page_print)) {
                     printExperimentalTestPage(row)
                 })
+                card.addView(button(getString(R.string.two_page_print)) {
+                    confirmTwoPagePrint(row)
+                })
                 card.addView(button(getString(R.string.cancel_test_page)) {
                     if (testPrintInProgress) {
                         testPrintCancelled.set(true)
@@ -498,6 +503,57 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun confirmTwoPagePrint(row: UsbRow) {
+        if (testPrintInProgress || captProbeInProgress || rasterPreparationInProgress) return
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.two_page_confirm_title))
+            .setMessage(getString(R.string.two_page_confirm_message))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(getString(R.string.two_page_confirm_action)) { _, _ ->
+                printExperimentalTwoPages(row)
+            }
+            .show()
+    }
+
+    private fun printExperimentalTwoPages(row: UsbRow) {
+        if (testPrintInProgress || captProbeInProgress || rasterPreparationInProgress) return
+        testPrintInProgress = true
+        testPrintCancelled.set(false)
+        status.text = getString(R.string.two_page_started)
+        worker.execute {
+            val result = CaptTwoPagePrintEngine.run(applicationContext, row.deviceKey,
+                { testPrintCancelled.get() }) { message ->
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) status.text = message
+                }
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                testPrintInProgress = false
+                val detail = "CAPT two-page experiment: ${result.outcome}; stage=${result.stage}; " +
+                    "sentPrintDataBytes=${result.sentPrintDataBytes}; " +
+                    "confirmedPages=${result.printerConfirmedPages ?: "unavailable"}; " +
+                    result.trace.lastOrNull().orEmpty()
+                currentReport += "\n" + detail + "\n"
+                reportView.text = currentReport
+                recordEvent("PrintTwoTestPages", result.outcome, result.summary,
+                    result.lastStatusFrameHex,
+                    mapOf<String, Any?>(
+                        "stage" to result.stage,
+                        "requestedPages" to 2,
+                        "oneReservedCaptJob" to true,
+                        "sentPrintDataBytes" to result.sentPrintDataBytes,
+                        "compressedSha256" to result.compressedSha256,
+                        "printerConfirmedPages" to result.printerConfirmedPages,
+                        "trace" to result.trace,
+                        "automaticRetry" to false
+                    ), detail)
+                status.text = result.summary
+                Toast.makeText(this, result.summary, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun utcNow(): String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT)
         .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
 
@@ -517,8 +573,11 @@ class MainActivity : Activity() {
             "rawResponseFrameHex" to rawFrameHex,
             "decoded" to decoded,
             "reportText" to reportLine,
-            "printedPages" to if (action == "PrintTestPage" &&
-                outcome == "printer_counter_confirmed") 1 else null
+            "printedPages" to if (outcome == "printer_counter_confirmed") when (action) {
+                "PrintTestPage" -> 1
+                "PrintTwoTestPages" -> 2
+                else -> null
+            } else null
         ))
         if (diagnosticEvents.size > 64) diagnosticEvents.removeAt(0)
         saveDiagnosticSnapshot()
