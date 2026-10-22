@@ -125,6 +125,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Check space before Android 16 emulator
+        run: |
+          df -h "$HOME" "$RUNNER_TEMP"
+          df -i "$HOME" "$RUNNER_TEMP"
       - name: Verify initial install or in-place upgrade on Android 16
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -132,6 +136,11 @@ jobs:
           target: default
           arch: x86_64
           profile: pixel_6
+          # The emulator's Pixel 6 default requested 7,372.8 MB of userdata
+          # when only 6,421-7,172 MB remained on GitHub runners (runs 50/52).
+          # An explicit 2 GiB userdata partition is sufficient for two APK
+          # installations and avoids a deterministic AVD boot failure.
+          disk-size: 2048M
           disable-animations: true
           script: bash tools/emulator-upgrade-check.sh
       - name: Publish verified signed APK only after emulator success
