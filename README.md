@@ -21,12 +21,7 @@ Private signed prereleases: [Releases](https://github.com/alcovaibe/capt-usb-pri
 
 The previous A1 diagnostic prerelease is a **debug app** using `com.cryonum.captusbprint.debug`; it cannot upgrade into a signed release. Install the first permanently signed A2 APK as a separate app, then all newer signed A2+ builds can install over it. There is no automatic in-app updater (private GitHub release requires authorization and the diagnostic app deliberately has no INTERNET permission).
 
-**Owner setup (one time):** A long-lived key has been generated specifically for this project. Owner must securely download and back up `CAPT_USB_Print_SIGNING_BACKUP.zip` from the conversation; it contains a PKCS12 and the prepared GitHub secret JSON. Do **not** commit, send publicly, upload to Releases or share it.
-
-1. Open `alcovaibe/capt-usb-print` → **Settings → Secrets and variables → Actions → New repository secret**.
-2. Secret name: `ANDROID_SIGNING`. Value: the **entire** contents of `ANDROID_SIGNING.secret.json` inside the private backup ZIP (one JSON object).
-3. Save and initiate **Actions → CAPT USB Print checks and signed prerelease → Run workflow** on `main`. On success, the private signed release appears in Releases.
-4. Keep *two separate encrypted backups* of the ZIP. Losing the private key means losing the ability to install later APKs as compatible upgrades.
+**Owner-controlled signing setup is complete.** The repository secret `ANDROID_SIGNING` is configured, and signed build 33 passed the signature, package/version, prior-release and Android 16 in-place-upgrade checks before publication. Keep *two separate encrypted backups* of `CAPT_USB_Print_SIGNING_BACKUP.zip` from the conversation; it contains the private key backup and secret JSON. Do **not** commit, send publicly, upload to Releases or share that backup. Losing the private key means losing the ability to install later APKs as compatible upgrades.
 
 CI never generates or changes the private signing key and cannot publish a release without the configured secret. `config/release-certificate.sha256` pins the independently generated public signing certificate, not the secret. Only the release job for trusted `main` has access to signing material, reconstructed outside the checkout and removed on completion. A signed release must pass build/lint/unit tests, APK verification and emulator install or in-place update on API 36 before publishing.
 
