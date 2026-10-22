@@ -378,20 +378,22 @@ object CaptStatusProbe {
 
         // GetBasicStatus replies can be as short as 6 total bytes (4-byte header
         // plus two status bytes). Do not discard this valid protocol shape.
-        val candidates = CaptFrame.lengthCandidates(frame, MAX_STATUS_FRAME_BYTES)
-        val maximum = candidates.maxOrNull()
-            ?: throw CaptStatusProbeException(
+        val expectedLength = try {
+            CaptFrame.preferredReplyLength(frame, MAX_STATUS_FRAME_BYTES)
+        } catch (_: IllegalArgumentException) {
+            throw CaptStatusProbeException(
                 "Длина ответа CAPT не распознана или превышает лимит; " +
                     headerDetails(frame, firstCount)
             )
+        }
         var received = firstCount
         val deadline = SystemClock.elapsedRealtime() + USB_TIMEOUT_MS
 
         while (true) {
-            if (CaptFrame.headerLengthMatches(frame, received)) {
+            if (received == expectedLength) {
                 return frame.copyOf(received)
             }
-            if (received >= maximum) {
+            if (received > expectedLength) {
                 throw CaptStatusProbeException(
                     "Фактическая длина ответа CAPT не совпала с заголовком; " +
                         "receivedBytes=$received; " + headerDetails(frame, received)
@@ -404,7 +406,7 @@ object CaptStatusProbe {
                         headerDetails(frame, received)
                 )
             }
-            val requested = minOf(maximum - received, frame.size - received)
+            val requested = minOf(expectedLength - received, frame.size - received)
             val count = try {
                 connection.bulkTransfer(
                     endpoint, frame, received, requested, minOf(1000, remaining)
