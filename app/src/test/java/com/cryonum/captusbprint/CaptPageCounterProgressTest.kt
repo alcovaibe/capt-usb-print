@@ -83,6 +83,26 @@ class CaptPageCounterProgressTest {
         }
     }
 
+    @Test fun secondStartPrintRequiresSecondNewDecodingCounter() {
+        val baseline = CaptPageCounterProgress.snapshot(status(0))
+        assertFalse(CaptPageCounterProgress.pageDecodedSince(baseline, status(0), 1))
+        assertTrue(CaptPageCounterProgress.pageDecodedSince(baseline,
+            status(0).copy(pageDecoding = 1), 1))
+        assertFalse(CaptPageCounterProgress.pageDecodedSince(baseline,
+            status(1), 2))
+        assertTrue(CaptPageCounterProgress.pageDecodedSince(baseline,
+            status(1).copy(pageDecoding = 2), 2))
+        assertFalse(CaptPageCounterProgress.pagesCompletedSince(baseline, status(1), 2))
+        assertTrue(CaptPageCounterProgress.pagesCompletedSince(baseline, status(2), 2))
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptPageCounterProgress.pageDecodedSince(baseline, status(2), 3)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptPageCounterProgress.pageDecodedSince(
+                CaptPageCounterProgress.snapshot(status(0xffff)), status(0), 2)
+        }
+    }
+
     @Test fun priorZeroCountAlsoRequiresNewCounterIncrease() {
         val initial = CaptPageCounterProgress.snapshot(status(0))
         assertFalse(CaptPageCounterProgress.nextPageCompleted(initial, status(0)))

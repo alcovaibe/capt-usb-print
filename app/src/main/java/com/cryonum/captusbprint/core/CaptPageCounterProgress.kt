@@ -39,6 +39,17 @@ object CaptPageCounterProgress {
     fun nextPageDecoded(initial: CaptPageCounters, current: CaptExtendedStatus): Boolean =
         snapshot(current).decoding > initial.decoding
 
+    /** The CAPT decoder must acknowledge this job's current page, not an old one.
+     * No rollover behavior is assumed. Used by two-page StartPrint(1)/(2).
+     */
+    fun pageDecodedSince(
+        initial: CaptPageCounters, current: CaptExtendedStatus, page: Int
+    ): Boolean {
+        require(page in 1..2) { "Only the bounded two-sheet test is supported" }
+        require(initial.decoding in 0..0xffff - page) { "Unverified decoding counter rollover" }
+        return snapshot(current).decoding >= initial.decoding + page
+    }
+
     /** Offline-tested two-page checkpoint. Never counts a previous job's pages.
      * This is not called by the physical printer path until repeat-job testing.
      */

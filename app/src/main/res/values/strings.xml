@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">CAPT USB Print · Диагностика</string>
     <string name="stage_title">Этап B · Проверка CAPT</string>
-    <string name="no_printing">Этап B: экспериментальная печать одного тестового листа. PDF и изображения ещё не поддерживаются. Результаты действий сохраняются в локальный JSON; Telegram открывается только кнопкой «Поделиться JSON-ответом».</string>
+    <string name="no_printing">Этап B: экспериментальная печать одного или двух тестовых листов. PDF и изображения ещё не поддерживаются. Результаты действий сохраняются в локальный JSON; Telegram открывается только кнопкой «Поделиться JSON-ответом».</string>
     <string name="probe_capt_status">Проверить состояние CAPT (без печати)</string>
     <string name="probe_capt_running">Запрос %1$s…</string>
     <string name="probe_capt_extended_status">Проверить расширенное состояние CAPT (без печати)</string>
@@ -11,6 +11,11 @@
     <string name="prepare_test_page">Подготовить тестовый растр (без печати)</string>
     <string name="preparing_test_page">Кодирование тестовой страницы HISCOA (локально)…</string>
     <string name="test_page_print">Напечатать один тестовый лист (сразу запускает печать)</string>
+    <string name="two_page_print">Напечатать 2 разных листа (одно задание, эксперимент)</string>
+    <string name="two_page_confirm_title">Запустить двухстраничную печать?</string>
+    <string name="two_page_confirm_message">Это отправит реальные команды Canon LBP2900. В одном задании CAPT будут напечатаны два листа A4: на втором есть две дополнительные полосы. Подготовьте бумагу, не запускайте повторно при неизвестном результате. JSON отправляется отдельно кнопкой «Поделиться JSON-ответом».</string>
+    <string name="two_page_confirm_action">Напечатать 2 листа</string>
+    <string name="two_page_started">Готовим два растра HISCOA; после подготовки начнётся одно USB-задание на два листа…</string>
     <string name="cancel_test_page">Отменить текущий тест печати</string>
     <string name="test_page_started">Подготовка тестового листа перед USB-печатью…</string>
     <string name="test_page_cancel_requested">Запрошена отмена; автоматического повтора не будет.</string>
