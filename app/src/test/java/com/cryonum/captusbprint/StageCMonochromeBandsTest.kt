@@ -29,7 +29,7 @@ class StageCMonochromeBandsTest {
         val second = MonochromeBands.packArgb(pixels.copyOfRange(8 * 3, 8 * 8), 8, 3, 5)
         assertArrayEquals(whole, first + second)
         assertTrue(whole.any { it.toInt() != 0 })
-        assertTrue(whole.any { it.toInt() and 0xff != 255 })
+        assertTrue(whole.any { (it.toInt() and 0xff) != 255 })
     }
 
     @Test fun rejectsInvalidBoundsOrPixelBudget() {
