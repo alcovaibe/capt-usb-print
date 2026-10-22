@@ -179,15 +179,46 @@ class DocumentActivity : Activity() {
 
     private fun inspect(uri: Uri) {
         val request = ++generation
+        ++previewGeneration
+        val previous = session
+        session = null
         inspectedDocument = null
+        displayedBitmap?.let {
+            preview.clearImage()
+            it.recycle()
+            displayedBitmap = null
+        }
+        preview.visibility = View.GONE
         planSection.visibility = View.GONE
-        message.text = "Проверка выбранного документа… На принтер ничего не отправляется."
+        message.text = "Проверка выбранного документа и подготовка первой страницы…"
         worker.execute {
-            val outcome = runCatching { DocumentInspector.inspect(applicationContext, uri) }
+            // The worker serializes all renders; never delete a source mid-render.
+            previous?.close()
+            val outcome = runCatching {
+                val opened = DocumentInspector.openSession(applicationContext, uri)
+                try {
+                    opened to opened.renderPreview(0, 1000, 1450)
+                } catch (error: Throwable) {
+                    opened.close()
+                    throw error
+                }
+            }
             runOnUiThread {
-                if (isFinishing || isDestroyed || request != generation) return@runOnUiThread
-                message.text = outcome.fold({ doc ->
+                if (isFinishing || isDestroyed || request != generation) {
+                    outcome.getOrNull()?.let { (opened, bitmap) ->
+                        bitmap.recycle()
+                        opened.close()
+                    }
+                    return@runOnUiThread
+                }
+                message.text = outcome.fold({ (opened, bitmap) ->
+                    session = opened
+                    val doc = opened.overview
                     inspectedDocument = doc
+                    displayedBitmap = bitmap
+                    displayedPage = 0
+                    preview.showDocument()
+                    preview.showBitmap(bitmap, 0, doc.pageCount)
                     pageRange.setText("")
                     copies.setText("1")
                     (orientation.getChildAt(0) as RadioButton).isChecked = true
@@ -197,13 +228,42 @@ class DocumentActivity : Activity() {
                     "${doc.format.label}: ${doc.pageCount} стр.; " +
                         "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
                         "${doc.copiedBytes} байт.\n" +
-                        "Проверка успешна. Печать и загрузка в сеть не выполнялись."
+                        "Предпросмотр готов. Печатные и сетевые команды не выполнялись."
                 }, { error ->
+                    preview.visibility = View.GONE
                     when (error) {
                         is SecurityException -> "Нет доступа к документу или PDF защищён паролем."
-                        is IllegalArgumentException -> "Файл не поддерживается, повреждён или превышает безопасные пределы проверки."
-                        else -> "Не удалось прочитать документ. Проверь доступность файла и свободное место."
+                        is IllegalArgumentException -> "Файл не поддерживается, повреждён или превышает безопасные пределы."
+                        else -> "Не удалось открыть предпросмотр. Проверь доступность файла и свободное место."
                     } + "\nПечатные команды не отправлялись."
+                })
+            }
+        }
+    }
+
+    private fun requestPreview(index: Int) {
+        val opened = session ?: return
+        if (index !in 0 until opened.overview.pageCount) return
+        val request = generation
+        val previewRequest = ++previewGeneration
+        preview.setLoading()
+        worker.execute {
+            if (request != generation) return@execute
+            val outcome = runCatching { opened.renderPreview(index, 1000, 1450) }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || request != generation ||
+                    previewRequest != previewGeneration) {
+                    outcome.getOrNull()?.recycle()
+                    return@runOnUiThread
+                }
+                outcome.fold({ bitmap ->
+                    preview.clearImage()
+                    displayedBitmap?.recycle()
+                    displayedBitmap = bitmap
+                    displayedPage = index
+                    preview.showBitmap(bitmap, index, opened.overview.pageCount)
+                }, {
+                    preview.showError("Не удалось показать страницу ${index + 1}. Выберите другой документ.")
                 })
             }
         }
