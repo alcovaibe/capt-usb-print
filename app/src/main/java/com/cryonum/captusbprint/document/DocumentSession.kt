@@ -109,9 +109,10 @@ class DocumentSession internal constructor(
     }
 
     private fun applyExifOrientation(bitmap: Bitmap): Bitmap {
-        val exif = ExifInterface(source)
-        val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
-            ExifInterface.ORIENTATION_NORMAL)
+        val orientation = runCatching {
+            ExifInterface(source).getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL)
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
         val transform = Matrix()
         when (orientation) {
             ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> transform.setScale(-1f, 1f)
