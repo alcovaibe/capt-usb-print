@@ -97,3 +97,9 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Added adaptive and round adaptive launcher icons matching the structure in `alcovaibe/Bluetooth-disabler`: solid white background, printer line-art foreground, and monochrome foreground for themed Android icons. The foreground is a scalable VectorDrawable based on the approved printer graphic.
 - Added layer-list fallback resources. The old `ic_app.xml` remains unused; the manifest now resolves the new adaptive icon.
 - This is an icon/resource change only; it does not imply USB hardware validation or printing support.
+
+
+## Owner signing secret validation checkpoint (2026-10-22)
+- Owner reports that repository Actions secret `ANDROID_SIGNING` has now been added.
+- The previous run #13 started before this confirmation; its signed-release job was skipped, so it does not validate the new secret.
+- The next push to `main` will test the JSON schema, PKCS12 restoration, release signature, monotonically increasing versionCode and Android 16 install/upgrade. A release is published only if each release-gate step succeeds. Never echo or fetch secret contents.
