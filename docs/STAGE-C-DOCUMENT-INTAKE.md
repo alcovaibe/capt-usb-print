@@ -31,7 +31,7 @@ altering the hardware-confirmed Stage B USB engines.
   **«Проверить план задания (без печати)»** validates and displays a bounded collated
   output order using the existing immutable JobSpecification. Overlaps, missing pages,
   malformed ranges and more than 2000 output sheets are rejected.
-- The document cache is still deleted after metadata inspection. This plan is a
+- The original metadata-only inspector still closes temporary sources; the preview session temporarily retains one validated source for display. This plan is a
   pure calculation, not a retained/queued document or preview and never calls USB,
   CAPT, Telegram or PrintService. The user must choose the document again for a
   future rendering/printing action.
@@ -39,11 +39,20 @@ altering the hardware-confirmed Stage B USB engines.
   limits and malformed input.
 
 ## Explicitly NOT completed by this foundation
-A visual page preview, actual rasterization, geometry and monochrome conversion,
+The display-only visual preview needs device verification; actual print rasterization, geometry and monochrome conversion,
 PDF/image CAPT printing, applying the offline options to actual print jobs,
 cancellation, source access retention for queued jobs, single shared USB
 queue, system PrintService and real-document acceptance remain to be built.
 The importer performs *offline inspection only*.
+
+
+## Offline visual preview (new implementation; owner hardware test pending)
+
+- After a validated PDF/PNG/JPEG intake, the document screen displays a locally rendered page on a neutral paper-style surface. PDF supports previous/next page navigation; images appear as one page. No print button is added by this change.
+- Retain exactly one validated private file (up to 64 MiB) while the preview screen owns it. Release it when another document replaces it or the screen is destroyed. Do not log source names, content URIs, or page raster data.
+- Render only the requested PDF page using Android PdfRenderer, or sample a PNG/JPEG with BitmapFactory. Bound the displayed bitmap to a 1600-pixel edge and 2.4M pixels; apply EXIF orientation (including mirrored cases) to the sampled image. Work runs on one background executor and stale rendered bitmaps are recycled.
+- The visual preview is display-only. It does **not yet simulate the real 600-dpi print geometry**, apply copies/page ranges to actual output, generate HISCOA document frames, claim USB, or trigger Telegram. Those are subsequent Stage C milestones.
+- Owner acceptance still requires checking an actual PDF with several pages, one JPEG with EXIF rotation, one PNG, page navigation and repeated file changes on HONOR X9c. A green CI alone is insufficient.
 
 ## Stage C implementation sequence
 1. Safe local import/format validation and document metadata (this PR).
