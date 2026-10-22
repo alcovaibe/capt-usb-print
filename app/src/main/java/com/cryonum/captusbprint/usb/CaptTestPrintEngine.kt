@@ -223,7 +223,9 @@ object CaptTestPrintEngine {
             return CaptTestPrintResult("printer_counter_confirmed",
                 "Принтер подтвердил завершение страницы счётчиками CAPT. Проверь реальный лист.",
                 stage, bytesSent, shaHex, pages, lastFrame, trace)
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
+            // JNI linkage/initialization failure must also become a JSON
+            // diagnostic, not crash the Activity's serial USB worker.
             val uncertain = sideEffectsStarted || bytesSent > 0L
             val outcome = if (uncertain) "unknown_after_print_command" else "failed_before_print_commands"
             note("Stopped at $stage: ${error.javaClass.simpleName}: ${error.message ?: "no details"}; no automatic resend or recovery")
