@@ -22,3 +22,16 @@ test "$(grep -Ec '^disk[.]dataPartition[.]size=' "$config")" -eq 1
 grep -Fx 'disk.dataPartition.size=2048M' "$config"
 echo "AVD data partition normalized to one 2048M entry."
 df -h "$avd_dir"
+
+# Emulator 37.2.12 additionally needs roughly 7.37 GB of free host disk
+# even with a 2 GiB configured userdata partition (confirmed in runs 56/58).
+# Guard the actual post-system-image free space, not just the AVD config.
+if [[ "${CAPT_SKIP_DISK_CHECK:-0}" != "1" ]]; then
+  available_kib="$(df -Pk "$avd_dir" | awk 'NR == 2 { print $4 }')"
+  required_kib="$((9 * 1024 * 1024))"
+  if (( available_kib < required_kib )); then
+    echo "::error::Insufficient host disk for Android 16 emulator: ${available_kib} KiB free, ${required_kib} KiB required including headroom." >&2
+    exit 1
+  fi
+  echo "Emulator host disk check passed: ${available_kib} KiB free."
+fi
