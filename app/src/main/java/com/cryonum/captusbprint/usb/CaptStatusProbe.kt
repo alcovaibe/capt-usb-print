@@ -64,6 +64,12 @@ object CaptStatusProbe {
         context: Context,
         deviceKey: String,
         commandToSend: Int
+    ): CaptStatusProbeResult = CaptUsbOwnership.withExclusive {
+        queryExclusive(context, deviceKey, commandToSend)
+    }
+
+    private fun queryExclusive(
+        context: Context, deviceKey: String, commandToSend: Int
     ): CaptStatusProbeResult {
         val manager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
             ?: throw CaptStatusProbeException("USB Manager недоступен.")

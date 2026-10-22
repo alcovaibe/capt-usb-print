@@ -25,7 +25,8 @@ internal class CaptUsbSession private constructor(
     private val iface: UsbInterface,
     private val inEp: UsbEndpoint,
     private val outEp: UsbEndpoint,
-    private val cancelled: () -> Boolean
+    private val cancelled: () -> Boolean,
+    private val ownership: CaptUsbOwnership.Lease
 ) : AutoCloseable {
     private val channel = object : BulkChannel {
         override fun write(data: ByteArray, offset: Int, length: Int, timeoutMillis: Int): Int =
@@ -90,11 +91,16 @@ internal class CaptUsbSession private constructor(
     }
 
     override fun close() {
-        try { connection.releaseInterface(iface) } finally { connection.close() }
+        try { connection.releaseInterface(iface) }
+        finally {
+            try { connection.close() } finally { ownership.close() }
+        }
     }
 
     companion object {
         fun open(context: Context, key: String, cancelled: () -> Boolean): CaptUsbSession {
+            val ownership = CaptUsbOwnership.acquire()
+            try {
             val usb = context.getSystemService(Context.USB_SERVICE) as UsbManager
             val device = usb.deviceList.values.singleOrNull { it.deviceName == key }
                 ?: throw IllegalStateException("Canon printer is not connected")
@@ -137,9 +143,13 @@ internal class CaptUsbSession private constructor(
                 ?: throw IllegalStateException("Failed to open device: busy or disconnected")
             try {
                 check(conn.claimInterface(iface, false)) { "Failed to claim USB without force" }
-                return CaptUsbSession(conn, iface, input, out, cancelled)
-            } catch (error: Exception) {
+                return CaptUsbSession(conn, iface, input, out, cancelled, ownership)
+            } catch (error: Throwable) {
                 conn.close()
+                throw error
+            }
+            } catch (error: Throwable) {
+                ownership.close()
                 throw error
             }
         }
