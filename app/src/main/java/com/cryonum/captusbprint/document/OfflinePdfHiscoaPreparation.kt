@@ -8,7 +8,7 @@ import java.util.concurrent.CancellationException
  *
  * The producer supplies one 64-row band at a time (last band is shorter).
  * Only the current source band and its compressed result are live inside this
- * function; compressed/document bytes are neither logged nor retained.
+ * function by default; an explicit callback may copy bounded compressed bands.
  * This deliberately has no USB, CAPT job, file-export or print dependency.
  */
 data class OfflineHiscoaPageSummary(
@@ -29,7 +29,8 @@ object OfflinePdfHiscoaPreparation {
     fun prepare(
         produceBands: (consumer: (startLine: Int, packedBand: ByteArray) -> Unit) -> Unit,
         encode: (pixels: ByteArray, lineBytes: Int, lines: Int, lastBand: Boolean) -> ByteArray,
-        cancelled: () -> Boolean = { false }
+        cancelled: () -> Boolean = { false },
+        onCompressedBand: (startLine: Int, bytes: ByteArray) -> Unit = { _, _ -> }
     ): OfflineHiscoaPageSummary {
         fun guard() {
             if (cancelled() || Thread.currentThread().isInterrupted) {
@@ -61,6 +62,10 @@ object OfflinePdfHiscoaPreparation {
             check(nextTotal <= MAX_COMPRESSED_PAGE_BYTES) {
                 "Offline compressed page exceeded its bounded budget"
             }
+            // Optional consumer may build one bounded in-memory page for the
+            // future print adapter. Default offline check discards all output.
+            guard()
+            onCompressedBand(expectedY, compressed)
             rawBytes += packed.size
             compressedBytes = nextTotal
             maxCompressed = maxOf(maxCompressed, compressed.size)

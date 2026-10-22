@@ -215,3 +215,23 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
   AndroidManifest are untouched. No PDF document print is claimed. Native
   device confirmation for one real PDF page is the next owner checkpoint;
   thereafter shared job queue and first guarded print can be developed.
+
+
+## Owner-confirmed offline PDF/HISCOA and prepared-page branch (2026-10-22)
+
+- Owner screenshot on HONOR confirms offline page 1 PDF + native HISCOA:
+  110 bands, raw 4,349,920 bytes, compressed 277,764 bytes, largest 11,244;
+  no document USB/CAPT command was sent. Avoid logging document data,
+  content names/URI and content-derived hashes.
+- Main parent for feature branch is `24418555f881e7d66a5cfabf1178a7164fd75f46`;
+  user explicitly requested **ordinary, non-draft PRs from now on** and
+  retains manual merge control. `feat/stage-c-prepared-pdf-capt-page`.
+- `PreparedPdfCaptPageBuilder` captures one full portrait A4 PDF page,
+  bounded to 4 MiB *compressed* memory only, via the existing
+  `OfflinePdfHiscoaPreparation` callback. It copies mutable input,
+  validates 110 strips, and dry-runs existing Stage B CAPT video frames.
+  No full 600-dpi ARGB image, USB, new permissions, or real document printing.
+- Offline frame demo uses historical 65,280 chunk limit from Stage B solely
+  for dry-run; physical work must read fresh GetPrinterInfo. Next step is
+  a shared USB owner and separate fail-closed one-page document engine
+  using verified CAPT counters; do not modify working Stage B sequencing.
