@@ -64,6 +64,25 @@ class CaptPageCounterProgressTest {
         }
     }
 
+    @Test fun twoPageCheckpointsIgnorePriorJobAndUnfinishedSecondSheet() {
+        val initial = CaptPageCounterProgress.snapshot(status(1))
+        assertFalse(CaptPageCounterProgress.pagesCompletedSince(initial, status(1), 1))
+        assertTrue(CaptPageCounterProgress.pagesCompletedSince(initial, status(2), 1))
+        assertFalse(CaptPageCounterProgress.pagesCompletedSince(initial, status(2), 2))
+        assertFalse(CaptPageCounterProgress.pagesCompletedSince(initial,
+            status(1).copy(pageOut = 3, pageCompleted = 2), 2))
+        assertTrue(CaptPageCounterProgress.pagesCompletedSince(initial, status(3), 2))
+        assertFalse(CaptPageCounterProgress.pagesCompletedSince(initial,
+            status(3).copy(auxiliaryByte = 0x04), 2))
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptPageCounterProgress.pagesCompletedSince(initial, status(3), 3)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptPageCounterProgress.pagesCompletedSince(
+                CaptPageCounterProgress.snapshot(status(0xffff)), status(0), 1)
+        }
+    }
+
     @Test fun priorZeroCountAlsoRequiresNewCounterIncrease() {
         val initial = CaptPageCounterProgress.snapshot(status(0))
         assertFalse(CaptPageCounterProgress.nextPageCompleted(initial, status(0)))
