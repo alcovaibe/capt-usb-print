@@ -15,6 +15,8 @@ import android.os.Looper
 import android.os.Build
 import android.view.WindowInsets
 import android.util.TypedValue
+import android.util.AtomicFile
+import android.util.Log
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.View
@@ -43,6 +45,8 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
@@ -108,6 +112,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoreDiagnosticEvents()
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(24))
@@ -254,6 +259,7 @@ class MainActivity : Activity() {
             PermissionEvents.outcome
         }
         reportView.text = currentReport
+        saveDiagnosticSnapshot()
         devices.removeAllViews()
         if (snapshot.devices.isEmpty()) {
             devices.addView(text(getString(R.string.no_devices)))
@@ -303,6 +309,12 @@ class MainActivity : Activity() {
                     if (testPrintInProgress) {
                         testPrintCancelled.set(true)
                         status.text = getString(R.string.test_page_cancel_requested)
+                        recordEvent("CancelTestPage", "requested",
+                            "User requested cancellation of the active experimental print")
+                    } else {
+                        status.text = getString(R.string.test_page_cancel_not_running)
+                        recordEvent("CancelTestPage", "no_active_print",
+                            "Cancellation requested; no experimental print is active")
                     }
                 })
             }
@@ -526,6 +538,7 @@ class MainActivity : Activity() {
                 outcome == "printer_counter_confirmed") 1 else null
         ))
         if (diagnosticEvents.size > 64) diagnosticEvents.removeAt(0)
+        saveDiagnosticSnapshot()
     }
 
     private fun jsonReport(): String {
@@ -561,7 +574,7 @@ class MainActivity : Activity() {
                 "permissionEventInSession" to PermissionEvents.outcome
             ),
             "commands" to diagnosticEvents.toList(),
-            "note" to "USB scans are read-only. PrintTestPage is an explicitly initiated physical print attempt; printedPages counts only pages confirmed for that event by CAPT counters, not visually verified sheets. No document raster or serial number is included."
+            "note" to "USB scans are read-only. PrintTestPage is an explicitly initiated physical print attempt; printedPages counts only pages confirmed for that event by CAPT counters, not visually verified sheets. No document raster or serial number is included. Events are saved as private JSON; only the share button exports them."
         )
         return DiagnosticJson.stringify(report) + "\n"
     }
