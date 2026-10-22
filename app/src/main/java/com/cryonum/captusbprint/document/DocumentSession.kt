@@ -17,8 +17,10 @@ data class PreviewDimensions(val width: Int, val height: Int)
 object PreviewGeometry {
     fun fit(width: Int, height: Int, maxWidth: Int, maxHeight: Int): PreviewDimensions {
         require(width > 0 && height > 0 && maxWidth in 1..1600 && maxHeight in 1..2200)
+        val bounded = PreviewSizing.fit(width, height)
         val scale = minOf(1.0, maxWidth.toDouble() / width,
-            maxHeight.toDouble() / height)
+            maxHeight.toDouble() / height,
+            bounded.first.toDouble() / width, bounded.second.toDouble() / height)
         return PreviewDimensions(
             (width * scale).toInt().coerceAtLeast(1),
             (height * scale).toInt().coerceAtLeast(1)
@@ -79,12 +81,8 @@ class DocumentSession internal constructor(
         require(bounds.outWidth in 1..50000 && bounds.outHeight in 1..50000) {
             "Invalid preview image bounds"
         }
-        // Decode only a sampled bitmap (at most roughly 2x the display bounds).
-        var sample = 1
-        while (bounds.outWidth / sample > maxWidth * 2L ||
-            bounds.outHeight / sample > maxHeight * 2L) {
-            sample *= 2
-        }
+        // Cap both axes and total decoded pixels; never materialize full photos.
+        val sample = PreviewSizing.sampleSize(bounds.outWidth, bounds.outHeight)
         val options = BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
