@@ -1,6 +1,6 @@
 # Experimental Stage B — one physical A4 test page
 
-Status: **one physical A4 page verified** by owner photo and matching CAPT completion counters on 2026-10-22. Independent repeat job and consecutive pages still unverified.
+Status: first physical A4 page plus two successful independent repeat jobs were owner-confirmed on 2026-10-22; consecutive pages within a single CAPT job remain unverified.
 
 ## Proven hardware facts (user's 2026-10-22 JSON)
 - HONOR X9c / Android API 36; Canon LBP2900 VID:PID 04A9:2676.
@@ -19,7 +19,7 @@ Status: **one physical A4 page verified** by owner photo and matching CAPT compl
 - Conservative live BufLevel check before EVERY IC_VIDEO_DATA frame: if no buffer slots are available, StartPrint(1) is issued only after the expected decoding counter is observed, and the transfer waits for a free slot. This is deliberately slower than optimized batching, pending hardware verification.
 - Bounded waiting, buffering, packet size, cancellation flag, controlled failure with explicit unknown outcome. Does not silently replay sent bytes or resume a job automatically.
 - JSON reports print phase, progress trace, last raw CAPT reply, HISCOA SHA256, bytes sent and observed completion counters. No print-page raster content in diagnostics.
-- All actions still export JSON with Telegram preference except Show Details.
+- Diagnostic and print actions record local JSON events without opening Telegram. Only the explicit «Поделиться JSON-ответом» button exports the accumulated history.
 
 ## Hardware test procedure
 1. Install the new signed build **over the previous signed APK**, with the printer powered on and A4 paper loaded. Close other apps using the printer.
