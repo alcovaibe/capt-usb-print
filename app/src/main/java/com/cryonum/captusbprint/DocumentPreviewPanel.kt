@@ -14,6 +14,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import kotlin.math.roundToInt
 
 /** Display-only card. The preview never submits print or USB commands. */
 internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
@@ -87,7 +88,7 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
         canvas.addView(spinner, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER))
         canvas.addView(state, FrameLayout.LayoutParams(-1, -2,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(12) })
-        addView(canvas, LayoutParams(-1, -2))
+        addView(canvas, LayoutParams(-1, dp(440)))
         previous.setOnClickListener { onPrevious() }
         next.setOnClickListener { onNext() }
         navigation.addView(previous, LayoutParams(0, -2, 1f))
@@ -109,6 +110,14 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
     }
 
     fun showBitmap(bitmap: Bitmap, position: Int, total: Int) {
+        val maxWidth = minOf((resources.displayMetrics.widthPixels - dp(82))
+            .coerceAtLeast(dp(180)), dp(500))
+        val maxHeight = dp(420)
+        val factor = minOf(maxWidth.toFloat() / bitmap.width,
+            maxHeight.toFloat() / bitmap.height)
+        image.layoutParams = FrameLayout.LayoutParams(
+            (bitmap.width * factor).roundToInt().coerceAtLeast(1),
+            (bitmap.height * factor).roundToInt().coerceAtLeast(1), Gravity.CENTER)
         image.setImageBitmap(bitmap)
         image.visibility = View.VISIBLE
         spinner.visibility = View.GONE
