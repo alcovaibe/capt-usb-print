@@ -24,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.cryonum.captusbprint.document.FirstPdfPrintGate
+import com.cryonum.captusbprint.document.PdfBatchGate
 import com.cryonum.captusbprint.usb.UsbDeviceProfiles
 import com.cryonum.captusbprint.document.DocumentInspector
 import com.cryonum.captusbprint.document.DocumentOverview
@@ -51,6 +52,7 @@ class DocumentActivity : Activity() {
     private lateinit var rasterButton: Button
     private lateinit var pickerButton: Button
     private lateinit var printPdfButton: Button
+    private lateinit var printPdfBatchButton: Button
     private lateinit var cancelPdfButton: Button
     private lateinit var sharePdfReportButton: Button
     private val printCancelled = AtomicBoolean(false)
@@ -78,7 +80,7 @@ class DocumentActivity : Activity() {
         })
         layout.addView(TextView(this).apply {
             text = "PDF, PNG и JPEG: локальный предпросмотр размещения на A4 и план задания. " +
-                "Файл не передаётся в сеть. Есть экспериментальная печать одной PDF-страницы после подтверждения."
+                "Файл не передаётся в сеть. Печать одной страницы подтверждена пользователем; экспериментальные 2–3 листа требуют отдельного подтверждения."
             textSize = 16f
         })
         pickerButton = Button(this).apply {
@@ -105,7 +107,7 @@ class DocumentActivity : Activity() {
             visibility = View.GONE
         }
         planSection.addView(TextView(this).apply {
-            text = "Параметры будущего задания · проверка без печати"
+            text = "Параметры задания (проверка отдельно от печати)"
             textSize = 18f
         })
         planSection.addView(TextView(this).apply {
@@ -181,6 +183,11 @@ class DocumentActivity : Activity() {
             setOnClickListener { confirmFirstPdfPrint() }
         }
         planSection.addView(printPdfButton)
+        printPdfBatchButton = Button(this).apply {
+            text = "Эксперимент: 2–3 PDF-листа в ОДНОМ задании"
+            setOnClickListener { confirmPdfBatchPrint() }
+        }
+        planSection.addView(printPdfBatchButton)
         cancelPdfButton = Button(this).apply {
             text = "Отменить попытку (исход может быть неизвестен)"
             visibility = View.GONE
@@ -319,6 +326,7 @@ class DocumentActivity : Activity() {
                     planSection.visibility = View.VISIBLE
                     rasterButton.visibility = if (doc.format.label == "PDF") View.VISIBLE else View.GONE
                     printPdfButton.visibility = if (doc.format.label == "PDF") View.VISIBLE else View.GONE
+                    printPdfBatchButton.visibility = if (doc.format.label == "PDF") View.VISIBLE else View.GONE
                     val rotation = doc.rotationDegrees?.let { "; EXIF: ${it}°" } ?: ""
                     "${doc.format.label}: ${doc.pageCount} стр.; " +
                         "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
@@ -541,6 +549,7 @@ class DocumentActivity : Activity() {
         pickerButton.isEnabled = false
         rasterButton.isEnabled = false
         printPdfButton.isEnabled = false
+        printPdfBatchButton.isEnabled = false
         sharePdfReportButton.isEnabled = false
         pageRange.isEnabled = false
         copies.isEnabled = false
@@ -561,6 +570,110 @@ class DocumentActivity : Activity() {
                 pickerButton.isEnabled = true
                 rasterButton.isEnabled = true
                 printPdfButton.isEnabled = true
+                printPdfBatchButton.isEnabled = true
+                sharePdfReportButton.isEnabled = FirstPdfPrintAttempt.reportFile(this).isFile
+                pageRange.isEnabled = true
+                copies.isEnabled = true
+                for (i in 0 until orientation.childCount) orientation.getChildAt(i).isEnabled = true
+                rotateContent.isEnabled = true
+                cancelPdfButton.visibility = View.GONE
+                planResult.text = summary
+            }
+        }
+    }
+
+    /** Separate owner-confirmed pilot: 2..3 sheets, ONE CAPT ReserveUnit.
+     * Does not silently convert a general 2000-page plan into a smaller job.
+     */
+    private fun confirmPdfBatchPrint() {
+        val opened = session ?: return
+        if (rasterInProgress || printInProgress || !previewReady) {
+            planResult.text = "Дождись окончания предпросмотра или подготовки."
+            return
+        }
+        val page = displayedPage
+        val rotation = selectedRotation()
+        fun selectedJob() = JobSpecification.create(opened.overview.pageCount,
+            pageRange.text.toString(), copies.text.toString().trim().toInt(),
+            selectedOrientation(), contentRotationDegrees = selectedRotation())
+        val frozen = runCatching { selectedJob() }.getOrElse {
+            planResult.text = "Проверь диапазон и число копий для многостраничного теста."
+            return
+        }
+        PdfBatchGate.rejection(opened.overview.format, frozen, page)?.let {
+            planResult.text = it
+            return
+        }
+        val usb = getSystemService(USB_SERVICE) as UsbManager
+        val matches = usb.deviceList.values.filter {
+            UsbDeviceProfiles.identify(it.vendorId, it.productId)?.modelName == "Canon LBP2900"
+        }
+        if (matches.size != 1) {
+            planResult.text = "Для теста нужен ровно один подключённый Canon LBP2900."
+            return
+        }
+        val device = matches.single()
+        if (!usb.hasPermission(device)) {
+            planResult.text = "Сначала предоставь USB-разрешение на главном экране."
+            return
+        }
+        val request = generation
+        val key = device.deviceName
+        val selectedNumbers = frozen.outputPageOrder.joinToString(", ") { (it + 1).toString() }
+        AlertDialog.Builder(this)
+            .setTitle("Эксперимент: одно многостраничное задание")
+            .setMessage("Будут напечатаны ${frozen.outputPageOrder.size} листа в одном CAPT-задании. " +
+                "Исходные страницы в порядке выдачи: $selectedNumbers. " +
+                "Копий: ${frozen.copies}. A4 книжная, поворот содержимого $rotation°.\n\n" +
+                "Это новый аппаратно НЕ проверенный режим. При остановке часть листов уже может выйти. " +
+                "Зависание ReserveUnit 0x8C не устранено, автоматического повтора и сброса принтера нет. " +
+                "Проверь бумагу и нажми кнопку только один раз.")
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton("Напечатать ${frozen.outputPageOrder.size} листа") { _, _ ->
+                val fresh = runCatching { selectedJob() }.getOrNull()
+                if (request != generation || opened !== session || page != displayedPage ||
+                    rotation != selectedRotation() || !previewReady || printInProgress ||
+                    rasterInProgress || fresh != frozen ||
+                    PdfBatchGate.rejection(opened.overview.format, frozen, page) != null) {
+                    planResult.text = "Настройки или предпросмотр изменились. Повтори проверку."
+                } else {
+                    startPdfBatchPrint(opened, frozen, request, key)
+                }
+            }.show()
+    }
+
+    private fun startPdfBatchPrint(
+        opened: DocumentSession, plan: JobSpecification, request: Int, key: String
+    ) {
+        printInProgress = true
+        printCancelled.set(false)
+        pickerButton.isEnabled = false
+        rasterButton.isEnabled = false
+        printPdfButton.isEnabled = false
+        printPdfBatchButton.isEnabled = false
+        sharePdfReportButton.isEnabled = false
+        pageRange.isEnabled = false
+        copies.isEnabled = false
+        for (i in 0 until orientation.childCount) orientation.getChildAt(i).isEnabled = false
+        rotateContent.isEnabled = false
+        cancelPdfButton.visibility = View.VISIBLE
+        planResult.text = "Подготовка ограниченного PDF-задания, пока без USB…"
+        worker.execute {
+            val summary = PdfBatchPrintAttempt.execute(applicationContext, opened, plan,
+                key, cancelled = { printCancelled.get() || request != generation }) { progress ->
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && request == generation) {
+                        planResult.text = progress
+                    }
+                }
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                printInProgress = false
+                pickerButton.isEnabled = true
+                rasterButton.isEnabled = true
+                printPdfButton.isEnabled = true
+                printPdfBatchButton.isEnabled = true
                 sharePdfReportButton.isEnabled = FirstPdfPrintAttempt.reportFile(this).isFile
                 pageRange.isEnabled = true
                 copies.isEnabled = true
