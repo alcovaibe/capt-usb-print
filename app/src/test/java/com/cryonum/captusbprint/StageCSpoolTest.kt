@@ -38,6 +38,10 @@ class StageCSpoolTest {
                 java.io.RandomAccessFile(file, "rw").use { it.seek(offset); it.write(0x7f) }
                 assertThrows(Exception::class.java) { page.validate { false } }
             }
+            val truncated = File(directory,"truncated")
+            val page = StoredCaptPage.write(truncated,::bands,{ _, _, _, _ -> byteArrayOf(1) },{ false },{})
+            java.io.RandomAccessFile(truncated,"rw").use { it.setLength(truncated.length()-3) }
+            assertThrows(Exception::class.java) { page.validate { false } }
         } finally { directory.deleteRecursively() }
     }
     @Test fun quotaAndCancellationRemovePartialSpool() {

@@ -26,13 +26,17 @@ class StageCRasterSmoke : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
+            // Instrumentation.onCreate can start this thread before Application.onCreate finishes.
+            // Wait for the main thread's startup work before inspecting durable recovery.
+            waitForIdleSync()
             val context = targetContext
+            PrintQueueRuntime.initialize(context)
             if (verifyRecovery) {
                 check(PrintQueueRuntime.snapshot().any {
                     it.phase == QueuePhase.ERROR && it.failure == "PROCESS_INTERRUPTED"
-                })
-                check(File(context.noBackupFilesDir,"print-queue").listFiles()?.isEmpty() != false)
-                check(!PrintQueueRuntime.hasWork())
+                }) { "Missing recovered job: ${PrintQueueRuntime.snapshot().map { it.phase.name + ":" + it.failure }}" }
+                check(File(context.noBackupFilesDir,"print-queue").listFiles()?.isEmpty() != false) { "Stale queue files remain" }
+                check(!PrintQueueRuntime.hasWork()) { "Recovery left runnable work" }
                 result.putString("stream", "CAPT_STAGE_C_RECOVERY_SMOKE_PASSED")
                 finish(Activity.RESULT_OK,result)
                 return
