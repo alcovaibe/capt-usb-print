@@ -1,6 +1,7 @@
 package com.cryonum.captusbprint
 
 import android.content.Context
+import android.util.AtomicFile
 import com.cryonum.captusbprint.core.DiagnosticJson
 import com.cryonum.captusbprint.core.HiscoaNative
 import com.cryonum.captusbprint.document.DocumentSession
@@ -8,6 +9,7 @@ import com.cryonum.captusbprint.document.PreparedPdfCaptPageBuilder
 import com.cryonum.captusbprint.usb.CaptPdfPrintEngine
 import com.cryonum.captusbprint.usb.CaptTestPrintResult
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -59,11 +61,23 @@ internal object FirstPdfPrintAttempt {
                 "automaticRetry" to false,
                 "note" to "Unfinished USB_ATTEMPT_STARTED means unknown outcome after process interruption; CAPT counters are not physical visual proof."
             )
-            DiagnosticHistory(reportFile(context)).save(DiagnosticJson.stringify(record) + "\n")
+
+            // Unlike ordinary historical diagnostics, the USB-start marker is
+            // a HARD precondition: a failed disk write must prevent printing.
+            val atomic = AtomicFile(reportFile(context))
+            var stream: FileOutputStream? = null
+            try {
+                stream = atomic.startWrite()
+                stream.write((DiagnosticJson.stringify(record) + "\n").toByteArray(Charsets.UTF_8))
+                atomic.finishWrite(stream)
+            } catch (error: Exception) {
+                if (stream != null) atomic.failWrite(stream)
+                throw IllegalStateException("Could not persist first-PDF print evidence", error)
+            }
         }
-        persist("PREPARING")
         var started = false
         return try {
+            persist("PREPARING")
             val prepared = PreparedPdfCaptPageBuilder.prepare(
                 produceBands = { accept ->
                     source.forEachPortraitPdfBand(pageIndex, rotation, cancelled, accept)
@@ -85,10 +99,14 @@ internal object FirstPdfPrintAttempt {
             }, result)
             result.summary + " Последний JSON сохранён. Автоматического повтора нет."
         } catch (error: Throwable) {
-            persist(if (started) "OUTCOME_UNKNOWN" else "PREPARATION_FAILED",
-                failure = error.javaClass.simpleName)
-            if (started) "Попытка прервана: исход печати неизвестен. Проверь принтер перед повтором."
-            else "Подготовка не завершена (${error.javaClass.simpleName}); команды печати не отправлялись."
+            val reportSaved = runCatching {
+                persist(if (started) "OUTCOME_UNKNOWN" else "PREPARATION_FAILED",
+                    failure = error.javaClass.simpleName)
+            }.isSuccess
+            val reportState = if (reportSaved) "JSON сохранён локально." else
+                "Не удалось сохранить JSON-отчёт; проверь свободное место."
+            if (started) "Попытка прервана: исход печати неизвестен. Проверь принтер перед повтором. $reportState"
+            else "Подготовка не завершена (${error.javaClass.simpleName}); команды печати не отправлялись. $reportState"
         }
         } finally {
             active.set(false)
