@@ -18,7 +18,9 @@ data class CaptPreparedTestPage(
  * upstream GPL HISCOA; neither USB access nor any printer commands are sent.
  */
 object CaptTestPagePreparation {
-    fun prepare(): CaptPreparedTestPage {
+    /** Offline-only preparation. Existing on-device test remains page 1. */
+    fun prepare(pageNumber: Int = 1): CaptPreparedTestPage {
+        require(pageNumber in 1..2) { "Unsupported Stage B test page number" }
         val sha = MessageDigest.getInstance("SHA-256")
         var compressedBytes = 0L
         var rawBytes = 0L
@@ -27,7 +29,7 @@ object CaptTestPagePreparation {
         var start = 0
         while (start < CaptTestPage.HEIGHT) {
             val lines = minOf(CaptTestPage.BAND_LINES, CaptTestPage.HEIGHT - start)
-            val raster = CaptTestPage.band(start, lines)
+            val raster = CaptTestPage.band(start, lines, pageNumber)
             val compressed = HiscoaNative.encodeBand(raster, CaptTestPage.LINE_BYTES,
                 lines, start + lines == CaptTestPage.HEIGHT)
             require(compressed.isNotEmpty() && compressed.size <= raster.size * 2 + 64)

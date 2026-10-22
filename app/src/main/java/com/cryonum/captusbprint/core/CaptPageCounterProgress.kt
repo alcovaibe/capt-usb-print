@@ -39,6 +39,21 @@ object CaptPageCounterProgress {
     fun nextPageDecoded(initial: CaptPageCounters, current: CaptExtendedStatus): Boolean =
         snapshot(current).decoding > initial.decoding
 
+    /** Offline-tested two-page checkpoint. Never counts a previous job's pages.
+     * This is not called by the physical printer path until repeat-job testing.
+     */
+    fun pagesCompletedSince(
+        initial: CaptPageCounters, current: CaptExtendedStatus, expected: Int
+    ): Boolean {
+        require(expected in 1..2) { "Only the two-page Stage B plan is supported" }
+        require(initial.completed in 0..0xffff - expected &&
+            initial.out in 0..0xffff - expected) { "Unverified counter rollover" }
+        val now = snapshot(current)
+        return now.out >= initial.out + expected &&
+            now.completed >= initial.completed + expected &&
+            (current.auxiliaryByte and 0x04) == 0
+    }
+
     fun nextPageCompleted(initial: CaptPageCounters, current: CaptExtendedStatus): Boolean {
         val now = snapshot(current)
         return now.out > initial.out &&
