@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ClipData
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
@@ -449,6 +450,10 @@ class MainActivity : Activity() {
                 "devices" to (snapshot?.devices?.map {
                     linkedMapOf(
                         "label" to it.title,
+                        "vendorId" to it.vendorId,
+                        "productId" to it.productId,
+                        "vendorIdHex" to String.format(Locale.ROOT, "%04X", it.vendorId),
+                        "productIdHex" to String.format(Locale.ROOT, "%04X", it.productId),
                         "permissionGranted" to it.permissionGranted,
                         "profile" to it.profile?.modelName,
                         "protocolFamily" to it.profile?.protocolFamily
@@ -491,7 +496,11 @@ class MainActivity : Activity() {
             // it is not installed or cannot accept a JSON document on this build.
             val telegram = Intent(send).apply { setPackage("org.telegram.messenger") }
             if (telegram.resolveActivity(packageManager) != null) {
-                startActivity(telegram)
+                try {
+                    startActivity(telegram)
+                } catch (_: ActivityNotFoundException) {
+                    startActivity(Intent.createChooser(send, getString(R.string.share_title)))
+                }
             } else {
                 startActivity(Intent.createChooser(send, getString(R.string.share_title)))
             }
