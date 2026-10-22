@@ -46,6 +46,8 @@ jobs:
           grep -Fx 'disk.dataPartition.size=2048M' "$fixture/test.avd/config.ini"
           grep -Fx 'hw.cpu.ncore=2' "$fixture/test.avd/config.ini"
           rm -rf "$fixture"
+      - name: Verify JSON is shared only after explicit button press
+        run: python3 tools/check-manual-json-sharing.py
       - name: Build, lint and tests
         run: |
           chmod +x ./gradlew
