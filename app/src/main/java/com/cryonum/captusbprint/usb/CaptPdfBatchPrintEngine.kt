@@ -216,7 +216,7 @@ internal object CaptPdfBatchPrintEngine {
                 outcome,
                 if (uncertain) "Многостраничная PDF-печать не подтверждена; возможен частичный выпуск листов. Не повторяйте задание автоматически."
                 else "PDF-задание не отправлено: ${error.message ?: error.javaClass.simpleName}",
-                stage, bytesSent, combinedSha, confirmedPages, lastFrame, trace
+                stage, bytesSent, null, confirmedPages, lastFrame, trace
             )
         }
     }
