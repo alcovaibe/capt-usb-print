@@ -11,11 +11,11 @@
     <string name="probe_capt_failed">Запрос CAPT не выполнен: %1$s</string>
     <string name="probe_capt_unknown_error">неизвестная ошибка</string>
     <string name="refresh">Обновить список USB</string>
-    <string name="report_label">Технический отчёт</string>
+    <string name="report_label">Технические подробности</string>
     <string name="show_report">Показать подробности</string>
     <string name="hide_report">Скрыть подробности</string>
-    <string name="share_report">Поделиться отчётом</string>
-    <string name="share_title">Отправить диагностический отчёт</string>
+    <string name="share_report">Поделиться JSON-отчётом</string>
+    <string name="share_title">Поделиться JSON-отчётом</string>
     <string name="permission_request">Запросить доступ USB</string>
     <string name="permission_granted">Разрешение USB предоставлено</string>
     <string name="permission_denied">В разрешении USB отказано</string>
