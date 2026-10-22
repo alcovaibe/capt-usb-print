@@ -9,6 +9,9 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.SystemClock
 import com.cryonum.captusbprint.core.CaptBasicStatusParser
+import com.cryonum.captusbprint.core.CaptExtendedStatus
+import com.cryonum.captusbprint.core.CaptExtendedStatusParser
+import com.cryonum.captusbprint.core.CaptStatusFlagDecoder
 import com.cryonum.captusbprint.core.CaptFrame
 import com.cryonum.captusbprint.engine.EndpointFact
 import com.cryonum.captusbprint.engine.InterfaceFact
@@ -28,12 +31,23 @@ class CaptStatusProbeException(message: String) : Exception(message)
  * It is deliberately not called by scanning and never sends page/print data.
  */
 object CaptStatusProbe {
-    private const val GET_BASIC_STATUS = 0xE0A0
+    private const val GET_BASIC_STATUS = CaptBasicStatusParser.GET_BASIC_STATUS
+    private const val GET_EXTENDED_STATUS = CaptExtendedStatusParser.GET_EXTENDED_STATUS
     private const val MAX_STATUS_FRAME_BYTES = 1024
     private const val CAPT_HEADER_BYTES = 6
     private const val USB_TIMEOUT_MS = 3000
 
-    fun query(context: Context, deviceKey: String): CaptStatusProbeResult {
+    fun query(context: Context, deviceKey: String): CaptStatusProbeResult =
+        queryCommand(context, deviceKey, GET_BASIC_STATUS)
+
+    fun queryExtended(context: Context, deviceKey: String): CaptStatusProbeResult =
+        queryCommand(context, deviceKey, GET_EXTENDED_STATUS)
+
+    private fun queryCommand(
+        context: Context,
+        deviceKey: String,
+        commandToSend: Int
+    ): CaptStatusProbeResult {
         val manager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
             ?: throw CaptStatusProbeException("USB Manager недоступен.")
         val device = manager.deviceList.values.singleOrNull { it.deviceName == deviceKey }
@@ -95,36 +109,107 @@ object CaptStatusProbe {
             }
             claimed = true
 
-            val request = CaptFrame.encode(GET_BASIC_STATUS)
+            val request = CaptFrame.encode(commandToSend)
             val written = try {
                 connection.bulkTransfer(outEndpoint, request, request.size, USB_TIMEOUT_MS)
             } catch (_: Exception) {
-                throw CaptStatusProbeException("Ошибка отправки запроса CAPT; повтор не выполнялся.")
+                throw CaptStatusProbeException(
+                    "Ошибка отправки read-only CAPT запроса 0x${hexCommand(commandToSend)}; повтор не выполнялся."
+                )
             }
             if (written != request.size) {
                 throw CaptStatusProbeException(
-                    "Запрос CAPT передан не полностью; автоматический повтор отключён."
+                    "CAPT запрос 0x${hexCommand(commandToSend)} передан не полностью; автоматический повтор отключён."
                 )
             }
 
-            val response = readResponseFrame(connection, inEndpoint)
-            val status = try {
-                CaptBasicStatusParser.parse(response)
-            } catch (_: IllegalArgumentException) {
-                throw CaptStatusProbeException("Ответ CAPT имеет неподдерживаемый формат.")
+            val response = readResponseFrame(connection, inEndpoint, commandToSend)
+            return when (commandToSend) {
+                GET_BASIC_STATUS -> basicResult(response)
+                GET_EXTENDED_STATUS -> extendedResult(response)
+                else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
             }
-            val statusHex = hex(status.statusByte)
-            val secondaryHex = hex(status.secondaryByte)
-            val summary = "Ответ CAPT получен. Флаги: 0x$statusHex / 0x$secondaryHex. Печать не выполнялась."
-            val reportLine = "CAPT GetBasicStatus: valid reply; totalBytes=${response.size}; " +
-                "statusFlags=0x$statusHex; secondaryFlags=0x$secondaryHex; " +
-                "no print/page data sent."
-            return CaptStatusProbeResult(summary, reportLine)
         } finally {
             if (claimed) runCatching { connection.releaseInterface(iface) }
             runCatching { connection.close() }
         }
     }
+
+    private fun basicResult(frame: ByteArray): CaptStatusProbeResult {
+        val status = try {
+            CaptBasicStatusParser.parse(frame)
+        } catch (_: IllegalArgumentException) {
+            throw CaptStatusProbeException("Ответ GetBasicStatus имеет неподдерживаемый формат.")
+        }
+        val basic = hex(status.statusByte)
+        val secondary = hex(status.secondaryByte)
+        val basicNames = CaptStatusFlagDecoder.basic(status.statusByte).joinToString("|")
+        val secondaryNames = CaptStatusFlagDecoder.secondary(status.secondaryByte).joinToString("|")
+        val summary = "GetBasicStatus: 0x$basic [$basicNames]; secondary 0x$secondary [$secondaryNames]. Печать не выполнялась."
+        val report = "CAPT GetBasicStatus: valid reply; totalBytes=${frame.size}; " +
+            "statusFlags=0x$basic[$basicNames]; secondaryFlags=0x$secondary[$secondaryNames]; " +
+            "bufferLevel=${status.bufferLowByte?.let { hex(it) } ?: "unavailable"}:" +
+            "${status.bufferHighByte?.let { hex(it) } ?: "unavailable"}; no print/page data sent."
+        return CaptStatusProbeResult(summary, report)
+    }
+
+    private fun extendedResult(frame: ByteArray): CaptStatusProbeResult {
+        val status = try {
+            CaptExtendedStatusParser.parse(frame)
+        } catch (_: IllegalArgumentException) {
+            throw CaptStatusProbeException(
+                "Ответ GetExtendedStatus имеет неподдерживаемый формат или не содержит полей состояния механизма."
+            )
+        }
+        val basic = hex(status.basicStatusByte)
+        val secondary = hex(status.secondaryByte)
+        val bufferLow = hex(status.bufferLowByte)
+        val bufferHigh = hex(status.bufferHighByte)
+        val auxiliary = hex(status.auxiliaryByte)
+        val cnt = hex(status.engineCommunicationByte)
+        val paper = hex(status.paperAvailabilityByte)
+        val engine = String.format(Locale.ROOT, "%04X", status.engineFlags and 0xffff)
+        val basicNames = CaptStatusFlagDecoder.basic(status.basicStatusByte).joinToString("|")
+        val secondaryNames = CaptStatusFlagDecoder.secondary(status.secondaryByte).joinToString("|")
+        val auxiliaryNames = CaptStatusFlagDecoder.auxiliary(status.auxiliaryByte).joinToString("|")
+        val cntNames = CaptStatusFlagDecoder.engineCommunication(status.engineCommunicationByte).joinToString("|")
+        val engineNames = CaptStatusFlagDecoder.engine(status.engineFlags).joinToString("|")
+        val paperName = CaptStatusFlagDecoder.paper(status.paperAvailabilityByte)
+        val report = "CAPT GetExtendedStatus: valid reply; totalBytes=${frame.size}; " +
+            "statusFlags=0x$basic[$basicNames]; secondaryFlags=0x$secondary[$secondaryNames]; " +
+            "bufferLevel=0x$bufferLow:0x$bufferHigh; bufferSlots=${status.bufferSlots}; " +
+            "auxiliaryFlags=0x$auxiliary[$auxiliaryNames]; " +
+            "engineCommunicationFlags=0x$cnt[$cntNames]; " +
+            "paperAvailability=0x$paper[$paperName]; engineFlags=0x$engine[$engineNames]; " +
+            "no print/page data sent."
+        val findings = mutableListOf<String>()
+        if ((status.engineFlags and 0x0100) != 0) findings += "флаг замятия бумаги"
+        if ((status.engineFlags and 0x4000) != 0) findings += "флаг открытой дверцы"
+        if ((status.engineFlags and 0x2000) != 0) findings += "флаг отсутствующего картриджа"
+        if ((status.engineFlags and 0x0002) != 0) findings += "флаг необходимости обслуживания"
+        if ((status.engineFlags and 0x0004) != 0) findings += "флаг очистки механизма"
+        if ((status.engineFlags and 0x0008) != 0) findings += "флаг недопустимого соединения"
+        if ((status.engineCommunicationByte and 0x10) != 0) findings += "ошибка связи с печатным механизмом"
+        if ((status.engineCommunicationByte and 0x40) != 0) findings += "механизм отклонил печать"
+        if ((status.engineCommunicationByte and 0x08) != 0) findings += "флаг некорректных данных"
+        if ((status.engineCommunicationByte and 0x01) != 0) findings += "флаг переполнения обмена"
+        if ((status.engineCommunicationByte and 0x02) != 0) findings += "флаг недостатка данных"
+        if (status.paperAvailabilityByte == 0) findings += "бумага не отмечена как доступная"
+        if ((status.auxiliaryByte and 0x02) != 0) findings += "принтер сообщает о занятости"
+        if ((status.auxiliaryByte and 0x04) != 0) findings += "идёт подача бумаги"
+        val summary = when {
+            findings.isNotEmpty() -> "Расширенное состояние CAPT: " + findings.joinToString("; ") +
+                ". Это декодированные флаги устройства; печать не выполнялась."
+            (status.basicStatusByte and 0x80) != 0 -> "Расширенный ответ получен, но ERROR_BIT остаётся установлен. " +
+                "По известным полям конкретная причина не определена. Печать не выполнялась."
+            else -> "Расширенный ответ CAPT получен; известные флаги аппаратной ошибки не установлены. " +
+                "Печать не выполнялась."
+        }
+        return CaptStatusProbeResult(summary, report)
+    }
+
+    private fun hexCommand(value: Int): String =
+        String.format(Locale.ROOT, "%04X", value and 0xffff)
 
     private fun findEndpoint(iface: UsbInterface, address: Int, direction: Int): UsbEndpoint {
         val matches = (0 until iface.endpointCount).map { iface.getEndpoint(it) }.filter {
@@ -138,7 +223,8 @@ object CaptStatusProbe {
 
     private fun readResponseFrame(
         connection: UsbDeviceConnection,
-        endpoint: UsbEndpoint
+        endpoint: UsbEndpoint,
+        expectedCommand: Int
     ): ByteArray {
         // CAPT's documented exchange reads the 6-byte command/length header first,
         // then reads only the remaining bytes declared by that header.
@@ -156,10 +242,10 @@ object CaptStatusProbe {
         }
         val command = (frame[0].toInt() and 0xff) or
             ((frame[1].toInt() and 0xff) shl 8)
-        if (command != GET_BASIC_STATUS) {
+        if (command != expectedCommand) {
             throw CaptStatusProbeException(
-                "Неожиданный CAPT command ID; expected=E0A0; " +
-                    "receivedCommand=${hex(frame[1].toInt() and 0xff)}${hex(frame[0].toInt() and 0xff)}; " +
+                "Неожиданный CAPT command ID; expected=${hexCommand(expectedCommand)}; " +
+                    "receivedCommand=${hexCommand(command)}; " +
                     headerDetails(frame, firstCount)
             )
         }
