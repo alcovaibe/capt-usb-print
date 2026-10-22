@@ -21,17 +21,34 @@ altering the hardware-confirmed Stage B USB engines.
 - No document contents, names or URIs enter exported diagnostic history.
   No document print commands, Internet permission or automatic sharing are added.
 
+## Owner-confirmed on-device intake and next offline plan
+
+- On signed build 74, the owner confirmed that the HONOR X9c opened a PDF and displayed
+  its page count and document information. This verifies the local inspector for that
+  PDF only; JPEG, PNG, provider failures and actual rendering remain unverified on hardware.
+- DocumentActivity now shows optional page ranges (empty means all; e.g. `1–3, 5, 8`),
+  1–20 copies and A4 portrait/landscape after successful inspection. An explicit
+  **«Проверить план задания (без печати)»** validates and displays a bounded collated
+  output order using the existing immutable JobSpecification. Overlaps, missing pages,
+  malformed ranges and more than 2000 output sheets are rejected.
+- The document cache is still deleted after metadata inspection. This plan is a
+  pure calculation, not a retained/queued document or preview and never calls USB,
+  CAPT, Telegram or PrintService. The user must choose the document again for a
+  future rendering/printing action.
+- Dedicated unit tests cover page selection, page order, copies, orientation,
+  limits and malformed input.
+
 ## Explicitly NOT completed by this foundation
 A visual page preview, actual rasterization, geometry and monochrome conversion,
-PDF/image CAPT printing, page/copy/orientation options integrated into the UI,
+PDF/image CAPT printing, applying the offline options to actual print jobs,
 cancellation, source access retention for queued jobs, single shared USB
 queue, system PrintService and real-document acceptance remain to be built.
 The importer performs *offline inspection only*.
 
 ## Stage C implementation sequence
 1. Safe local import/format validation and document metadata (this PR).
-2. Immutable JobSpecification and normalized page range/copy plan with
-   bounded document ownership and one queue.
+2. Immutable JobSpecification and normalized page range/copy plan: offline UI and
+   validation implemented; retained document ownership and the one shared queue pending.
 3. Actual 600dpi A4 preview-to-print geometry and sequential page rasterizer;
    inspect text, formulas, thin lines, EXIF orientation and greyscale.
 4. Reuse Stage B CAPT engine for document pages without exposing a separate
