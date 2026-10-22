@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
+    <queries>
+        <package android:name="org.telegram.messenger" />
+    </queries>
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -8,6 +11,15 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.CaptUsbPrint">
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.reportprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/report_file_paths" />
+        </provider>
         <receiver
             android:name=".usb.UsbPermissionReceiver"
             android:enabled="true"
