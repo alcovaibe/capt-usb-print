@@ -31,10 +31,10 @@ altering the hardware-confirmed Stage B USB engines.
   **«Проверить план задания (без печати)»** validates and displays a bounded collated
   output order using the existing immutable JobSpecification. Overlaps, missing pages,
   malformed ranges and more than 2000 output sheets are rejected.
-- The original metadata-only inspector still closes temporary sources; the preview session temporarily retains one validated source for display. This plan is a
-  pure calculation, not a retained/queued document or preview and never calls USB,
-  CAPT, Telegram or PrintService. The user must choose the document again for a
-  future rendering/printing action.
+- The metadata-only inspector still closes temporary sources. The preview session
+  retains one validated source only while the document screen is open. The page/copy
+  plan remains a pure calculation and does not enqueue or print that source; no
+  USB, CAPT, Telegram or PrintService commands are issued.
 - Dedicated unit tests cover page selection, page order, copies, orientation,
   limits and malformed input.
 
@@ -43,7 +43,7 @@ The display-only visual preview needs device verification; actual print rasteriz
 PDF/image CAPT printing, applying the offline options to actual print jobs,
 cancellation, source access retention for queued jobs, single shared USB
 queue, system PrintService and real-document acceptance remain to be built.
-The importer performs *offline inspection only*.
+The importer and display preview perform *offline actions only*.
 
 
 ## Offline visual preview (new implementation; owner hardware test pending)
