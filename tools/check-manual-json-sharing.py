@@ -50,3 +50,9 @@ assert "Intent.ACTION_SEND" not in queue
 assert queue.index('report("USB_ATTEMPT_STARTED")') < queue.index('result = CaptDocumentPrintEngine.run(')
 assert 'START_NOT_STICKY' in Path("app/src/main/java/com/cryonum/captusbprint/queue/PrintQueueService.kt").read_text()
 print("Queue durable-marker and no-automatic-replay guards passed.")
+
+queue_screen = Path("app/src/main/java/com/cryonum/captusbprint/queue/PrintQueueActivity.kt").read_text()
+assert queue_screen.count("shareJobReport(") == 2
+assert "setOnClickListener { shareJobReport(record.id) }" in queue_screen
+assert "Intent.ACTION_SEND" not in queue_screen[:queue_screen.index("    private fun shareJobReport(")]
+print("Per-job queue report sharing is explicit-only.")

@@ -44,8 +44,8 @@ class PrintQueueActivity : Activity() {
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(R.string.queue_resume) { _, _ ->
                             runCatching {
-                                PrintQueueRuntime.resumeAfterInspection()
                                 PrintQueueService.start(this@PrintQueueActivity)
+                                PrintQueueRuntime.resumeAfterInspection()
                             }.onFailure { Toast.makeText(this@PrintQueueActivity,
                                 R.string.queue_start_failed, Toast.LENGTH_LONG).show() }
                         }.show()

@@ -6,6 +6,18 @@ import org.junit.Test
 
 class StageCQueueTest {
     private fun job(id: Long) = QueueRecord(id, "PDF", 10)
+    @Test fun stagedCopyCannotRaceAnExistingWorkerBeforeForegroundHandoff() {
+        val q = DocumentQueue()
+        q.add(job(1).copy(ready = false))
+        assertNull(q.next())
+        q.activate(1)
+        assertEquals(1L, q.next()!!.id)
+        val cancelled = DocumentQueue()
+        cancelled.add(job(2).copy(ready = false)); cancelled.cancel(2)
+        assertNull(cancelled.next())
+        assertThrows(IllegalStateException::class.java) { cancelled.activate(2) }
+    }
+
     @Test fun fifoAndSingleOwnerIncludePendingCancellation() {
         val q = DocumentQueue()
         q.add(job(1)); q.add(job(2)); q.add(job(3))

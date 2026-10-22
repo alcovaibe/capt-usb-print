@@ -102,7 +102,7 @@ internal object PrintQueueRuntime {
         var copied: DocumentSession? = null
         try {
             copied = source.copyForPrint(directory) { reserve(id, it) }
-            queue.add(QueueRecord(id, source.overview.format.name, plan.outputPageOrder.size))
+            queue.add(QueueRecord(id, source.overview.format.name, plan.outputPageOrder.size, ready = false))
             sources[id] = Work(copied, plan, deviceKey, directory)
             persist()
             return id
@@ -121,6 +121,16 @@ internal object PrintQueueRuntime {
             "Private queue storage limit or insufficient disk space"
         }
         allocations[id] = allocations.getValue(id) + extra
+    }
+    /** Publish only after the visible caller has successfully requested the foreground service. */
+    @Synchronized fun activate(id: Long) {
+        try { queue.activate(id); persist() }
+        catch (error: Throwable) {
+            // take() uses this same monitor, so a failed marker cannot race a USB start.
+            queue.cancel(id); cleanup(id)
+            runCatching { persist() }
+            throw error
+        }
     }
     @Synchronized fun cancel(id: Long) {
         queue.cancel(id)

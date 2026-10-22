@@ -9,16 +9,34 @@ import android.os.Bundle
 import androidx.core.content.FileProvider
 import com.cryonum.captusbprint.core.HiscoaNative
 import com.cryonum.captusbprint.core.Orientation
+import com.cryonum.captusbprint.core.JobSpecification
+import com.cryonum.captusbprint.queue.PrintQueueRuntime
+import com.cryonum.captusbprint.queue.QueuePhase
 import com.cryonum.captusbprint.document.*
 import java.io.File
 
 /** Runs in the real API 36 graphics/JNI runtime. No USB command or service is invoked. */
 class StageCRasterSmoke : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var verifyRecovery = false
+    override fun onCreate(arguments: Bundle?) {
+        super.onCreate(arguments)
+        verifyRecovery = arguments?.getString("verifyRecovery") == "true"
+        start()
+    }
     override fun onStart() {
         val result = Bundle()
         try {
             val context = targetContext
+            if (verifyRecovery) {
+                check(PrintQueueRuntime.snapshot().any {
+                    it.phase == QueuePhase.ERROR && it.failure == "PROCESS_INTERRUPTED"
+                })
+                check(File(context.noBackupFilesDir,"print-queue").listFiles()?.isEmpty() != false)
+                check(!PrintQueueRuntime.hasWork())
+                result.putString("stream", "CAPT_STAGE_C_RECOVERY_SMOKE_PASSED")
+                finish(Activity.RESULT_OK,result)
+                return
+            }
             val directory = File(context.cacheDir, "reports").apply { mkdirs() }
             val png = File(directory, "fixture.png")
             val jpeg = File(directory, "fixture.jpg")
@@ -72,7 +90,21 @@ class StageCRasterSmoke : Instrumentation() {
                         preview.recycle()
                     }
                     encoded.delete()
+                    if (file == png) {
+                        val id = PrintQueueRuntime.enqueue(context,source,
+                            JobSpecification.create(1,"1",1), "offline-smoke-no-usb")
+                        val owned = File(context.noBackupFilesDir,"print-queue/$id/source.bin")
+                        source.close()
+                        check(owned.isFile) // Preview teardown cannot delete the queue copy.
+                        PrintQueueRuntime.cancel(id)
+                        check(!owned.exists())
+                    }
                 }
+            }
+            // Leave one staged, never-activated job for the next process's recovery check.
+            val recoveryUri = FileProvider.getUriForFile(context,"${context.packageName}.reportprovider",png)
+            DocumentInspector.openSession(context,recoveryUri).use { source ->
+                PrintQueueRuntime.enqueue(context,source,JobSpecification.create(1,"1",1),"offline-smoke-no-usb")
             }
             listOf(png,jpeg,pdf).forEach { it.delete() }
             result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_PASSED")

@@ -9,7 +9,7 @@ internal enum class QueuePhase {
 internal data class QueueRecord(val id: Long, val format: String, val sheets: Int,
     val phase: QueuePhase = QueuePhase.QUEUED, val confirmed: Int = 0,
     val usbStarted: Boolean = false, val cancelRequested: Boolean = false,
-    val failure: String? = null)
+    val failure: String? = null, val ready: Boolean = true)
 
 /** FIFO intent, not automatic replay. Uncertain/failed USB jobs pause the queue. */
 internal class DocumentQueue {
@@ -24,9 +24,14 @@ internal class DocumentQueue {
         records.add(record)
         while (records.size > 50) records.removeAt(records.indexOfFirst { it.phase.terminal }.also { check(it >= 0) })
     }
+    @Synchronized fun activate(id: Long) {
+        val index = records.indexOfFirst { it.id == id }
+        check(index >= 0 && records[index].phase == QueuePhase.QUEUED && !records[index].ready)
+        records[index] = records[index].copy(ready = true)
+    }
     @Synchronized fun next(): QueueRecord? {
         if (paused || active != null) return null
-        val record = records.firstOrNull { it.phase == QueuePhase.QUEUED } ?: return null
+        val record = records.firstOrNull { it.phase == QueuePhase.QUEUED && it.ready } ?: return null
         active = record.id
         return update(record.id, QueuePhase.PREPARING)
     }

@@ -245,6 +245,7 @@ class DocumentActivity : Activity() {
                         result.fold({ id ->
                             try {
                                 PrintQueueService.start(this)
+                                PrintQueueRuntime.activate(id)
                                 status.setText(R.string.document_queued)
                                 startActivity(Intent(this, PrintQueueActivity::class.java))
                             } catch (_: Exception) {

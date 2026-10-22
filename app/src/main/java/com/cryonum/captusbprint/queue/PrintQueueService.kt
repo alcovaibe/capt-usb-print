@@ -7,11 +7,12 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import com.cryonum.captusbprint.R
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Started from a visible user action with an existing USB grant. Never sticky/replayed. */
 class PrintQueueService : Service() {
     private val worker = Executors.newSingleThreadExecutor()
-    @Volatile private var running = false
+    private val expectedStop = AtomicBoolean(false)
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onCreate() {
         super.onCreate()
@@ -20,13 +21,13 @@ class PrintQueueService : Service() {
     }
     @android.annotation.SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        expectedStop.set(false)
         try {
             startForeground(17, notification(getString(R.string.queue_preparing)),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
             PrintQueueRuntime.initialize(this)
             if (intent?.action == CANCEL) PrintQueueRuntime.stopServiceJobs()
             worker.execute {
-                    running = true
                     try {
                         PrintQueueRuntime.drain { record ->
                             runCatching {
@@ -37,10 +38,11 @@ class PrintQueueService : Service() {
                     } catch (_: Throwable) {
                         PrintQueueRuntime.serviceFailure()
                     } finally {
-                        running = false
                         if (!PrintQueueRuntime.hasWork() || PrintQueueRuntime.isPaused()) {
                             // A newer startId has its own queued worker command.
+                            expectedStop.set(true)
                             if (stopSelfResult(startId)) stopForeground(STOP_FOREGROUND_REMOVE)
+                            else expectedStop.set(false)
                         }
                     }
             }
@@ -62,7 +64,7 @@ class PrintQueueService : Service() {
             .build()
     }
     override fun onDestroy() {
-        if (running) runCatching { PrintQueueRuntime.stopServiceJobs() }
+        if (!expectedStop.get()) runCatching { PrintQueueRuntime.stopServiceJobs() }
         worker.shutdown()
         super.onDestroy()
     }
@@ -70,6 +72,11 @@ class PrintQueueService : Service() {
         private const val CHANNEL = "capt_usb_jobs"
         private const val CANCEL = "com.cryonum.captusbprint.CANCEL_QUEUE"
         fun start(context: Context) {
+            val usb = context.getSystemService(Context.USB_SERVICE) as android.hardware.usb.UsbManager
+            val device = usb.deviceList.values.filter {
+                com.cryonum.captusbprint.usb.UsbDeviceProfiles.identify(it.vendorId, it.productId)?.modelName == "Canon LBP2900"
+            }.singleOrNull()
+            check(device != null && usb.hasPermission(device)) { "A granted Canon USB device is required" }
             // Only callers reached from a visible Activity may start this service.
             context.startForegroundService(Intent(context, PrintQueueService::class.java))
         }
