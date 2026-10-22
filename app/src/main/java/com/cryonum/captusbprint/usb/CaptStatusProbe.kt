@@ -11,6 +11,7 @@ import android.os.SystemClock
 import com.cryonum.captusbprint.core.CaptBasicStatusParser
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
+import com.cryonum.captusbprint.core.CaptInputStatusParser
 import com.cryonum.captusbprint.core.CaptStatusFlagDecoder
 import com.cryonum.captusbprint.core.CaptFrame
 import com.cryonum.captusbprint.engine.EndpointFact
@@ -33,6 +34,7 @@ class CaptStatusProbeException(message: String) : Exception(message)
 object CaptStatusProbe {
     private const val GET_BASIC_STATUS = CaptBasicStatusParser.GET_BASIC_STATUS
     private const val GET_EXTENDED_STATUS = CaptExtendedStatusParser.GET_EXTENDED_STATUS
+    private const val GET_INPUT_STATUS = CaptInputStatusParser.GET_INPUT_STATUS
     private const val MAX_STATUS_FRAME_BYTES = 1024
     private const val CAPT_HEADER_BYTES = 6
     private const val USB_TIMEOUT_MS = 3000
@@ -42,6 +44,9 @@ object CaptStatusProbe {
 
     fun queryExtended(context: Context, deviceKey: String): CaptStatusProbeResult =
         queryCommand(context, deviceKey, GET_EXTENDED_STATUS)
+
+    fun queryInputStatus(context: Context, deviceKey: String): CaptStatusProbeResult =
+        queryCommand(context, deviceKey, GET_INPUT_STATUS)
 
     private fun queryCommand(
         context: Context,
@@ -127,12 +132,33 @@ object CaptStatusProbe {
             return when (commandToSend) {
                 GET_BASIC_STATUS -> basicResult(response)
                 GET_EXTENDED_STATUS -> extendedResult(response)
+                GET_INPUT_STATUS -> inputStatusResult(response)
                 else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
             }
         } finally {
             if (claimed) runCatching { connection.releaseInterface(iface) }
             runCatching { connection.close() }
         }
+    }
+
+    private fun inputStatusResult(frame: ByteArray): CaptStatusProbeResult {
+        val payload = try {
+            CaptInputStatusParser.parse(frame)
+        } catch (_: IllegalArgumentException) {
+            throw CaptStatusProbeException("Ответ GetInputStatus имеет неподдерживаемый формат.")
+        }
+        // The public CAPT driver requests this status when NEED_INPUT_STATUS is set,
+        // but does not decode its payload. Preserve the bytes without guessing fields.
+        val maxLoggedBytes = 64
+        val payloadHex = payload.take(maxLoggedBytes)
+            .joinToString(" ") { hex(it.toInt() and 0xff) }
+        val truncated = payload.size > maxLoggedBytes
+        val summary = "GetInputStatus: корректный ответ; байт данных=${payload.size}. " +
+            "Поля пока не расшифрованы; печать не выполнялась."
+        val report = "CAPT GetInputStatus: valid reply; totalBytes=${frame.size}; " +
+            "rawResponseDataBytes=${payload.size}; rawResponseDataHex=$payloadHex; " +
+            "rawResponseDataHexTruncated=$truncated; no document/page data sent."
+        return CaptStatusProbeResult(summary, report)
     }
 
     private fun basicResult(frame: ByteArray): CaptStatusProbeResult {
@@ -183,6 +209,22 @@ object CaptStatusProbe {
             "paperAvailability=0x$paper[$paperName]; engineFlags=0x$engine[$engineNames]; " +
             "no print/page data sent."
         val findings = mutableListOf<String>()
+        if ((status.basicStatusByte and 0x10) != 0) findings += "установлен флаг OFFLINE"
+        if ((status.basicStatusByte and 0x02) != 0) findings += "установлен флаг NOT_READY"
+        if ((status.basicStatusByte and 0x04) != 0) findings += "установлен флаг CMD_BUSY"
+        if ((status.basicStatusByte and 0x08) != 0) findings += "установлен флаг IM_DATA_BUSY"
+        if ((status.basicStatusByte and 0x80) != 0) {
+            findings += "установлен ERROR_BIT; причина по известным полям не определена"
+        }
+        if ((status.basicStatusByte and 0x20) != 0) {
+            findings += "установлен неизвестный бит основного статуса 0x20; его значение не интерпретируется"
+        }
+        if ((status.secondaryByte and 0x02) != 0) {
+            findings += "установлен NEED_INPUT_STATUS — следует запросить GetInputStatus"
+        }
+        if ((status.secondaryByte and 0x01) != 0) {
+            findings += "установлен EXTENDED_STATUS_CHANGED"
+        }
         if ((status.engineFlags and 0x0100) != 0) findings += "флаг замятия бумаги"
         if ((status.engineFlags and 0x4000) != 0) findings += "флаг открытой дверцы"
         if ((status.engineFlags and 0x2000) != 0) findings += "флаг отсутствующего картриджа"
@@ -197,12 +239,11 @@ object CaptStatusProbe {
         if (status.paperAvailabilityByte == 0) findings += "бумага не отмечена как доступная"
         if ((status.auxiliaryByte and 0x02) != 0) findings += "принтер сообщает о занятости"
         if ((status.auxiliaryByte and 0x04) != 0) findings += "идёт подача бумаги"
-        val summary = when {
-            findings.isNotEmpty() -> "Расширенное состояние CAPT: " + findings.joinToString("; ") +
+        val summary = if (findings.isNotEmpty()) {
+            "Расширенное состояние CAPT: " + findings.joinToString("; ") +
                 ". Это декодированные флаги устройства; печать не выполнялась."
-            (status.basicStatusByte and 0x80) != 0 -> "Расширенный ответ получен, но ERROR_BIT остаётся установлен. " +
-                "По известным полям конкретная причина не определена. Печать не выполнялась."
-            else -> "Расширенный ответ CAPT получен; известные флаги аппаратной ошибки не установлены. " +
+        } else {
+            "Расширенный ответ CAPT получен; известные флаги аппаратной ошибки не установлены. " +
                 "Печать не выполнялась."
         }
         return CaptStatusProbeResult(summary, report)

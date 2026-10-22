@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     private lateinit var reportToggle: Button
     private var reportExpanded = false
     private var currentReport: String = ""
+    private var captProbeInProgress = false
     private var scanGeneration = 0
     private var receiverRegistered = false
     // ACTION_USB_DEVICE_ATTACHED is an ACTIVITY intent, not a normal broadcast.
@@ -247,6 +248,9 @@ class MainActivity : Activity() {
                 card.addView(button(getString(R.string.probe_capt_extended_status)) {
                     probeCaptExtendedStatus(row)
                 })
+                card.addView(button(getString(R.string.probe_capt_input_status)) {
+                    probeCaptInputStatus(row)
+                })
             }
             devices.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -286,25 +290,32 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun probeCaptStatus(row: UsbRow) = runCaptProbe(row, extended = false)
+    private fun probeCaptStatus(row: UsbRow) = runCaptProbe(row, "GetBasicStatus") {
+        CaptStatusProbe.query(applicationContext, row.deviceKey)
+    }
 
-    private fun probeCaptExtendedStatus(row: UsbRow) = runCaptProbe(row, extended = true)
+    private fun probeCaptExtendedStatus(row: UsbRow) = runCaptProbe(row, "GetExtendedStatus") {
+        CaptStatusProbe.queryExtended(applicationContext, row.deviceKey)
+    }
 
-    private fun runCaptProbe(row: UsbRow, extended: Boolean) {
-        val commandName = if (extended) "GetExtendedStatus" else "GetBasicStatus"
-        status.text = getString(
-            if (extended) R.string.probe_capt_extended_running else R.string.probe_capt_running
-        )
+    private fun probeCaptInputStatus(row: UsbRow) = runCaptProbe(row, "GetInputStatus") {
+        CaptStatusProbe.queryInputStatus(applicationContext, row.deviceKey)
+    }
+
+    private fun runCaptProbe(
+        row: UsbRow,
+        commandName: String,
+        query: () -> com.cryonum.captusbprint.usb.CaptStatusProbeResult
+    ) {
+        // Avoid duplicate USB commands if the user taps a status action repeatedly.
+        if (captProbeInProgress) return
+        captProbeInProgress = true
+        status.text = getString(R.string.probe_capt_running, commandName)
         worker.execute {
-            val result = runCatching {
-                if (extended) {
-                    CaptStatusProbe.queryExtended(applicationContext, row.deviceKey)
-                } else {
-                    CaptStatusProbe.query(applicationContext, row.deviceKey)
-                }
-            }
+            val result = runCatching { query() }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
+                captProbeInProgress = false
                 val line = result.fold(
                     { it.reportLine },
                     { error ->

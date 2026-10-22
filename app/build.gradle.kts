@@ -18,7 +18,9 @@ android {
             .orNull?.toIntOrNull()?.takeIf { it > 0 }
         val signedVersionCode = providers.environmentVariable("APP_VERSION_CODE")
             .orNull?.toIntOrNull()
-        versionCode = signedVersionCode ?: ciRunNumber ?: 1
+        // Keep CI debug APKs installable over previously tested builds (a2.22 used 1022).
+        // The signed-release job supplies the same 1000 + run-number value explicitly.
+        versionCode = signedVersionCode ?: ciRunNumber?.let { 1000 + it } ?: 1
         versionName = if (ciRunNumber != null) "0.1.0-a2.$ciRunNumber" else "0.1.0-a2.local"
         require(versionCode in 1..2_100_000_000) { "Invalid versionCode" }
 

@@ -103,6 +103,23 @@ class StageBCoreTest {
         assertEquals(listOf("PAPER_JAM", "DOOR_OPEN"), CaptStatusFlagDecoder.engine(parsed.engineFlags))
     }
 
+    @Test fun inputStatusParserPreservesOpaquePayloadWithoutInventingFields() {
+        val payload = byteArrayOf(0x11, 0x22, 0x80.toByte(), 0x00)
+        val frame = CaptFrame.encode(CaptInputStatusParser.GET_INPUT_STATUS, payload)
+        assertArrayEquals(payload, CaptInputStatusParser.parse(frame))
+    }
+
+    @Test fun inputStatusParserRejectsWrongCommandAndMalformedFrame() {
+        val wrongCommand = CaptFrame.encode(0xA0A8, byteArrayOf(1, 2))
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptInputStatusParser.parse(wrongCommand)
+        }
+        val malformed = byteArrayOf(0xA1.toByte(), 0xA0.toByte(), 8, 0, 1, 2)
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptInputStatusParser.parse(malformed)
+        }
+    }
+
     @Test fun extendedStatusParserRejectsReplyWithoutRequiredFields() {
         val shortReply = CaptFrame.encode(0xA0A8, ByteArray(12))
         assertThrows(IllegalArgumentException::class.java) {
