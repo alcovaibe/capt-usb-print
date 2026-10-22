@@ -21,7 +21,7 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
         Configuration.UI_MODE_NIGHT_YES
-    private val foreground = if (dark) Color.WHITE else Color.rgb(29, 36, 49)
+    private val inkColor = if (dark) Color.WHITE else Color.rgb(29, 36, 49)
     private val muted = if (dark) Color.rgb(187, 196, 210) else Color.rgb(85, 96, 112)
     private val image = ImageView(context).apply {
         adjustViewBounds = true
