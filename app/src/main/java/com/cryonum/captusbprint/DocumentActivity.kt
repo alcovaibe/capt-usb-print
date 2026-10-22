@@ -6,12 +6,18 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.view.View
+import android.text.InputType
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.Spinner
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.cryonum.captusbprint.document.DocumentInspector
+import com.cryonum.captusbprint.document.DocumentOverview
+import com.cryonum.captusbprint.core.JobSpecification
+import com.cryonum.captusbprint.core.Orientation
 import java.util.concurrent.Executors
 
 /**
@@ -21,6 +27,12 @@ import java.util.concurrent.Executors
 class DocumentActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var message: TextView
+    private lateinit var rangeInput: EditText
+    private lateinit var copiesInput: EditText
+    private lateinit var orientationInput: Spinner
+    private lateinit var planButton: Button
+    private lateinit var planResult: TextView
+    private var overview: DocumentOverview? = null
     private var generation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +61,41 @@ class DocumentActivity : Activity() {
             setTextIsSelectable(true)
         }
         layout.addView(message)
+        layout.addView(TextView(this).apply {
+            text = "План печати (пока без передачи на принтер)"
+            textSize = 19f
+        })
+        rangeInput = EditText(this).apply {
+            hint = "Страницы: 1-3, 5, 8 (пусто — все)"
+            inputType = InputType.TYPE_CLASS_TEXT
+            isSingleLine = true
+        }
+        layout.addView(rangeInput)
+        copiesInput = EditText(this).apply {
+            hint = "Количество копий (1–20)"
+            setText("1")
+            inputType = InputType.TYPE_CLASS_NUMBER
+            isSingleLine = true
+        }
+        layout.addView(copiesInput)
+        orientationInput = Spinner(this).apply {
+            adapter = ArrayAdapter(this@DocumentActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf("Книжная", "Альбомная"))
+        }
+        layout.addView(orientationInput)
+        planButton = Button(this).apply {
+            text = "Сформировать план (без печати)"
+            isEnabled = false
+            setOnClickListener { createOfflinePlan() }
+        }
+        layout.addView(planButton)
+        planResult = TextView(this).apply {
+            text = "План доступен после проверки документа."
+            textSize = 15f
+            setTextIsSelectable(true)
+        }
+        layout.addView(planResult)
         setContentView(ScrollView(this).apply {
             isFillViewport = true
             addView(layout)
