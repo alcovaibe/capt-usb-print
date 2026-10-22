@@ -528,7 +528,10 @@ class MainActivity : Activity() {
             "rawResponseFrameHex" to rawFrameHex,
             "decoded" to decoded,
             "reportText" to reportLine,
-            "printedPages" to 0
+            // Counts printer-confirmed pages for this event, not historical total.
+            // Unknown for read-only commands and failed/uncertain print attempts.
+            "printedPages" to if (action == "PrintTestPage" &&
+                outcome == "printer_counter_confirmed") 1 else null
         ))
         if (diagnosticEvents.size > 64) diagnosticEvents.removeAt(0)
     }
@@ -566,7 +569,7 @@ class MainActivity : Activity() {
                 "permissionEventInSession" to PermissionEvents.outcome
             ),
             "commands" to diagnosticEvents.toList(),
-            "note" to "Only manually initiated read-only CAPT requests; raw frames are device replies, not document data. Decoded fields are provisional until physically validated."
+            "note" to "USB scans are read-only. PrintTestPage is an explicitly initiated physical print attempt; printedPages counts only pages confirmed for that event by CAPT counters, not visually verified sheets. No document raster or serial number is included."
         )
         return DiagnosticJson.stringify(report) + "\n"
     }

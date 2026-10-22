@@ -46,7 +46,7 @@ object UsbDiagnostic {
     fun scan(context: Context): UsbSnapshot {
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
         val report = StringBuilder(4096)
-        report.appendLine("CAPT USB Print — diagnostic stage A / no printing")
+        report.appendLine("CAPT USB Print — read-only USB scan")
         report.appendLine("Version: " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")")
         report.appendLine("Revision: " + BuildConfig.SOURCE_REVISION)
         report.appendLine("Device model: " + Build.MANUFACTURER + " " + Build.MODEL)
@@ -186,7 +186,7 @@ object UsbDiagnostic {
             report.appendLine("  probe duration ms=" + (SystemClock.elapsedRealtime() - started))
         }
         report.appendLine("")
-        report.appendLine("This scan sent no CAPT command. Printing is not implemented; printed pages: NONE.")
+        report.appendLine("This scan sent no CAPT command and cannot determine print-job outcomes. See PrintTestPage events for printer-counter confirmation.")
         report.appendLine("No serial numbers, complete device paths, document or payload logged.")
         return UsbSnapshot(rows, report.toString())
     }
