@@ -21,7 +21,8 @@ import java.util.Locale
 data class UsbRow(
     val deviceKey: String, // Internal only; never included in export
     val title: String,
-    val permissionGranted: Boolean
+    val permissionGranted: Boolean,
+    val profile: UsbDeviceProfile? = null
 )
 data class UsbSnapshot(val devices: List<UsbRow>, val report: String)
 
@@ -72,12 +73,22 @@ object UsbDiagnostic {
         allDevices.take(32).forEachIndexed { number, device ->
             val vidPid = hex(device.vendorId) + ":" + hex(device.productId)
             val allowed = manager.hasPermission(device)
+            val profile = UsbDeviceProfiles.identify(device.vendorId, device.productId)
             rows += UsbRow(
                 deviceKey = device.deviceName,
-                title = "USB #" + (number + 1) + " — " + vidPid,
-                permissionGranted = allowed
+                title = if (profile != null) {
+                    profile.modelName + " — USB #" + (number + 1) + " · " + vidPid
+                } else {
+                    "USB #" + (number + 1) + " — " + vidPid
+                },
+                permissionGranted = allowed,
+                profile = profile
             )
             report.appendLine("Device #" + (number + 1) + " VID:PID=" + vidPid)
+            report.appendLine("  known model match=" + (profile?.modelName ?: "none"))
+            if (profile != null) {
+                report.appendLine("  model match basis=exact VID:PID table entry; USB descriptors and CAPT response still require validation")
+            }
             report.appendLine("  deviceClass=" + device.deviceClass +
                 " subclass=" + device.deviceSubclass + " protocol=" + device.deviceProtocol)
             report.appendLine("  USB permission=" + allowed)

@@ -20,3 +20,7 @@ Public ValdikSS/captdriver `val` at `892f320c019974a5b737e000fcc2c8582264a131`, 
 1. With powered-on Canon LBP2900 connected using existing cable, open the newer signed app (when signing secret is installed) or the existing A1 debug app.
 2. Refresh and grant access to its USB entry, share the full anonymized report via Share.
 3. Only then bind a guarded Android USB channel and select a confirmed LBP2900 CAPT profile; validate known read-only response before any page command.
+
+
+## Hardware checkpoint update — 2026-10-22
+The owner now reports that the app enumerates exactly one USB device **04A9:2676** and that Android permission was granted. Public USB records map this ID to Canon LBP2900. The screenshot omits the expanded technical report, so interface class/subclass/protocol, endpoint addresses and types, and claim result are not yet confirmed. Next: use the exact-ID profile only for UI identification, then validate the full report and add a manually triggered read-only status request gated by a unique BULK IN/OUT pair and successful interface claim. No print commands are enabled.

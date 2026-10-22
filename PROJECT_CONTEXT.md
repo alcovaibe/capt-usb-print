@@ -31,11 +31,12 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 
 | Item | State | Method |
 | --- | --- | --- |
-| Physical printer connection during diagnostic screenshot | Not confirmed; owner says USB has not yet been tested in this app | Controlled hardware test still required |
+| USB device enumeration / permission | Confirmed: one device 04A9:2676 and USB permission granted (owner screenshot, 2026-10-22) | Full technical report still needed for interface and endpoints |
 | Repository privacy | Confirmed private via GitHub metadata | Recheck on new commit |
 | Device API/build/ABI/page size | Confirmed on owner's A1.4 screenshot | Recheck only if phone OS changes |
-| USB VID/PID/interface/endpoints | Unknown | Stage A report |
-| USB permission/claim | Unknown | Grant/deny/reconnect with Stage A |
+| USB VID/PID | Confirmed 04A9:2676 (Canon LBP2900 match) | Owner screenshot, 2026-10-22 |
+| USB interfaces/endpoints/claim result | Not yet recorded in shared evidence | Full anonymized technical report |
+| USB permission | Granted per screenshot; interface claim result unknown | Full technical report |
 | CAPT status and actual print | Unknown | Stage B guarded implementation + physical paper confirmation |
 | PDF/PrintService/HONOR Documents | Not implemented | Stages C/D |
 
@@ -47,7 +48,7 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 
 ## Next actions
 1. Confirm private CI \`assembleDebug\`, lint, tests and merged manifest permission audit; fix failures before sharing APK.
-2. Owner installs A1 and shares anonymized report. Do not send test print or claim device ready from USB permission alone.
+2. USB enumeration now confirmed (04A9:2676; permission granted). Obtain the full anonymized report with interface/endpoints and claim result before enabling a CAPT status query. Do not send a test print or claim device ready from USB permission alone.
 3. Model LBP2900 transport responses using observed device interface and verified upstream before Stage B.
 
 
@@ -103,3 +104,10 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Owner reports that repository Actions secret `ANDROID_SIGNING` has now been added.
 - The previous run #13 started before this confirmation; its signed-release job was skipped, so it does not validate the new secret.
 - The next push to `main` will test the JSON schema, PKCS12 restoration, release signature, monotonically increasing versionCode and Android 16 install/upgrade. A release is published only if each release-gate step succeeds. Never echo or fetch secret contents.
+
+
+## Hardware checkpoint: USB enumeration succeeded (2026-10-22)
+- Owner provided a screenshot from the signed A2 build on HONOR X9c with one enumerated USB device: **VID:PID 04A9:2676**, and the system USB permission state says **granted**.
+- Cross-check against public USB device records identifies 04A9:2676 as **Canon LBP2900**. The exact VID:PID match is good model evidence; it does not prove interface compatibility or that CAPT exchanges work.
+- The screenshot does not show the detailed technical report. Interface classes, alternate settings, endpoint addresses/types, descriptor header, interface-claim result and any printer response are not yet recorded in the project evidence.
+- Next code step: label the known device from the exact VID:PID table; keep unknown IDs unnamed. Then inspect the full anonymized report and implement an explicitly user-triggered, read-only CAPT status query only if the selected interface is unambiguous and claim succeeds. No print/page commands until status parsing is validated.
