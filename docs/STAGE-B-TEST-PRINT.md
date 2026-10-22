@@ -1,6 +1,6 @@
 # Experimental Stage B — one physical A4 test page
 
-Status: source implementation in feature branch, **not validated on the user's printer**.
+Status: source implementation merged, **physical page output still unverified**.
 
 ## Proven hardware facts (user's 2026-10-22 JSON)
 - HONOR X9c / Android API 36; Canon LBP2900 VID:PID 04A9:2676.
@@ -16,6 +16,7 @@ Status: source implementation in feature branch, **not validated on the user's p
 - Page descriptor and anonymous SetJobInfo2 payload based on the LBP2900 registration's LBP3000 job prologue. No CUPS, PrintHand, network or privileged Android API.
 - One exclusive USB claim for the entire job. Validates profile, VID/PID, permission, unique BULK endpoints, interface class, preflight parameters and page counters.
 - ReserveUnit → job start → upstream clear/GoOnline sequence → MultiCommand page descriptor → streaming HISCOA video → IC_BLACK_END → StartPrint → counter observation → job end → ReleaseUnit on observed success.
+- Conservative live BufLevel check before EVERY IC_VIDEO_DATA frame: if no buffer slots are available, StartPrint(1) is issued only after the expected decoding counter is observed, and the transfer waits for a free slot. This is deliberately slower than optimized batching, pending hardware verification.
 - Bounded waiting, buffering, packet size, cancellation flag, controlled failure with explicit unknown outcome. Does not silently replay sent bytes or resume a job automatically.
 - JSON reports print phase, progress trace, last raw CAPT reply, HISCOA SHA256, bytes sent and observed completion counters. No print-page raster content in diagnostics.
 - All actions still export JSON with Telegram preference except Show Details.

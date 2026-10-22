@@ -173,23 +173,26 @@ object CaptTestPrintEngine {
 
                 stage = "TRANSMITTING"
                 var started = false
-                // BufferSlots == 0 means no free buffer. StartPrint may have to
-                // be sent early to drain it (upstream streaming mode).
+                // Never assume buffer space remains free for three bands.
+                // Read the printer's live BufLevel before EVERY IC_VIDEO_DATA frame.
+                // This deliberately favors safe first-page discovery over throughput.
+                // No data frame is sent while the device reports zero free slots.
                 for ((index, band) in bands.withIndex()) {
                     guard()
-                    if (index % 3 == 0) {
+                    for (frame in CaptPageProtocol.videoData(band, chunkSize)) {
+                        guard()
                         status = safeState()
                         if (status.bufferSlots == 0) {
                             if (!started) {
                                 waitState(WAIT_READY_MS) { it.pageDecoding == 1 }
                                 query(CaptJobProtocol.START_PRINT, CaptJobProtocol.pageNumber(1))
                                 started = true
-                                note("StartPrint(1) in bounded streaming mode")
+                                note("StartPrint(1) to drain full CAPT buffer")
                             }
-                            waitState(WAIT_READY_MS) { it.bufferSlots >= 1 }
+                            val available = waitState(WAIT_READY_MS) { it.bufferSlots >= 1 }
+                            // This state is checked immediately before transfer.
+                            check(available.bufferSlots >= 1)
                         }
-                    }
-                    for (frame in CaptPageProtocol.videoData(band, chunkSize)) {
                         guard()
                         session.sendFrame(frame)
                         bytesSent += frame.size
