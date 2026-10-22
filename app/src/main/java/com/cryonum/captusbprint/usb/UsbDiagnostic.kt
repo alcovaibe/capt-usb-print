@@ -22,7 +22,9 @@ data class UsbRow(
     val deviceKey: String, // Internal only; never included in export
     val title: String,
     val permissionGranted: Boolean,
-    val profile: UsbDeviceProfile? = null
+    val profile: UsbDeviceProfile? = null,
+    val vendorId: Int,
+    val productId: Int
 )
 data class UsbSnapshot(val devices: List<UsbRow>, val report: String)
 
@@ -82,7 +84,9 @@ object UsbDiagnostic {
                     "USB #" + (number + 1) + " — " + vidPid
                 },
                 permissionGranted = allowed,
-                profile = profile
+                profile = profile,
+                vendorId = device.vendorId,
+                productId = device.productId
             )
             report.appendLine("Device #" + (number + 1) + " VID:PID=" + vidPid)
             report.appendLine("  known model match=" + (profile?.modelName ?: "none"))
