@@ -6,12 +6,19 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.cryonum.captusbprint.document.DocumentInspector
+import com.cryonum.captusbprint.document.DocumentOverview
+import com.cryonum.captusbprint.core.JobSpecification
+import com.cryonum.captusbprint.core.Orientation
 import java.util.concurrent.Executors
 
 /**
@@ -21,6 +28,12 @@ import java.util.concurrent.Executors
 class DocumentActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var message: TextView
+    private lateinit var planSection: LinearLayout
+    private lateinit var pageRange: EditText
+    private lateinit var copies: EditText
+    private lateinit var orientation: RadioGroup
+    private lateinit var planResult: TextView
+    private var inspectedDocument: DocumentOverview? = null
     private var generation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,7 +48,7 @@ class DocumentActivity : Activity() {
         })
         layout.addView(TextView(this).apply {
             text = "Проверка PDF, JPEG и PNG без печати. Файл не передаётся в сеть. " +
-                "Предпросмотр и отправка документа принтеру появятся на следующем шаге."
+                "Здесь можно проверить план страниц и копий, но просмотр содержимого и печать ещё не включены."
             textSize = 16f
         })
         layout.addView(Button(this).apply {
@@ -49,6 +62,56 @@ class DocumentActivity : Activity() {
             setTextIsSelectable(true)
         }
         layout.addView(message)
+        planSection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        planSection.addView(TextView(this).apply {
+            text = "Параметры будущего задания · проверка без печати"
+            textSize = 18f
+        })
+        planSection.addView(TextView(this).apply {
+            text = "Страницы (например: 1–3, 5, 8). Пустое поле — все страницы."
+        })
+        pageRange = EditText(this).apply {
+            hint = "Все страницы"
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSingleLine(true)
+        }
+        planSection.addView(pageRange)
+        planSection.addView(TextView(this).apply { text = "Количество копий (1–20)" })
+        copies = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setText("1")
+        }
+        planSection.addView(copies)
+        planSection.addView(TextView(this).apply { text = "Ориентация A4" })
+        orientation = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+            addView(RadioButton(this@DocumentActivity).apply {
+                id = View.generateViewId()
+                text = "Книжная"
+                isChecked = true
+                tag = Orientation.PORTRAIT
+            })
+            addView(RadioButton(this@DocumentActivity).apply {
+                id = View.generateViewId()
+                text = "Альбомная"
+                tag = Orientation.LANDSCAPE
+            })
+        }
+        planSection.addView(orientation)
+        planSection.addView(Button(this).apply {
+            text = "Проверить план задания (без печати)"
+            setOnClickListener { checkJobPlan() }
+        })
+        planResult = TextView(this).apply {
+            textSize = 16f
+            setTextIsSelectable(true)
+        }
+        planSection.addView(planResult)
+        layout.addView(planSection)
         setContentView(ScrollView(this).apply {
             isFillViewport = true
             addView(layout)
@@ -102,12 +165,20 @@ class DocumentActivity : Activity() {
 
     private fun inspect(uri: Uri) {
         val request = ++generation
+        inspectedDocument = null
+        planSection.visibility = View.GONE
         message.text = "Проверка выбранного документа… На принтер ничего не отправляется."
         worker.execute {
             val outcome = runCatching { DocumentInspector.inspect(applicationContext, uri) }
             runOnUiThread {
                 if (isFinishing || isDestroyed || request != generation) return@runOnUiThread
                 message.text = outcome.fold({ doc ->
+                    inspectedDocument = doc
+                    pageRange.setText("")
+                    copies.setText("1")
+                    (orientation.getChildAt(0) as RadioButton).isChecked = true
+                    planResult.text = ""
+                    planSection.visibility = View.VISIBLE
                     val rotation = doc.rotationDegrees?.let { "; EXIF: ${it}°" } ?: ""
                     "${doc.format.label}: ${doc.pageCount} стр.; " +
                         "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
@@ -122,6 +193,46 @@ class DocumentActivity : Activity() {
                 })
             }
         }
+    }
+
+    private fun checkJobPlan() {
+        val doc = inspectedDocument ?: run {
+            planResult.text = "Сначала выбери и проверь документ."
+            return
+        }
+        val count = copies.text.toString().trim().toIntOrNull()
+        if (count == null) {
+            planResult.text = "Укажи целое количество копий от 1 до 20."
+            return
+        }
+        val selectedOrientation = if ((orientation.getChildAt(1) as RadioButton).isChecked) {
+            Orientation.LANDSCAPE
+        } else {
+            Orientation.PORTRAIT
+        }
+        val plan = runCatching {
+            JobSpecification.create(
+                sourcePageCount = doc.pageCount,
+                pages = pageRange.text.toString(),
+                copies = count,
+                orientation = selectedOrientation
+            )
+        }
+        planResult.text = plan.fold({ job ->
+            val order = job.outputPageOrder
+            val preview = order.take(16).joinToString(", ") { (it + 1).toString() } +
+                if (order.size > 16) ", …" else ""
+            "План корректен. Формат: ${doc.format.label}; A4; " +
+                "ориентация: ${if (job.orientation == Orientation.PORTRAIT) "книжная" else "альбомная"}.\n" +
+                "Исходных страниц выбрано: ${job.pageIndices.size}; копий: ${job.copies}; " +
+                "листов в задании: ${order.size}.\n" +
+                "Порядок (номера страниц исходного документа): $preview.\n" +
+                "Только проверка параметров: файл не сохранён для очереди; " +
+                "USB/CAPT-команды не выполнялись."
+        }, {
+            "Некорректные параметры: проверь диапазоны, повторы, порядок страниц и число копий. " +
+                "Ограничение — до 2000 итоговых листов. Ничего не напечатано."
+        })
     }
 
     override fun onDestroy() {
