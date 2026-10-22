@@ -45,7 +45,7 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
     }
     private val page = TextView(context).apply {
         textSize = 15f
-        setTextColor(foreground)
+        setTextColor(this@DocumentPreviewPanel.foreground)
         gravity = Gravity.CENTER
     }
     private val navigation = LinearLayout(context).apply {
@@ -67,7 +67,7 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
             text = "ПРЕДПРОСМОТР ДОКУМЕНТА"
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(foreground)
+            setTextColor(this@DocumentPreviewPanel.foreground)
             letterSpacing = 0.08f
         })
         addView(TextView(context).apply {
