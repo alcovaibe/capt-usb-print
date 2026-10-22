@@ -12,6 +12,7 @@ data class JobSpecification private constructor(
     val pageIndices: List<Int>,
     val copies: Int,
     val orientation: Orientation,
+    val contentRotationDegrees: Int,
     val paper: Paper
 ) {
     val outputPageOrder: List<Int>
@@ -27,10 +28,12 @@ data class JobSpecification private constructor(
             pages: String,
             copies: Int,
             orientation: Orientation = Orientation.PORTRAIT,
-            paper: Paper = Paper.A4
+            paper: Paper = Paper.A4,
+            contentRotationDegrees: Int = 0
         ): JobSpecification {
             require(sourcePageCount in 1..MAX_SOURCE_PAGES) { "Invalid document page count" }
-            require(copies in 1..MAX_COPIES) { "Invalid number of copies" }
+            require(copies in 1..MAX_COPIES)
+            require(contentRotationDegrees == 0 || contentRotationDegrees == 90) { "Invalid number of copies" }
             require(pages.length <= 256) { "Page selection too long" }
             val selected = if (pages.isBlank()) {
                 (0 until sourcePageCount).toList()
@@ -60,7 +63,7 @@ data class JobSpecification private constructor(
             require(selected.isNotEmpty() && selected.size.toLong() * copies <= MAX_OUTPUT_PAGES) {
                 "Too many output pages"
             }
-            return JobSpecification(selected.toList(), copies, orientation, paper)
+            return JobSpecification(selected.toList(), copies, orientation, contentRotationDegrees, paper)
         }
     }
 }
