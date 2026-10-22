@@ -69,3 +69,10 @@ printing is developed.
 ### First PDF hardware checkpoint (experimental implementation)
 
 Only when the selected job contains exactly the currently displayed PDF page, **one copy**, and **portrait A4**, an explicit confirmation can submit a single precompressed page through `CaptPdfPrintEngine`. Initial USB permission must be granted on the main diagnostic screen. No automatic retry, recovery or document-data export is added. A bounded private `capt-pdf-print-latest.json` marker is saved before USB starts and updated on the final outcome; explicit sharing is available from the document screen, including after reopening it. No physical PDF output has been verified yet. A process interruption after the USB marker is uncertain. The accepted Stage B engines are unchanged.
+
+
+### Actual PDF output and guarded multi-sheet pilot
+
+The owner confirmed two separate PDF sheet printouts on signed build 105 after physically power-cycling LBP2900. This does not establish continuous-session stability: previous attempts repeatedly returned ReserveUnit 0x8C, including for previously accepted Stage B patterns. No automatic retry or speculative CAPT recovery is permitted.
+
+The next private Stage C pilot supports **exactly 2–3 portrait A4 PDF sheets in one reserved job**, with explicit confirmation, sequential CAPT counter checks, one preparatory page object per unique source page (maximum 4 MiB each), and durable private diagnostic evidence. Two or three collated copies of one page are allowed. This pilot is NOT yet hardware-verified, does not replace the general queue, and is not a claim that JPEG/PNG, arbitrary copies, landscape or PrintService printing is ready.
