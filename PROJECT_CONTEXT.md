@@ -119,3 +119,10 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - The response reader is bounded to 1024 bytes and finite timeouts. It validates command ID and either LE or BCD frame length against the actual received length. Partial request writes are not retried; interface is released and connection closed in finally.
 - The UI/report records only the basic status bytes and whether a valid response arrived. It does not send a page, print payload, or any job/service command.
 - This source-level probe is not yet validated on the physical printer. Next step after CI: install the latest signed private release, press the new status button once, and share the report. A valid response is required before developing the first page path.
+
+
+## Hardware result and CAPT reply-length correction (2026-10-22)
+- On signed build 19 (versionCode 1019, revision `abc703f9c404`), HONOR X9c enumerated Canon LBP2900 (VID:PID 04A9:2676), USB permission was granted, the unique BULK IN/OUT interface was claimed successfully, but the manually triggered GetBasicStatus query failed during response-length validation. No print/page data was sent.
+- Source review identified an overly strict condition: the live probe discarded every candidate total frame length below 10 bytes, while the upstream CAPT framing implementation accepts a 6-byte total response (4-byte header plus two basic-status bytes). The basic-status parser also incorrectly required the optional buffer-level bytes.
+- Corrective change: read the 6-byte CAPT framing/status prefix first, accept a bounded 6-byte minimal reply, and parse buffer-level bytes only when the reply contains them. For other invalid headers, the anonymized report now records only the first four framing bytes and derived LE/BCD lengths/candidates; it does not record status payload bytes or document data.
+- Next hardware gate: install the new signed build, run the read-only status query once, and inspect the result. No print/page commands or print path have been enabled.

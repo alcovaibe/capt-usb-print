@@ -45,7 +45,20 @@ class StageBCoreTest {
         assertEquals(6, CaptFrame.parseReply(0xE0A0, bcd).size)
     }
 
-    @Test fun statusParserReadsOnlyTheValidatedBasicStatusFrame() {
+    @Test fun acceptsMinimalSixByteGetBasicStatusReply() {
+        // Upstream CAPT parser accepts two basic status bytes even when no
+        // buffer-level bytes are present in the response.
+        val frame = byteArrayOf(0xA0.toByte(), 0xE0.toByte(), 6, 0, 0x41, 0x03)
+        assertEquals(listOf(6), CaptFrame.lengthCandidates(frame, 1024))
+        assertTrue(CaptFrame.headerLengthMatches(frame, 6))
+        val parsed = CaptBasicStatusParser.parse(frame)
+        assertEquals(0x41, parsed.statusByte)
+        assertEquals(0x03, parsed.secondaryByte)
+        assertNull(parsed.bufferLowByte)
+        assertNull(parsed.bufferHighByte)
+    }
+
+    @Test fun statusParserReadsOptionalBufferLevelFromLongerReply() {
         val frame = byteArrayOf(
             0xA0.toByte(), 0xE0.toByte(), 10, 0,
             0x41, 0x03, 0x00, 0x00, 0x0F, 0x00
@@ -53,8 +66,8 @@ class StageBCoreTest {
         val parsed = CaptBasicStatusParser.parse(frame)
         assertEquals(0x41, parsed.statusByte)
         assertEquals(0x03, parsed.secondaryByte)
-        assertEquals(0x0F, parsed.bufferLowByte)
-        assertEquals(0x00, parsed.bufferHighByte)
+        assertTrue(parsed.bufferLowByte == 0x0F)
+        assertTrue(parsed.bufferHighByte == 0x00)
         assertThrows(IllegalArgumentException::class.java) {
             CaptBasicStatusParser.parse(frame.copyOf(9))
         }

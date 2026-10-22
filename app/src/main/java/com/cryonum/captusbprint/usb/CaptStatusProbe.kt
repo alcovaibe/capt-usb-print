@@ -30,6 +30,7 @@ class CaptStatusProbeException(message: String) : Exception(message)
 object CaptStatusProbe {
     private const val GET_BASIC_STATUS = 0xE0A0
     private const val MAX_STATUS_FRAME_BYTES = 1024
+    private const val CAPT_HEADER_BYTES = 6
     private const val USB_TIMEOUT_MS = 3000
 
     fun query(context: Context, deviceKey: String): CaptStatusProbeResult {
@@ -139,47 +140,57 @@ object CaptStatusProbe {
         connection: UsbDeviceConnection,
         endpoint: UsbEndpoint
     ): ByteArray {
-        // Read at least one full USB packet so a 10-byte CAPT reply is not
-        // truncated by asking the host controller for only the 6-byte prefix.
+        // CAPT's documented exchange reads the 6-byte command/length header first,
+        // then reads only the remaining bytes declared by that header.
         val frame = ByteArray(MAX_STATUS_FRAME_BYTES)
-        val initialRequest = maxOf(64, endpoint.maxPacketSize).coerceAtMost(MAX_STATUS_FRAME_BYTES)
         val firstCount = try {
-            connection.bulkTransfer(endpoint, frame, 0, initialRequest, USB_TIMEOUT_MS)
+            connection.bulkTransfer(endpoint, frame, 0, CAPT_HEADER_BYTES, USB_TIMEOUT_MS)
         } catch (_: Exception) {
-            throw CaptStatusProbeException("Ошибка чтения ответа CAPT.")
+            throw CaptStatusProbeException("Ошибка чтения заголовка ответа CAPT.")
         }
-        if (firstCount !in 6..initialRequest) {
-            throw CaptStatusProbeException("Ответ CAPT не получен полностью.")
+        if (firstCount != CAPT_HEADER_BYTES) {
+            throw CaptStatusProbeException(
+                "Заголовок CAPT получен не полностью; receivedBytes=$firstCount; " +
+                    headerDetails(frame, firstCount)
+            )
         }
         val command = (frame[0].toInt() and 0xff) or
             ((frame[1].toInt() and 0xff) shl 8)
         if (command != GET_BASIC_STATUS) {
-            throw CaptStatusProbeException("Принтер вернул неожиданный CAPT command ID.")
+            throw CaptStatusProbeException(
+                "Неожиданный CAPT command ID; expected=E0A0; " +
+                    "receivedCommand=${hex(frame[1].toInt() and 0xff)}${hex(frame[0].toInt() and 0xff)}; " +
+                    headerDetails(frame, firstCount)
+            )
         }
 
+        // GetBasicStatus replies can be as short as 6 total bytes (4-byte header
+        // plus two status bytes). Do not discard this valid protocol shape.
         val candidates = CaptFrame.lengthCandidates(frame, MAX_STATUS_FRAME_BYTES)
-            .filter { it >= 10 }
         val maximum = candidates.maxOrNull()
-            ?: throw CaptStatusProbeException("Длина ответа CAPT некорректна или превышает лимит.")
-        if (firstCount > maximum) {
-            throw CaptStatusProbeException("USB-пакет длиннее объявленного ответа CAPT.")
-        }
+            ?: throw CaptStatusProbeException(
+                "Длина ответа CAPT не распознана или превышает лимит; " +
+                    headerDetails(frame, firstCount)
+            )
         var received = firstCount
         val deadline = SystemClock.elapsedRealtime() + USB_TIMEOUT_MS
 
         while (true) {
             if (CaptFrame.headerLengthMatches(frame, received)) {
-                if (received < 10) {
-                    throw CaptStatusProbeException("Ответ CAPT короче ожидаемого status-пакета.")
-                }
                 return frame.copyOf(received)
             }
             if (received >= maximum) {
-                throw CaptStatusProbeException("Длина ответа CAPT не совпала с заголовком.")
+                throw CaptStatusProbeException(
+                    "Фактическая длина ответа CAPT не совпала с заголовком; " +
+                        "receivedBytes=$received; " + headerDetails(frame, received)
+                )
             }
             val remaining = (deadline - SystemClock.elapsedRealtime()).toInt()
             if (remaining <= 0) {
-                throw CaptStatusProbeException("Истёк тайм-аут чтения ответа CAPT.")
+                throw CaptStatusProbeException(
+                    "Истёк тайм-аут чтения ответа CAPT; receivedBytes=$received; " +
+                        headerDetails(frame, received)
+                )
             }
             val requested = minOf(maximum - received, frame.size - received)
             val count = try {
@@ -187,13 +198,43 @@ object CaptStatusProbe {
                     endpoint, frame, received, requested, minOf(1000, remaining)
                 )
             } catch (_: Exception) {
-                throw CaptStatusProbeException("Ошибка чтения ответа CAPT.")
+                throw CaptStatusProbeException(
+                    "Ошибка чтения продолжения ответа CAPT; receivedBytes=$received; " +
+                        headerDetails(frame, received)
+                )
             }
             if (count <= 0 || count > requested) {
-                throw CaptStatusProbeException("Ответ CAPT получен не полностью.")
+                throw CaptStatusProbeException(
+                    "Ответ CAPT получен не полностью; chunkBytes=$count; " +
+                        "receivedBytes=$received; " + headerDetails(frame, received)
+                )
             }
             received += count
         }
+    }
+
+    /**
+     * Logs only the four framing bytes and derived lengths, never the status
+     * payload, printer identifiers, document data, or USB device path.
+     */
+    private fun headerDetails(frame: ByteArray, received: Int): String {
+        if (received < 4) return "headerHex=unavailable"
+        val headerHex = frame.take(4).joinToString(" ") {
+            String.format(Locale.ROOT, "%02X", it.toInt() and 0xff)
+        }
+        val lo = frame[2].toInt() and 0xff
+        val hi = frame[3].toInt() and 0xff
+        val littleEndian = lo or (hi shl 8)
+        val nibbles = intArrayOf((hi ushr 4) and 0x0f, hi and 0x0f, (lo ushr 4) and 0x0f, lo and 0x0f)
+        val bcd = if (nibbles.all { it <= 9 }) {
+            nibbles[0] * 1000 + nibbles[1] * 100 + nibbles[2] * 10 + nibbles[3]
+        } else {
+            null
+        }
+        val candidates = CaptFrame.lengthCandidates(frame, MAX_STATUS_FRAME_BYTES)
+        return "headerHex=$headerHex; declaredLengthLE=$littleEndian; " +
+            "declaredLengthBCD=${bcd ?: "invalid"}; " +
+            "boundedLengthCandidates=${candidates.joinToString(prefix = "[", postfix = "]")}"
     }
 
     private fun hex(value: Int): String =
