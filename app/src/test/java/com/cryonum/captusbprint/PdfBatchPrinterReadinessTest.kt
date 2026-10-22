@@ -11,9 +11,8 @@ class PdfBatchPrinterReadinessTest {
             0x88.toByte(), 0)
         val basic = CaptBasicStatusParser.parse(captured)
         assertEquals(0x88, basic.statusByte)
-        val message = PdfBatchPrinterReadiness.rejection(basic.statusByte)
-        assertNotNull(message)
-        assertTrue(message!!.contains("0x88"))
+        val message = requireNotNull(PdfBatchPrinterReadiness.rejection(basic.statusByte))
+        assertTrue(message.contains("0x88"))
         assertTrue(message.contains("ReserveUnit"))
     }
 
