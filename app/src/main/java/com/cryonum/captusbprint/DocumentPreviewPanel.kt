@@ -85,7 +85,8 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
         image.elevation = dp(3).toFloat()
         canvas.addView(image, FrameLayout.LayoutParams(-1, dp(420), Gravity.CENTER))
         canvas.addView(spinner, FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER))
-        canvas.addView(state, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+        canvas.addView(state, FrameLayout.LayoutParams(-1, -2,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(12) })
         addView(canvas, LayoutParams(-1, -2))
         previous.setOnClickListener { onPrevious() }
         next.setOnClickListener { onNext() }
