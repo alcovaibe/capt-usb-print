@@ -21,17 +21,21 @@ altering the hardware-confirmed Stage B USB engines.
 - No document contents, names or URIs enter exported diagnostic history.
   No document print commands, Internet permission or automatic sharing are added.
 
+## Owner validation and next offline checkpoint
+- Owner confirmed on 2026-10-22 that signed build 74 opens a real PDF and reports its page count, file bytes and dimensions of its first page through PdfRenderer. This confirms local intake/metadata on the actual HONOR handset, **not** PDF printing.
+- This change reads dimensions of every PDF page sequentially without rendering a full bitmap, displays up to 20 entries, and offers an **offline-only** A4 page-selection/copy/orientation plan. Empty page selection means all pages; invalid, duplicate and overlapping ranges are rejected. Output is bounded to 2,000 planned sheets and the first 24 page indices are shown. No job is queued, no document contents retained, and no CAPT/USB document printing is activated.
+- Next work remains bounded ownership of a selected local source, a single USB queue, preview and deterministic sequential rasterization. The page plan cannot be treated as printed sheets.
+
 ## Explicitly NOT completed by this foundation
 A visual page preview, actual rasterization, geometry and monochrome conversion,
-PDF/image CAPT printing, page/copy/orientation options integrated into the UI,
+PDF/image CAPT printing, physical use of the offline page/copy/orientation plan,
 cancellation, source access retention for queued jobs, single shared USB
 queue, system PrintService and real-document acceptance remain to be built.
 The importer performs *offline inspection only*.
 
 ## Stage C implementation sequence
-1. Safe local import/format validation and document metadata (this PR).
-2. Immutable JobSpecification and normalized page range/copy plan with
-   bounded document ownership and one queue.
+1. Safe local import/format validation and document metadata (owner-confirmed on real PDF; per-page sizes enhanced here).
+2. Immutable JobSpecification and normalized page range/copy plan (offline UI done here); bounded document ownership and one queue remain pending.
 3. Actual 600dpi A4 preview-to-print geometry and sequential page rasterizer;
    inspect text, formulas, thin lines, EXIF orientation and greyscale.
 4. Reuse Stage B CAPT engine for document pages without exposing a separate
