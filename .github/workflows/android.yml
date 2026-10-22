@@ -23,7 +23,7 @@ jobs:
         with:
           packages: 'platform-tools'
       - name: Install Android SDK 36
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Validate Python release automation syntax
         run: python3 -m py_compile tools/prepare-signing.py tools/signed-release.py
       - name: Build, lint and tests
@@ -89,7 +89,7 @@ jobs:
         with:
           packages: 'platform-tools'
       - name: Install SDK 36
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Allocate monotonically increasing signed versionCode
         run: echo "APP_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
       - name: Restore owner's permanent key to temporary secure runner directory
