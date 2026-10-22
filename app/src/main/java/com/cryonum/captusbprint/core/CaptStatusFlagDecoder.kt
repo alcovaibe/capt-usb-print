@@ -44,9 +44,9 @@ object CaptStatusFlagDecoder {
         0x4000 to "DOOR_OPEN"
     ))
 
-    fun paper(value: Int): String = when (value and 0xff) {
-        0x80 -> "PAPER_AVAILABLE"
-        0x00 -> "NO_PAPER"
+    fun paper(value: Int): String = when {
+        (value and 0x80) != 0 -> "PAPER_AVAILABLE"
+        (value and 0xff) == 0 -> "NO_PAPER"
         else -> "UNKNOWN_0x" + hex(value)
     }
 
