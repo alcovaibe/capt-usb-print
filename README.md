@@ -2,7 +2,7 @@
 
 Independent offline Android CAPT prototype for the owner's HONOR X9c (Android API 36) and Canon LBP2900. No PrintHand dependency or app-side INTERNET permission. Other Android devices and printers are not claimed supported.
 
-**Verified:** Stage A USB diagnosis and read-only queries; Stage B owner-confirmed A4/600-dpi physical test sheets, repeat sessions and two distinct sheets in one CAPT job (signed build 71, 2026-10-22). **In progress:** Stage C PDF/JPEG/PNG local intake, bounded preview and offline raster preparation. Signed build 89 previewed an 11-page PDF; the owner confirmed seven UI/offline checks on signed build 93, including a PDF mono-raster preparation with no reported error. The current experimental branch exposes a separately confirmed first-PDF single-sheet action; no physical PDF or image sheet has yet been owner-confirmed. Android PrintService and production stabilization are not implemented.
+**Verified:** Stage A USB diagnosis and read-only queries; Stage B owner-confirmed A4/600-dpi physical test sheets, repeat sessions and two distinct sheets in one CAPT job (signed build 71, 2026-10-22). **In progress:** Stage C PDF/JPEG/PNG local intake, bounded preview and offline raster preparation. Signed build 89 previewed an 11-page PDF; the owner confirmed seven UI/offline checks on signed build 93, including a PDF mono-raster preparation with no reported error. The experimental implementation exposes a separately confirmed first-PDF single-sheet action; no physical PDF or image sheet has yet been owner-confirmed. Android PrintService and production stabilization are not implemented.
 
 ## Hardware and bounded diagnostic
 On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, interface 0 / class 7/1/2, BULK OUT 0x01 and IN 0x82, permission and guarded claim verified. Manual CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo responses are tracked in private JSON. Device-list monitoring itself does not send CAPT commands; diagnostics exclude document content and printer serial numbers.
@@ -66,6 +66,6 @@ the owner's PDF requires a separate signed-device check before real document
 printing is developed.
 
 
-### First PDF hardware checkpoint (experimental PR)
+### First PDF hardware checkpoint (experimental implementation)
 
 Only when the selected job contains exactly the currently displayed PDF page, **one copy**, and **portrait A4**, an explicit confirmation can submit a single precompressed page through `CaptPdfPrintEngine`. Initial USB permission must be granted on the main diagnostic screen. No automatic retry, recovery or document-data export is added. A bounded private `capt-pdf-print-latest.json` marker is saved before USB starts and updated on the final outcome; explicit sharing is available from the document screen, including after reopening it. No physical PDF output has been verified yet. A process interruption after the USB marker is uncertain. The accepted Stage B engines are unchanged.
