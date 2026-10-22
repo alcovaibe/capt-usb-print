@@ -22,6 +22,7 @@ object CaptJobProtocol {
     const val RELEASE_UNIT = 0xE0A9
 
     const val START_FLAG = 1
+    const val CONTINUE_FLAG = 2
     const val END_FLAG = 6
 
     fun reserveRequest(): ByteArray = ByteArray(8)
@@ -50,7 +51,7 @@ object CaptJobProtocol {
     fun jobInfo(jobId: Int, flag: Int, nowMillis: Long = System.currentTimeMillis(),
                 timeZone: TimeZone = TimeZone.getDefault()): ByteArray {
         require(jobId in 1..65535)
-        require(flag == START_FLAG || flag == END_FLAG)
+        require(flag == START_FLAG || flag == CONTINUE_FLAG || flag == END_FLAG)
         val calendar = Calendar.getInstance(timeZone).apply { timeInMillis = nowMillis }
         val data = ByteArray(72)
         data[16] = flag.toByte()
