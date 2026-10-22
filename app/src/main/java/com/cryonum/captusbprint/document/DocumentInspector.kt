@@ -12,6 +12,9 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 
+/** Actual dimensions of a PDF page in points, or an image in oriented pixels. */
+data class DocumentPageSize(val width: Int, val height: Int)
+
 data class DocumentOverview(
     val format: DocumentFormat,
     val pageCount: Int,
@@ -19,7 +22,8 @@ data class DocumentOverview(
     val height: Int,
     val dimensionsUnit: String,
     val rotationDegrees: Int?,
-    val copiedBytes: Long
+    val copiedBytes: Long,
+    val pageSizes: List<DocumentPageSize> = emptyList()
 )
 
 /**
@@ -94,10 +98,19 @@ object DocumentInspector {
         }
         return renderer.use { pdf ->
             require(pdf.pageCount in 1..1000) { "Invalid or unsupported PDF page count" }
-            pdf.openPage(0).use { page ->
-                DocumentOverview(DocumentFormat.PDF, pdf.pageCount, page.width,
-                    page.height, "points", null, bytes)
+            // PdfRenderer permits only one open page at a time. Never rasterize
+            // or allocate a full-page bitmap during this metadata pass.
+            val sizes = (0 until pdf.pageCount).map { index ->
+                pdf.openPage(index).use { page ->
+                    require(page.width in 1..100_000 && page.height in 1..100_000) {
+                        "Unsupported PDF page dimensions"
+                    }
+                    DocumentPageSize(page.width, page.height)
+                }
             }
+            val first = sizes.first()
+            DocumentOverview(DocumentFormat.PDF, pdf.pageCount, first.width,
+                first.height, "points", null, bytes, sizes)
         }
     }
 
@@ -125,6 +138,9 @@ object DocumentInspector {
         return DocumentOverview(format, 1,
             if (swap) bounds.outHeight else bounds.outWidth,
             if (swap) bounds.outWidth else bounds.outHeight,
-            "pixels", degrees, bytes)
+            "pixels", degrees, bytes,
+            listOf(DocumentPageSize(
+                if (swap) bounds.outHeight else bounds.outWidth,
+                if (swap) bounds.outWidth else bounds.outHeight)))
     }
 }
