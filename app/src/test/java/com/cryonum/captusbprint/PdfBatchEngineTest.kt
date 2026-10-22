@@ -66,7 +66,7 @@ class PdfBatchEngineTest {
                     assertEquals(42, payload[18].toInt())
                     if (rejectEnd && payload[16].toInt() == 6) throw IOException("Uncertain end reply")
                 }
-                P.SET_POWER_DOWN, P.DISCARD_DATA, P.CLEAR_MIS_PRINT, P.CLEAR_ERROR -> Unit
+                P.SET_POWER_DOWN, P.DISCARD_DATA, P.CLEAR_MIS_PRINT, P.CLEAR_ERROR, P.RELEASE_UNIT -> Unit
                 P.START_PRINT -> {
                     val number = payload[0].toInt() and 255
                     starts.add(number)
@@ -76,7 +76,7 @@ class PdfBatchEngineTest {
                 P.GET_EXTENDED_STATUS -> return observed.copyOf().also {
                     it[4] = if (offline) 0x11 else 1
                     it[8] = bufferSlots.toByte()
-                    if (decoded == noPaperOnPage && noPaperOnPage > 0) it[14] = 0
+                    if (descriptors > 0 && decoded == noPaperOnPage && noPaperOnPage > 0) it[14] = 0
                     for (offset in listOf(18, 38)) { it[offset] = decoded.toByte(); it[offset + 1] = 0 }
                     for (offset in listOf(20, 22, 24)) { it[offset] = completed.toByte(); it[offset + 1] = 0 }
                 }
@@ -115,7 +115,7 @@ class PdfBatchEngineTest {
         val printer = Printer()
         val saved = ArrayList<Int?>()
         val result = run(printer, checkpoint = { saved.add(it.printerConfirmedPages) })
-        assertEquals("printer_counter_confirmed", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "printer_counter_confirmed", result.outcome)
         assertEquals(3, result.printerConfirmedPages)
         assertEquals(listOf(1, 2, 3), printer.starts)
         assertEquals(listOf(1, 2, 6), printer.flags)
@@ -128,7 +128,8 @@ class PdfBatchEngineTest {
 
     @Test fun twoCopiesReuseOnePreparedPageButProduceExactlyTwoSheets() {
         val printer = Printer()
-        assertEquals("printer_counter_confirmed", run(printer, pages = 2).outcome)
+        val result = run(printer, pages = 2)
+        assertEquals(result.trace.joinToString("\n"), "printer_counter_confirmed", result.outcome)
         assertEquals(listOf(1, 2), printer.starts)
         assertEquals(listOf(1, 2, 6), printer.flags)
         assertEquals(2, printer.descriptors)
@@ -137,7 +138,7 @@ class PdfBatchEngineTest {
     @Test fun boundedBufferDrainStartsEachSheetOnlyOnce() {
         val printer = Printer().apply { bufferSlots = 0; drainOnStart = true }
         val result = run(printer)
-        assertEquals("printer_counter_confirmed", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "printer_counter_confirmed", result.outcome)
         assertEquals(listOf(1, 2, 3), printer.starts)
         assertEquals(listOf(1, 2, 6), printer.flags)
         assertTrue(result.trace.any { it.contains("during bounded buffer drain") })
@@ -157,7 +158,7 @@ class PdfBatchEngineTest {
     @Test fun capturedReserveFailureIsUncertainAndNeverReplayedOrReleased() {
         val printer = Printer().apply { refuseReserve = true }
         val result = run(printer)
-        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "unknown_after_print_command", result.outcome)
         assertEquals("A0 A2 08 00 8C 00 00 00", result.lastStatusFrameHex)
         assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
         assertEquals(P.RESERVE_UNIT, printer.commands.last())
@@ -169,7 +170,7 @@ class PdfBatchEngineTest {
         val printer = Printer()
         var stop = false
         val result = run(printer, cancelled = { stop }, checkpoint = { stop = true })
-        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "unknown_after_print_command", result.outcome)
         assertEquals(1, result.printerConfirmedPages)
         assertEquals(1, printer.descriptors)
         assertEquals(listOf(1), printer.starts)
@@ -180,7 +181,7 @@ class PdfBatchEngineTest {
     @Test fun unconfirmedSecondPageTimesOutWithoutThirdPageOrResend() {
         val printer = Printer().apply { stalledPage = 2 }
         val result = run(printer)
-        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "unknown_after_print_command", result.outcome)
         assertEquals("PAGE_2_WAITING_CONFIRMATION", result.stage)
         assertEquals(1, result.printerConfirmedPages)
         assertEquals(listOf(1, 2), printer.starts)
@@ -194,7 +195,7 @@ class PdfBatchEngineTest {
                 if (paperLoss) noPaperOnPage = 2 else disconnectOnPage = 2
             }
             val result = run(printer)
-            assertEquals("unknown_after_print_command", result.outcome)
+            assertEquals(result.trace.joinToString("\n"), "unknown_after_print_command", result.outcome)
             assertEquals(1, result.printerConfirmedPages)
             assertEquals(2, printer.descriptors)
             assertEquals(listOf(1), printer.starts)
@@ -205,7 +206,7 @@ class PdfBatchEngineTest {
     @Test fun failedCheckpointStopsBeforeAnyNextCommand() {
         val printer = Printer()
         val result = run(printer, checkpoint = { throw IOException("Disk full") })
-        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "unknown_after_print_command", result.outcome)
         assertEquals(1, result.printerConfirmedPages)
         assertEquals(1, printer.descriptors)
         assertEquals(listOf(1), printer.flags)
@@ -215,7 +216,7 @@ class PdfBatchEngineTest {
     @Test fun failedFinalizationDoesNotClaimWholeJobSuccess() {
         val printer = Printer().apply { rejectEnd = true }
         val result = run(printer)
-        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "unknown_after_print_command", result.outcome)
         assertEquals(3, result.printerConfirmedPages)
         assertFalse(printer.commands.contains(P.RELEASE_UNIT))
         assertTrue(printer.closed)
