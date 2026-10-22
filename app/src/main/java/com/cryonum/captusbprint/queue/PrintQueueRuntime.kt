@@ -38,6 +38,7 @@ internal object PrintQueueRuntime {
     private var initialized = false
     private val allocations = HashMap<Long, Long>()
     private val intakes = HashSet<Long>()
+    private var cancelVersion = 0L
     private var orphanBytes = 0L
     private lateinit var app: Context
     private data class Work(val source: DocumentSession, val plan: JobSpecification,
@@ -98,6 +99,7 @@ internal object PrintQueueRuntime {
     @Synchronized fun hasRunnableWork() = queue.hasRunnableWork()
     @Synchronized fun hasWork() = queue.snapshot().any { !it.phase.terminal }
     @Synchronized fun hasRoom() = queue.snapshot().count { !it.phase.terminal } + intakes.size < 4
+    @Synchronized fun cancelGeneration() = cancelVersion
 
     /** Worker-thread only; caller retains its preview source and owns no queue files. */
     @Synchronized fun enqueue(context: Context, source: DocumentSession,
@@ -130,6 +132,7 @@ internal object PrintQueueRuntime {
         var id: Long? = null
         var directory: File? = null
         var source: DocumentSession? = null
+        var generation = 0L
         try {
             synchronized(this) {
                 initialize(context)
@@ -138,19 +141,21 @@ internal object PrintQueueRuntime {
                 directory = File(root(), id.toString()).apply { check(mkdir()) }
                 allocations[id!!] = 0
                 intakes.add(id!!)
+                generation = cancelVersion
             }
             val ownedId = id!!
             val ownedDirectory = directory!!
             val file = File(ownedDirectory, "source.bin")
             val bytes = SystemSpoolReader.copy(descriptor, file,
-                { synchronized(this) { reserve(ownedId, it) } }, cancelled)
+                { synchronized(this) { reserve(ownedId, it) } },
+                { cancelled() || cancelGeneration() != generation })
             source = DocumentSession(file, DocumentInspector.inspectPdf(file, bytes))
             val plan = request.plan(source!!.overview.pageCount)
             val metadata = request.diagnostic() + mapOf("receivedPdfPages" to source!!.overview.pageCount,
                 "rangeMapping" to request.selection(source!!.overview.pageCount).mode,
                 "spoolPageNumbers" to plan.pageIndices.map { it + 1 })
             synchronized(this) {
-                if (cancelled()) throw CancellationException()
+                if (cancelled() || generation != cancelVersion) throw CancellationException()
                 queue.add(QueueRecord(ownedId, "SYSTEM_PDF", plan.outputPageOrder.size, ready = false))
                 sources[ownedId] = Work(source!!, plan, deviceKey, ownedDirectory, metadata)
                 persist()
@@ -209,6 +214,7 @@ internal object PrintQueueRuntime {
         }
     }
     @Synchronized fun stopServiceJobs(directOnly: Boolean = false) {
+        if (!directOnly) cancelVersion++ // Also invalidate in-flight system pipes and pending intake.
         queue.snapshot().filter { !it.phase.terminal &&
             (!directOnly || sources[it.id]?.systemMetadata == null) }.forEach {
             queue.cancel(it.id)
@@ -217,6 +223,7 @@ internal object PrintQueueRuntime {
         persist()
     }
     @Synchronized fun serviceFailure(directOnly: Boolean = false) {
+        if (!directOnly) cancelVersion++
         queue.snapshot().filter { !it.phase.terminal &&
             (!directOnly || sources[it.id]?.systemMetadata == null) }.forEach {
             if (it.phase != QueuePhase.QUEUED) queue.cancel(it.id)

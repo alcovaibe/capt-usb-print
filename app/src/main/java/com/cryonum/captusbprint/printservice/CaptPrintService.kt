@@ -20,6 +20,7 @@ class CaptPrintService : PrintService() {
     private var connected = false
     private var drainScheduled = false
     private class Handle(val job: PrintJob, val request: SystemPrintRequest) {
+        val generation = PrintQueueRuntime.cancelGeneration()
         val cancelled = AtomicBoolean(false)
         var importing = false
         var queueId: Long? = null
@@ -112,13 +113,13 @@ class CaptPrintService : PrintService() {
             intake.execute {
                 val outcome = runCatching {
                     PrintQueueRuntime.enqueueSystem(applicationContext, input, handle.request,
-                        deviceKey) { handle.cancelled.get() }
+                        deviceKey) { handle.cancelled.get() || handle.generation != PrintQueueRuntime.cancelGeneration() }
                 }
                 main.post {
                     handle.importing = false
                     outcome.fold(onSuccess = { id ->
                         handle.queueId = id
-                        if (!connected || handle.cancelled.get()) {
+                        if (!connected || handle.cancelled.get() || handle.generation != PrintQueueRuntime.cancelGeneration()) {
                             PrintQueueRuntime.cancel(id)
                             if (connected) { handle.job.cancel(); jobs.remove(handle.job.id) }
                         } else {
@@ -166,6 +167,13 @@ class CaptPrintService : PrintService() {
         if (!connected) return
         val records = PrintQueueRuntime.snapshot().associateBy { it.id }
         jobs.values.toList().forEach { handle ->
+            if (handle.generation != PrintQueueRuntime.cancelGeneration() && !handle.cancelled.get()) {
+                handle.cancelled.set(true)
+                handle.queueId?.let { PrintQueueRuntime.cancel(it) }
+                if (!handle.importing && handle.queueId == null) {
+                    handle.job.cancel(); jobs.remove(handle.job.id); return@forEach
+                }
+            }
             if (handle.job.isCancelled || handle.job.isFailed || handle.job.isCompleted) {
                 handle.cancelled.set(true)
                 handle.queueId?.let { PrintQueueRuntime.cancel(it) }

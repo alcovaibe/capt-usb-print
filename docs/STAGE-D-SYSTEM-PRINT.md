@@ -33,7 +33,9 @@ block before intake for USB permission, queue capacity or explicit queue review.
 Both entry points use the same DocumentQueue/PrintQueueRuntime and one serial
 PrintQueueWorker. The system-bound service relies on Android's active-job binding,
 without starting a background foreground service. Foreground teardown cancels
-direct jobs only; service disable/disconnect cancels only its own jobs.
+direct jobs only; service disable/disconnect cancels only its own jobs. Cancel-all
+also invalidates incoming pipes and pre-intake Android handles; completion of a
+previously accepted copy cannot reactivate cancelled work.
 
 ## Page selection and copies
 

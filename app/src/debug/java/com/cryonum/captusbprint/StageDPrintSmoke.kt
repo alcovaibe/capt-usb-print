@@ -98,6 +98,21 @@ class StageDPrintSmoke : Instrumentation() {
             check(PrintQueueRuntime.snapshot().first { it.id == id }.let { !it.ready && it.sheets == 6 })
             val owned = File(context.noBackupFilesDir,"print-queue/$id/source.bin")
             check(owned.isFile)
+            fun directJob(): Long {
+                val directSource = File(directory,"direct.pdf").apply { writeBytes(bytes) }
+                return DocumentSession(directSource,overview).use { source ->
+                    PrintQueueRuntime.enqueue(context,source,
+                        com.cryonum.captusbprint.core.JobSpecification.create(3,"1",1),"offline-no-usb")
+                }
+            }
+            val directCancelled = directJob()
+            PrintQueueRuntime.stopServiceJobs(directOnly = true)
+            check(PrintQueueRuntime.snapshot().first { it.id == directCancelled }.phase == QueuePhase.CANCELLED)
+            check(PrintQueueRuntime.snapshot().first { it.id == id }.phase == QueuePhase.QUEUED && owned.exists())
+            val directFailed = directJob()
+            PrintQueueRuntime.serviceFailure(directOnly = true)
+            check(PrintQueueRuntime.snapshot().first { it.id == directFailed }.phase == QueuePhase.ERROR)
+            check(PrintQueueRuntime.snapshot().first { it.id == id }.phase == QueuePhase.QUEUED && owned.exists())
             PrintQueueRuntime.cancel(id)
             check(!owned.exists())
             val before = File(context.noBackupFilesDir,"print-queue").listFiles()?.size ?: 0
@@ -107,6 +122,22 @@ class StageDPrintSmoke : Instrumentation() {
                 error("Cancelled intake accepted")
             } catch (_: CancellationException) { }
             check((File(context.noBackupFilesDir,"print-queue").listFiles()?.size ?: 0) == before)
+            val cancelAllPipe = ParcelFileDescriptor.createPipe()
+            val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+            val intakeThread = Thread {
+                try { PrintQueueRuntime.enqueueSystem(context,cancelAllPipe[0],request,"offline-no-usb") { false } }
+                catch (error: Throwable) { failure.set(error) }
+            }.apply { start() }
+            val intakeDeadline = SystemClock.elapsedRealtime()+2000
+            while (SystemClock.elapsedRealtime() < intakeDeadline &&
+                (File(context.noBackupFilesDir,"print-queue").listFiles()?.size ?: 0) == before) SystemClock.sleep(20)
+            try {
+                check((File(context.noBackupFilesDir,"print-queue").listFiles()?.size ?: 0) > before)
+                PrintQueueRuntime.stopServiceJobs()
+                intakeThread.join(2000)
+                check(!intakeThread.isAlive && failure.get() is CancellationException) { "Cancel-all did not stop incoming PDF" }
+                check((File(context.noBackupFilesDir,"print-queue").listFiles()?.size ?: 0) == before)
+            } finally { cancelAllPipe[1].close() }
 
             // Enable only in the disposable CI emulator and open a real Android Print dialog.
             // The production Canon remains unavailable, correctly: this emulator has no USB grant.

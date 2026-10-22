@@ -56,3 +56,12 @@ assert queue_screen.count("shareJobReport(") == 2
 assert "setOnClickListener { shareJobReport(record.id) }" in queue_screen
 assert "Intent.ACTION_SEND" not in queue_screen[:queue_screen.index("    private fun shareJobReport(")]
 print("Per-job queue report sharing is explicit-only.")
+
+# System routing/intake never opens sharing or sends its source through PrintManager.
+assert queue_screen.count("shareSystemReport()") == 2
+assert "setOnClickListener { shareSystemReport() }" in queue_screen
+for path in Path("app/src/main/java/com/cryonum/captusbprint/printservice").glob("*.kt"):
+    source = path.read_text()
+    assert "Intent.ACTION_SEND" not in source and "Intent.createChooser(" not in source
+    assert "PrintManager" not in source, "System input must not loop back into system printing"
+print("System-print report sharing is explicit-only and intake cannot self-route.")
