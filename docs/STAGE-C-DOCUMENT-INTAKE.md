@@ -112,3 +112,36 @@ Do not interpret the green app build as validation of physical document printing
   rotation, JPEG/PNG full-resolution bands, validated HISCOA conversion, unified
   job queue, physical document printing and interruption recovery are still
   pending. Passing JVM and CI does NOT prove visual strip seams or printed DPI.
+
+
+## Stage C owner check of signed build 93 (2026-10-22)
+
+The owner checked the new signed build on HONOR X9c and explicitly confirmed all
+seven requested outcomes: status bar no longer overlaps text; Android bottom
+navigation does not obscure buttons; automatic A4 orientation selects portrait
+for the tested PDF; landscape toggle works; 90-degree content rotation works;
+PDF page navigation works; offline PDF current-page raster check finishes
+without an error. This is an owner-reported UI/offline acceptance, not a
+measured physical PDF print or evidence for JPEG/PNG print quality. Exact
+raster counts were not provided in that report.
+
+## Next offline-only milestone: PDF mono bands into HISCOA
+
+- A manually invoked, portrait-only one-page pipeline reuses the Stage B
+  bundled native HISCOA codec, giving it exactly one 64-line (final 40-line)
+  MSB-first 1bpp band at a time. Last-band marker is set only on the final band.
+- Each incoming band must be sequential, correctly sized and within the
+  hardware-tested A4/600dpi grid. Every native output must be nonempty and at
+  most twice its input size plus 64 bytes; additionally cap total compressed
+  output at 12 MiB. Cancel before/between bands without any automatic retry.
+- Only the current raw and compressed bands are transiently held; the resulting
+  summary exposes band count, total raster bytes, total compressed bytes and
+  maximum compressed band length. Neither document contents nor a document hash,
+  source name or URI enter the diagnostic report.
+- **No CAPT framing, USB transfer, native encoder modifications, document
+  printing, queue submission, PrintService or new permission** is added.
+  The owner must validate native compression on HONOR separately. CI/JVM
+  tests use an injected fake codec and cannot prove native compression correctness.
+- After this checkpoint: validate a real PDF band preparation result, inspect
+  print-mode raster content/strip seams and grayscale, then design one shared
+  job-owner queue and a guarded, separately consented first physical PDF sheet.

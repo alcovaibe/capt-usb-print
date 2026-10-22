@@ -23,7 +23,8 @@ import com.cryonum.captusbprint.document.DocumentInspector
 import com.cryonum.captusbprint.document.DocumentOverview
 import com.cryonum.captusbprint.document.DocumentSession
 import com.cryonum.captusbprint.document.PageOrientationChoice
-import com.cryonum.captusbprint.core.CaptTestPage
+import com.cryonum.captusbprint.core.HiscoaNative
+import com.cryonum.captusbprint.document.OfflinePdfHiscoaPreparation
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
 import java.util.concurrent.Executors
@@ -157,7 +158,7 @@ class DocumentActivity : Activity() {
         }
         planSection.addView(planResult)
         rasterButton = Button(this).apply {
-            text = "Проверить PDF-растр текущей страницы (без печати)"
+            text = "Проверить PDF-растр и HISCOA (без печати)"
             setOnClickListener { verifyPdfBands() }
         }
         planSection.addView(rasterButton)
@@ -382,25 +383,28 @@ class DocumentActivity : Activity() {
         val request = generation
         rasterInProgress = true
         rasterButton.isEnabled = false
-        planResult.text = "Готовим PDF последовательно полосами по 64 строки. USB-команды не отправляются…"
+        planResult.text = "Готовим PDF полосами по 64 строки и проверяем HISCOA локально. USB-команды не отправляются…"
         worker.execute {
             val result = runCatching {
-                var count = 0
-                var totalBytes = 0L
-                var expectedY = 0
-                opened.forEachPortraitPdfBand(index, rotation,
+                val summary = OfflinePdfHiscoaPreparation.prepare(
+                    produceBands = { accept ->
+                        opened.forEachPortraitPdfBand(
+                            index,
+                            rotation,
+                            cancelled = { request != generation },
+                            consumer = accept
+                        )
+                    },
+                    encode = { packed, lineBytes, lines, last ->
+                        HiscoaNative.encodeBand(packed, lineBytes, lines, last)
+                    },
                     cancelled = { request != generation }
-                ) { start, packed ->
-                    check(start == expectedY) { "Non-sequential band" }
-                    val lines = minOf(CaptTestPage.BAND_LINES, CaptTestPage.HEIGHT - start)
-                    check(packed.size == CaptTestPage.LINE_BYTES * lines)
-                    expectedY += lines
-                    count++
-                    totalBytes += packed.size
-                }
-                check(expectedY == CaptTestPage.HEIGHT)
-                "PDF-страница ${index + 1}: подготовлено полос: $count; " +
-                    "монохромных данных: $totalBytes байт. Только RAM; USB/CAPT не использовались."
+                )
+                "PDF-страница ${index + 1}: подготовлено HISCOA-полос: ${summary.bandCount}; " +
+                    "однобитный растр: ${summary.rasterBytes} байт; " +
+                    "сжато: ${summary.compressedBytes} байт; " +
+                    "максимальная полоса: ${summary.maxCompressedBandBytes} байт. " +
+                    "Только офлайн-подготовка: USB/CAPT-команды не выполнялись."
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
@@ -408,7 +412,7 @@ class DocumentActivity : Activity() {
                 rasterButton.isEnabled = true
                 if (request == generation) {
                     planResult.text = result.getOrElse {
-                        "Офлайн-подготовка PDF не завершилась (${it.javaClass.simpleName}). Ничего не печаталось."
+                        "Офлайн-подготовка PDF/HISCOA не завершилась (${it.javaClass.simpleName}). Ничего не печаталось."
                     }
                 }
             }

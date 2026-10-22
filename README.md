@@ -2,7 +2,7 @@
 
 Independent offline Android CAPT prototype for the owner's HONOR X9c (Android API 36) and Canon LBP2900. No PrintHand dependency or app-side INTERNET permission. Other Android devices and printers are not claimed supported.
 
-**Verified:** Stage A USB diagnosis and read-only queries; Stage B owner-confirmed A4/600-dpi physical test sheets, repeat sessions and two distinct sheets in one CAPT job (signed build 71, 2026-10-22). **In progress:** Stage C PDF/JPEG/PNG local intake, bounded preview and offline raster preparation. Signed build 89 previewed an 11-page PDF; no real PDF or image page has been printed through this app. Android PrintService and production stabilization are not implemented.
+**Verified:** Stage A USB diagnosis and read-only queries; Stage B owner-confirmed A4/600-dpi physical test sheets, repeat sessions and two distinct sheets in one CAPT job (signed build 71, 2026-10-22). **In progress:** Stage C PDF/JPEG/PNG local intake, bounded preview and offline raster preparation. Signed build 89 previewed an 11-page PDF; the owner confirmed seven UI/offline checks on signed build 93, including a PDF mono-raster preparation with no reported error. No real PDF or image page has been printed through this app. Android PrintService and production stabilization are not implemented.
 
 ## Hardware and bounded diagnostic
 On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, interface 0 / class 7/1/2, BULK OUT 0x01 and IN 0x82, permission and guarded claim verified. Manual CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo responses are tracked in private JSON. Device-list monitoring itself does not send CAPT commands; diagnostics exclude document content and printer serial numbers.
@@ -54,3 +54,13 @@ The follow-up branch fixes Android 16 scrolling insets, adds first-page-based
 Auto orientation and explicit content rotation, and begins offline portrait PDF
 64-line band rasterization. Do not infer PrintService or real-document print
 support from this README's older Stage B notes.
+
+### Next offline Stage C checkpoint
+
+A private feature branch reuses the existing Stage B native HISCOA encoder to
+compress each sequential PDF mono band, immediately discarding the result after
+bounded size checks. The UI only reports band counts and byte totals, not
+document data or hashes. There are no new USB/CAPT document commands, no new
+Android permissions, and no automatic print retries. JNI/HISCOA integration on
+the owner's PDF requires a separate signed-device check before real document
+printing is developed.
