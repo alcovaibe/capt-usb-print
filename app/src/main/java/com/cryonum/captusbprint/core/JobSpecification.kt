@@ -8,6 +8,7 @@ package com.cryonum.captusbprint.core
 enum class Orientation { PORTRAIT, LANDSCAPE }
 enum class Paper { A4 }
 
+@ConsistentCopyVisibility
 data class JobSpecification private constructor(
     val pageIndices: List<Int>,
     val copies: Int,
@@ -63,7 +64,8 @@ data class JobSpecification private constructor(
             require(selected.isNotEmpty() && selected.size.toLong() * copies <= MAX_OUTPUT_PAGES) {
                 "Too many output pages"
             }
-            return JobSpecification(selected.toList(), copies, orientation, contentRotationDegrees, paper)
+            return JobSpecification(java.util.Collections.unmodifiableList(selected.toList()), copies, orientation, contentRotationDegrees, paper)
         }
     }
 }
+

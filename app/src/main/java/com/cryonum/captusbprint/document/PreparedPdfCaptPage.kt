@@ -14,19 +14,19 @@ import java.util.concurrent.CancellationException
  */
 class PreparedPdfCaptPage private constructor(
     private val storedBands: List<ByteArray>,
-    val compressedBytes: Int,
+    override val compressedBytes: Int,
     val maximumBandBytes: Int
-) {
-    val bandCount: Int get() = storedBands.size
+) : PreparedCaptPage {
+    override val bandCount: Int get() = storedBands.size
 
-    fun descriptorFrame(): ByteArray = CaptPageProtocol.beginA4TestPage()
+    override fun descriptorFrame(): ByteArray = CaptPageProtocol.beginA4TestPage()
 
     /** Counts/framing use an explicit printer-validated chunk limit, not a
      * guessed transfer size. Does not claim a device or send any data.
      */
-    fun forEachVideoFrame(
+    override fun forEachVideoFrame(
         chunkLimit: Int,
-        cancelled: () -> Boolean = { false },
+        cancelled: () -> Boolean,
         consumer: (bandIndex: Int, frame: ByteArray) -> Unit
     ) {
         require(chunkLimit in 64..0xFF00) { "Printer-validated chunk size required" }
@@ -93,3 +93,4 @@ object PreparedPdfCaptPageBuilder {
         return PreparedPdfCaptPage.fromOwned(bands, summary)
     }
 }
+

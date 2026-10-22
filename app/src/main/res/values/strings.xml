@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">CAPT USB Print · Диагностика</string>
+    <string name="app_name">CAPT USB Print</string>
     <string name="stage_title">CAPT USB Print · Этап C</string>
-    <string name="no_printing">Тестовые CAPT-листы успешно проверены на Canon LBP2900. PDF и изображения доступны для локального предпросмотра; печать документов пока отключена. Диагностика сохраняется локально, отправка только отдельной кнопкой.</string>
+    <string name="no_printing">Тестовые CAPT-листы успешно проверены на Canon LBP2900. PDF, JPEG и PNG доступны для локальной печати из очереди. Диагностика сохраняется локально, отправка только отдельной кнопкой.</string>
     <string name="probe_capt_status">Проверить состояние CAPT (без печати)</string>
     <string name="probe_capt_running">Запрос %1$s…</string>
     <string name="probe_capt_extended_status">Проверить расширенное состояние CAPT (без печати)</string>
@@ -37,4 +37,73 @@
     <string name="no_devices_hint">Разрешение пока запросить нельзя: USB-устройство должно сначала появиться в системе. Если принтер уже соединён: убедитесь, что он включён, один раз отсоедините и снова подключите кабель, затем нажмите «Обновить». При необходимости проверьте список в PrintHand. Причина пока не установлена.</string>
     <string name="scan_failed">Ошибка диагностики: %1$s</string>
     <string name="export_failed">Не удалось открыть системное меню: %1$s</string>
+    <string name="queue_title">Очередь печати</string>
+    <string name="queue_explanation">CAPT подтверждает счётчики страниц. Проверь физические листы. Отмена останавливает новые отправки; уже принятые листы могут выйти. После прерывания задания автоматически не повторяются.</string>
+    <string name="queue_paused">Очередь приостановлена после ошибки USB или неизвестного результата.</string>
+    <string name="queue_resume">Продолжить оставшуюся очередь</string>
+    <string name="queue_resume_confirm">Проверь выданные листы и состояние принтера. Продолжить только следующие ожидающие задания? Прерванное задание повторяться не будет.</string>
+    <string name="queue_start_failed">Не удалось запустить очередь. Проверь USB-разрешение и открой приложение.</string>
+    <string name="queue_empty">Заданий пока нет.</string>
+    <string name="queue_item">Задание %1$s · %2$s
+%3$s
+Подтверждено CAPT: %4$d из %5$d листов</string>
+    <string name="queue_failure">Причина: %1$s. Подробности доступны в JSON-отчёте документа.</string>
+    <string name="queue_cancel">Отменить задание</string>
+    <string name="queue_cancel_all">Отменить очередь</string>
+    <string name="queue_progress">Подтверждено CAPT: %1$d из %2$d листов</string>
+    <string name="queue_queued">Ожидает своей очереди</string>
+    <string name="queue_preparing">Подготовка документа</string>
+    <string name="queue_waiting_printer">Проверка принтера</string>
+    <string name="queue_transmitting">Передача принтеру</string>
+    <string name="queue_waiting_confirmation">Ожидание подтверждения CAPT</string>
+    <string name="queue_confirmed">Счётчики CAPT подтверждены; проверь листы</string>
+    <string name="queue_cancelled">Отменено до печати</string>
+    <string name="queue_error">Задание остановлено с ошибкой</string>
+    <string name="queue_unknown">Исход неизвестен; возможна частичная печать</string>
+    <string name="document_print">Добавить документ в очередь печати</string>
+    <string name="document_print_confirm">Напечатать %1$d листов A4, копий: %2$d, исходные страницы: %3$s?
+Ориентация: %4$s. Поворот содержимого: %5$d°. Каждое задание отправляется один раз.</string>
+    <string name="document_print_action">Добавить и напечатать</string>
+    <string name="document_plan_invalid">Проверь диапазон, копии и готовность предпросмотра.</string>
+    <string name="document_preview_first">Открой в предпросмотре первую страницу выбранного диапазона.</string>
+    <string name="document_no_printer">Нужен один подключённый Canon LBP2900 с разрешением USB. Разрешение предоставляется на главном экране.</string>
+    <string name="document_enqueuing">Сохраняем приватную копию для очереди…</string>
+    <string name="document_enqueue_failed">Не удалось добавить задание (%1$s). Проверь свободное место. Команды печати для него не отправлялись.</string>
+    <string name="document_queued">Задание добавлено в очередь. После закрытия документа печать управляется службой; прогресс и отмена доступны в очереди.</string>
+    <string name="document_portrait">книжная</string>
+    <string name="document_landscape">альбомная</string>
+    <string name="document_title">Документ и параметры печати</string>
+    <string name="document_description">PDF, JPEG и PNG обрабатываются локально. Предпросмотр показывает чёрно-белый печатный растр. A4, вписывание с программным отступом около 11 мм; точность полей требует проверки отпечатка.</string>
+    <string name="document_pick">Выбрать PDF / JPEG / PNG</string>
+    <string name="document_pick_hint">Выбери локальный файл.</string>
+    <string name="document_loading">Открываем документ…</string>
+    <string name="document_pages">Страницы: например 1–3, 5, 8</string>
+    <string name="document_all_pages">Все страницы</string>
+    <string name="document_copies">Копии (1–20), комплектами</string>
+    <string name="document_orientation">Ориентация A4</string>
+    <string name="document_auto">Авто (по первой странице)</string>
+    <string name="document_rotate">Повернуть содержимое на 90°</string>
+    <string name="document_preview_ready">Печатный предпросмотр готов. Проверь параметры и добавь задание в очередь.</string>
+    <string name="document_meta">%1$s · страниц: %2$d · размер: %3$d × %4$d</string>
+    <string name="document_report">Поделиться последним JSON-отчётом печати</string>
+    <string name="document_no_report">Отчёта печати пока нет.</string>
+    <string name="document_share_failed">Не удалось подготовить JSON-отчёт.</string>
+    <string name="document_open_failed">Не удалось открыть файл: проверь формат, размер и доступность. PDF с паролем не поддерживается.</string>
+    <string name="document_access_failed">Нет доступа к файлу или PDF защищён паролем.</string>
+    <string name="failure_disconnected">Принтер отключён</string>
+    <string name="failure_permission">Нет разрешения USB</string>
+    <string name="failure_busy">USB занят другой операцией</string>
+    <string name="failure_timeout">Принтер не ответил за отведённое время</string>
+    <string name="failure_printer">Принтер сообщил ошибку или занятость; код состояния сохранён</string>
+    <string name="failure_interrupted">Процесс или служба прерваны</string>
+    <string name="failure_history">Не удалось прочитать историю; состояние печати неизвестно</string>
+    <string name="failure_preparation">Ошибка подготовки, памяти или приватного хранилища</string>
+    <string name="preview_content">Предварительный просмотр страницы</string>
+    <string name="preview_previous">Предыдущая страница</string>
+    <string name="preview_next">Следующая страница</string>
+    <string name="preview_title">ПРЕДПРОСМОТР ДОКУМЕНТА</string>
+    <string name="preview_local">Просмотр без USB-печати · файл остаётся на устройстве</string>
+    <string name="preview_loading">Готовим печатный растр страницы…</string>
+    <string name="preview_page">Страница %1$d из %2$d</string>
 </resources>
+

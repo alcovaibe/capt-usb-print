@@ -3,613 +3,290 @@ package com.cryonum.captusbprint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
-import android.hardware.usb.UsbManager
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
+import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.core.content.FileProvider
-import androidx.core.view.WindowCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import android.text.InputType
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import com.cryonum.captusbprint.document.FirstPdfPrintGate
-import com.cryonum.captusbprint.usb.UsbDeviceProfiles
-import com.cryonum.captusbprint.document.DocumentInspector
-import com.cryonum.captusbprint.document.DocumentOverview
-import com.cryonum.captusbprint.document.DocumentSession
-import com.cryonum.captusbprint.document.PageOrientationChoice
-import com.cryonum.captusbprint.core.HiscoaNative
-import com.cryonum.captusbprint.document.PreparedPdfCaptPageBuilder
-import com.cryonum.captusbprint.document.OfflinePdfHiscoaPreparation
+import android.widget.*
+import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
+import com.cryonum.captusbprint.document.*
+import com.cryonum.captusbprint.queue.PrintQueueActivity
+import com.cryonum.captusbprint.queue.PrintQueueRuntime
+import com.cryonum.captusbprint.queue.PrintQueueService
+import com.cryonum.captusbprint.usb.UsbDeviceProfiles
 import java.io.File
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 
-/** Stage C local preview plus an explicitly confirmed ONE-sheet PDF hardware experiment. */
+/** UI owns a preview source; only the foreground queue owns printing sources/jobs. */
 class DocumentActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var message: TextView
-    private lateinit var planSection: LinearLayout
+    private lateinit var status: TextView
     private lateinit var pageRange: EditText
     private lateinit var copies: EditText
     private lateinit var orientation: RadioGroup
-    private lateinit var planResult: TextView
-    private lateinit var rotateContent: android.widget.CheckBox
-    private lateinit var rasterButton: Button
-    private lateinit var pickerButton: Button
-    private lateinit var printPdfButton: Button
-    private lateinit var cancelPdfButton: Button
-    private lateinit var sharePdfReportButton: Button
-    private val printCancelled = AtomicBoolean(false)
-    private var printInProgress = false
-    private var previewReady = false
-    private var rasterInProgress = false
+    private lateinit var rotation: CheckBox
     private lateinit var preview: DocumentPreviewPanel
-    private var inspectedDocument: DocumentOverview? = null
+    private lateinit var print: Button
+    private lateinit var pick: Button
     private var session: DocumentSession? = null
-    private var displayedBitmap: Bitmap? = null
+    private var bitmap: Bitmap? = null
+    private var sourceUri: Uri? = null
     private var displayedPage = 0
-    private var previewGeneration = 0
     @Volatile private var generation = 0
+    @Volatile private var previewGeneration = 0
+    private var previewReady = false
+    private var copying = false
+    private var visible = false
+    private var restoring: Bundle? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoring = savedInstanceState
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(20))
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,24,24,24) }
+        fun label(res: Int) { layout.addView(TextView(this).apply { setText(res); textSize = 16f }) }
+        label(R.string.document_title)
+        label(R.string.document_description)
+        pick = Button(this).apply {
+            setText(R.string.document_pick)
+            setOnClickListener {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/pdf", "image/jpeg", "image/png"))
+                }
+                runCatching { @Suppress("DEPRECATION") startActivityForResult(intent, 101) }
+                    .onFailure { message.setText(R.string.document_open_failed) }
+            }
         }
-        layout.addView(TextView(this).apply {
-            text = "Этап C · Локальные документы"
-            textSize = 22f
+        layout.addView(pick)
+        layout.addView(Button(this).apply {
+            setText(R.string.queue_title)
+            setOnClickListener { startActivity(Intent(this@DocumentActivity, PrintQueueActivity::class.java)) }
         })
-        layout.addView(TextView(this).apply {
-            text = "PDF, PNG и JPEG: локальный предпросмотр размещения на A4 и план задания. " +
-                "Файл не передаётся в сеть. Есть экспериментальная печать одной PDF-страницы после подтверждения."
-            textSize = 16f
-        })
-        pickerButton = Button(this).apply {
-            text = "Выбрать PDF / JPEG / PNG"
-            setOnClickListener { pickFile() }
-        }
-        layout.addView(pickerButton)
-        message = TextView(this).apply {
-            text = "Выбери локальный документ для проверки."
-            textSize = 16f
-            setPadding(0, 16, 0, 16)
-            setTextIsSelectable(true)
-        }
+        message = TextView(this).apply { setText(R.string.document_pick_hint); setTextIsSelectable(true) }
         layout.addView(message)
         preview = DocumentPreviewPanel(this).apply {
             onPrevious = { requestPreview(displayedPage - 1) }
             onNext = { requestPreview(displayedPage + 1) }
         }
-        layout.addView(preview, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = 20
-        })
-        planSection = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-        }
-        planSection.addView(TextView(this).apply {
-            text = "Параметры будущего задания · проверка без печати"
-            textSize = 18f
-        })
-        planSection.addView(TextView(this).apply {
-            text = "Страницы (например: 1–3, 5, 8). Пустое поле — все страницы."
-        })
-        pageRange = EditText(this).apply {
-            hint = "Все страницы"
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
-        }
-        planSection.addView(pageRange)
-        planSection.addView(TextView(this).apply { text = "Количество копий (1–20)" })
+        layout.addView(preview)
+        label(R.string.document_pages)
+        pageRange = EditText(this).apply { setSingleLine(true); hint = getString(R.string.document_all_pages) }
+        layout.addView(pageRange)
+        label(R.string.document_copies)
         copies = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setSingleLine(true)
-            setText("1")
+            inputType = InputType.TYPE_CLASS_NUMBER; setSingleLine(true)
+            setText(getPreferences(MODE_PRIVATE).getInt("copies", 1).coerceIn(1,20).toString())
         }
-        planSection.addView(copies)
-        planSection.addView(TextView(this).apply {
-            text = "Ориентация A4 (авто — по первой странице)"
-        })
+        layout.addView(copies)
+        label(R.string.document_orientation)
         orientation = RadioGroup(this).apply {
-            orientation = RadioGroup.VERTICAL
-            addView(RadioButton(this@DocumentActivity).apply {
-                id = View.generateViewId()
-                text = "Авто (по первой странице)"
-                isChecked = true
-                tag = PageOrientationChoice.AUTO
-            })
-            addView(RadioButton(this@DocumentActivity).apply {
-                id = View.generateViewId()
-                text = "Книжная"
-                tag = PageOrientationChoice.PORTRAIT
-            })
-            addView(RadioButton(this@DocumentActivity).apply {
-                id = View.generateViewId()
-                text = "Альбомная"
-                tag = PageOrientationChoice.LANDSCAPE
-            })
-        }
-        orientation.setOnCheckedChangeListener { _, _ ->
-            // Orientation changes re-render the same page on the logical A4 sheet.
-            if (session != null) requestPreview(displayedPage)
-        }
-        planSection.addView(orientation)
-        rotateContent = android.widget.CheckBox(this).apply {
-            text = "Повернуть содержимое на 90° по часовой стрелке"
-            setOnCheckedChangeListener { _, _ ->
-                if (session != null) requestPreview(displayedPage)
+            listOf(R.string.document_auto, R.string.document_portrait, R.string.document_landscape).forEachIndexed { i, textId ->
+                addView(RadioButton(this@DocumentActivity).apply {
+                    id = View.generateViewId(); setText(textId); tag = i; isChecked = i == 0
+                })
             }
         }
-        planSection.addView(rotateContent)
-        planSection.addView(TextView(this).apply {
-            text = "Книжный документ на альбомном листе без поворота будет меньше — это режим «Вписать»."
-            textSize = 13f
-        })
-        planSection.addView(Button(this).apply {
-            text = "Проверить план задания (без печати)"
-            setOnClickListener { checkJobPlan() }
-        })
-        planResult = TextView(this).apply {
-            textSize = 16f
-            setTextIsSelectable(true)
-        }
-        planSection.addView(planResult)
-        rasterButton = Button(this).apply {
-            text = "Проверить PDF/HISCOA и CAPT-кадры (без печати)"
-            setOnClickListener { verifyPdfBands() }
-        }
-        planSection.addView(rasterButton)
-        printPdfButton = Button(this).apply {
-            text = "Эксперимент: напечатать выбранную PDF-страницу (один лист)"
-            setOnClickListener { confirmFirstPdfPrint() }
-        }
-        planSection.addView(printPdfButton)
-        cancelPdfButton = Button(this).apply {
-            text = "Отменить попытку (исход может быть неизвестен)"
-            visibility = View.GONE
-            setOnClickListener {
-                if (printInProgress) {
-                    printCancelled.set(true)
-                    planResult.text = "Отмена запрошена. Принятый принтером лист может выйти. Автоматического повтора нет."
-                }
-            }
-        }
-        planSection.addView(cancelPdfButton)
-        layout.addView(planSection)
-        sharePdfReportButton = Button(this).apply {
-            text = "Поделиться последним JSON-отчётом PDF-печати"
-            isEnabled = FirstPdfPrintAttempt.reportFile(this@DocumentActivity).isFile
+        layout.addView(orientation)
+        rotation = CheckBox(this).apply { setText(R.string.document_rotate) }
+        layout.addView(rotation)
+        orientation.setOnCheckedChangeListener { _, _ -> requestPreview(displayedPage) }
+        rotation.setOnCheckedChangeListener { _, _ -> requestPreview(displayedPage) }
+        status = TextView(this).apply { setTextIsSelectable(true) }
+        layout.addView(status)
+        print = Button(this).apply { setText(R.string.document_print); setOnClickListener { confirmPrint() } }
+        layout.addView(print)
+        layout.addView(Button(this).apply {
+            setText(R.string.document_report)
             setOnClickListener { sharePdfReport() }
+        })
+        val scroll = ScrollView(this).apply { addView(layout) }
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or
+                WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom); insets
         }
-        layout.addView(sharePdfReportButton)
-        val scrolling = ScrollView(this).apply {
-            isFillViewport = true
-            clipToPadding = true
-            addView(layout)
-        }
-        // Apply insets to the scrolling viewport, NOT the scrolling content:
-        // otherwise the text can scroll underneath Android 16 status/nav bars.
-        val spacing = dp(8)
-        ViewCompat.setOnApplyWindowInsetsListener(scrolling) { view, insets ->
-            val safe = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or
-                    WindowInsetsCompat.Type.displayCutout() or
-                    WindowInsetsCompat.Type.ime()
-            )
-            view.setPadding(spacing + safe.left, safe.top,
-                spacing + safe.right, safe.bottom)
-            insets
-        }
-        setContentView(scrolling)
-        ViewCompat.requestApplyInsets(scrolling)
-        if (intent?.action == Intent.ACTION_SEND) {
-            val shared = if (Build.VERSION.SDK_INT >= 33) {
-                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-            } ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
-            if (shared != null) inspect(shared)
-            else message.text = "В переданном сообщении нет доступного файла."
-        }
-        val last = FirstPdfPrintAttempt.reportFile(this)
-        if (last.isFile) {
-            val phase = runCatching { org.json.JSONObject(last.readText()).optString("phase") }.getOrDefault("")
-            if (phase == "USB_ATTEMPT_STARTED" || phase == "OUTCOME_UNKNOWN") {
-                message.text = "Последний PDF-сеанс не имеет подтверждённого результата. Проверь физический лист; JSON можно отправить вручную. Автоповтора нет."
-            }
-        }
+        setContentView(scroll)
+        ViewCompat.requestApplyInsets(scroll)
+        val restored = savedInstanceState?.getString("uri")?.let { Uri.parse(it) }
+        val shared = if (intent?.action == Intent.ACTION_SEND) {
+            if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            else { @Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) }
+        } else null
+        (restored ?: shared ?: intent?.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri)?.let { inspect(it) }
     }
-
-    private fun pickFile() {
-        if (printInProgress) return
-        val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES,
-                arrayOf("application/pdf", "image/jpeg", "image/png"))
-        }
-        try {
-            @Suppress("DEPRECATION")
-            startActivityForResult(picker, REQUEST_DOCUMENT)
-        } catch (_: ActivityNotFoundException) {
-            message.text = "Системный выбор файлов недоступен."
-        }
-    }
-
-    @Deprecated("Activity result callback for framework ACTION_OPEN_DOCUMENT")
+    override fun onStart() { super.onStart(); visible = true }
+    override fun onStop() { visible = false; super.onStop() }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_DOCUMENT && resultCode == RESULT_OK) {
-            val uri = data?.data
-            if (uri != null) inspect(uri)
-            else message.text = "Файловый провайдер не вернул документ."
+        if (requestCode == 101 && resultCode == RESULT_OK) data?.data?.let {
+            runCatching { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            restoring = null; inspect(it)
         }
     }
-
     private fun inspect(uri: Uri) {
-        if (printInProgress) return
-        previewReady = false
+        if (copying) return
+        sourceUri = uri
         val request = ++generation
         ++previewGeneration
-        val previous = session
-        session = null
-        inspectedDocument = null
-        (orientation.getChildAt(0) as RadioButton).isChecked = true
-        rotateContent.isChecked = false
-        displayedBitmap?.let {
-            preview.clearImage()
-            it.recycle()
-            displayedBitmap = null
-        }
-        preview.visibility = View.GONE
-        planSection.visibility = View.GONE
-        message.text = "Проверка выбранного документа и подготовка первой страницы…"
-        worker.execute {
-            // The worker serializes all renders; never delete a source mid-render.
-            previous?.close()
-            val outcome = runCatching {
-                val opened = DocumentInspector.openSession(applicationContext, uri)
-                try {
-                    opened to opened.renderPreview(0, 1000, 1450,
-                        PageOrientationChoice.AUTO.resolve(opened.overview.width,
-                            opened.overview.height))
-                } catch (error: Throwable) {
-                    opened.close()
-                    throw error
-                }
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed || request != generation) {
-                    outcome.getOrNull()?.let { (opened, bitmap) ->
-                        bitmap.recycle()
-                        opened.close()
-                    }
-                    return@runOnUiThread
-                }
-                message.text = outcome.fold({ (opened, bitmap) ->
-                    session = opened
-                    val doc = opened.overview
-                    inspectedDocument = doc
-                    displayedBitmap = bitmap
-                    displayedPage = 0
-                    previewReady = true
-                    preview.showDocument()
-                    preview.showBitmap(bitmap, 0, doc.pageCount)
-                    pageRange.setText("")
-                    copies.setText("1")
-                    planResult.text = ""
-                    planSection.visibility = View.VISIBLE
-                    rasterButton.visibility = if (doc.format.label == "PDF") View.VISIBLE else View.GONE
-                    printPdfButton.visibility = if (doc.format.label == "PDF") View.VISIBLE else View.GONE
-                    val rotation = doc.rotationDegrees?.let { "; EXIF: ${it}°" } ?: ""
-                    "${doc.format.label}: ${doc.pageCount} стр.; " +
-                        "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
-                        "${doc.copiedBytes} байт.\n" +
-                        "Предпросмотр A4 (вписать; программный отступ около 11 мм) готов. " +
-                        "Фактическая геометрия печати ещё не проверена; USB-команды не выполнялись."
-                }, { error ->
-                    preview.visibility = View.GONE
-                    when (error) {
-                        is SecurityException -> "Нет доступа к документу или PDF защищён паролем."
-                        is IllegalArgumentException -> "Файл не поддерживается, повреждён или превышает безопасные пределы."
-                        else -> "Не удалось открыть предпросмотр. Проверь доступность файла и свободное место."
-                    } + "\nПечатные команды не отправлялись."
-                })
-            }
-        }
-    }
-
-    private fun requestPreview(index: Int) {
-        if (printInProgress) return
-        val opened = session ?: return
-        if (index !in 0 until opened.overview.pageCount) return
-        val request = generation
-        val previewRequest = ++previewGeneration
         previewReady = false
-        val requestedOrientation = selectedOrientation()
-        val rotation = selectedRotation()
-        preview.setLoading()
+        val old = session; session = null
+        preview.clearImage(); bitmap?.recycle(); bitmap = null
+        preview.setLoading(); message.setText(R.string.document_loading)
         worker.execute {
-            if (request != generation) return@execute
-            val outcome = runCatching { opened.renderPreview(index, 1000, 1450, requestedOrientation, rotation) }
+            old?.close()
+            val result = runCatching { DocumentInspector.openSession(applicationContext, uri) }
             runOnUiThread {
-                if (isFinishing || isDestroyed || request != generation ||
-                    previewRequest != previewGeneration) {
-                    outcome.getOrNull()?.recycle()
-                    return@runOnUiThread
+                if (isDestroyed || isFinishing || request != generation) {
+                    result.getOrNull()?.close(); return@runOnUiThread
                 }
-                outcome.fold({ bitmap ->
-                    preview.clearImage()
-                    displayedBitmap?.recycle()
-                    displayedBitmap = bitmap
-                    displayedPage = index
-                    previewReady = true
-                    preview.showBitmap(bitmap, index, opened.overview.pageCount)
-                }, {
-                    preview.showError("Не удалось показать страницу ${index + 1}. Выберите другой документ.")
-                })
+                result.fold({ source ->
+                    session = source
+                    val meta = source.overview
+                    message.text = getString(R.string.document_meta, meta.format.label,
+                        meta.pageCount, meta.width, meta.height)
+                    val saved = restoring; restoring = null
+                    pageRange.setText(saved?.getString("pages") ?: "")
+                    copies.setText(saved?.getString("copies") ?: getPreferences(MODE_PRIVATE)
+                        .getInt("copies", 1).coerceIn(1,20).toString())
+                    val choice = (saved?.getInt("orientation") ?: getPreferences(MODE_PRIVATE).getInt("orientation", 0)).coerceIn(0,2)
+                    (orientation.getChildAt(choice) as RadioButton).isChecked = true
+                    rotation.isChecked = saved?.getBoolean("rotation") ?: getPreferences(MODE_PRIVATE).getBoolean("rotation", false)
+                    requestPreview((saved?.getInt("page") ?: 0).coerceIn(0, meta.pageCount-1))
+                }, { message.setText(if (it is SecurityException) R.string.document_access_failed
+                                     else R.string.document_open_failed) })
             }
         }
     }
-
-    private fun checkJobPlan() {
-        if (printInProgress) return
-        val doc = inspectedDocument ?: run {
-            planResult.text = "Сначала выбери и проверь документ."
-            return
-        }
-        val count = copies.text.toString().trim().toIntOrNull()
-        if (count == null) {
-            planResult.text = "Укажи целое количество копий от 1 до 20."
-            return
-        }
-        val chosenOrientation = selectedOrientation()
-        val plan = runCatching {
-            JobSpecification.create(
-                sourcePageCount = doc.pageCount,
-                pages = pageRange.text.toString(),
-                copies = count,
-                orientation = chosenOrientation,
-                contentRotationDegrees = selectedRotation()
-            )
-        }
-        planResult.text = plan.fold({ job ->
-            val order = job.outputPageOrder
-            val preview = order.take(16).joinToString(", ") { (it + 1).toString() } +
-                if (order.size > 16) ", …" else ""
-            "План корректен. Формат: ${doc.format.label}; A4; " +
-                "ориентация: ${if (job.orientation == Orientation.PORTRAIT) "книжная" else "альбомная"}.\n" +
-                "Поворот содержимого: ${job.contentRotationDegrees}°. " +
-                "Автоориентация определяется по первой странице.\n" +
-                "Исходных страниц выбрано: ${job.pageIndices.size}; копий: ${job.copies}; " +
-                "листов в задании: ${order.size}.\n" +
-                "Порядок (номера страниц исходного документа): $preview.\n" +
-                "Только проверка параметров: файл не сохранён для очереди; " +
-                "USB/CAPT-команды не выполнялись."
-        }, {
-            "Некорректные параметры: проверь диапазоны, повторы, порядок страниц и число копий. " +
-                "Ограничение — до 2000 итоговых листов. Ничего не напечатано."
-        })
-    }
-
     private fun selectedOrientation(): Orientation {
-        val first = inspectedDocument ?: return Orientation.PORTRAIT
-        val index = orientation.checkedRadioButtonId
-        val choice = (findViewById<RadioButton>(index)?.tag as? PageOrientationChoice)
-            ?: PageOrientationChoice.AUTO
-        return choice.resolve(first.width, first.height)
-    }
-
-    private fun selectedRotation(): Int = if (rotateContent.isChecked) 90 else 0
-
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-
-    /** Only offline band preparation. This does NOT reserve/claim the USB device. */
-    private fun verifyPdfBands() {
-        val opened = session ?: return
-        if (opened.overview.format.label != "PDF" || rasterInProgress || printInProgress) return
-        if (selectedOrientation() != Orientation.PORTRAIT) {
-            planResult.text = "Офлайн-растр пока доступен только для книжной A4. Альбомное преобразование в CAPT ещё в разработке."
-            return
+        val source = session ?: return Orientation.PORTRAIT
+        return when (findViewById<RadioButton>(orientation.checkedRadioButtonId)?.tag as? Int ?: 0) {
+            1 -> Orientation.PORTRAIT; 2 -> Orientation.LANDSCAPE
+            else -> PageOrientationChoice.AUTO.resolve(source.overview.width, source.overview.height)
         }
-        val index = displayedPage
-        val rotation = selectedRotation()
+    }
+    private fun requestPreview(page: Int) {
+        val source = session ?: return
+        if (copying || page !in 0 until source.overview.pageCount) return
         val request = generation
-        rasterInProgress = true
-        rasterButton.isEnabled = false
-        planResult.text = "Подготавливаем PDF, HISCOA и CAPT-кадры локально. USB-команды не отправляются…"
+        val render = ++previewGeneration
+        val orientation = selectedOrientation()
+        val degrees = if (rotation.isChecked) 90 else 0
+        previewReady = false; preview.setLoading()
         worker.execute {
-            val result = runCatching {
-                val prepared = PreparedPdfCaptPageBuilder.prepare(
-                    produceBands = { accept ->
-                        opened.forEachPortraitPdfBand(
-                            index,
-                            rotation,
-                            cancelled = { request != generation },
-                            consumer = accept
-                        )
-                    },
-                    encode = { packed, lineBytes, lines, last ->
-                        HiscoaNative.encodeBand(packed, lineBytes, lines, last)
-                    },
-                    cancelled = { request != generation }
-                )
-                // Stage B previously observed 65280 bytes as a safe chunk size.
-                // This is a dry-run ONLY; a future real job must query fresh
-                // GetPrinterInfo after obtaining exclusive USB ownership.
-                var videoFrames = 0
-                var framedBytes = 0L
-                prepared.forEachVideoFrame(65_280, cancelled = { request != generation }) { _, frame ->
-                    videoFrames++
-                    framedBytes += frame.size
-                }
-                "PDF-страница ${index + 1}: подготовлена одна A4 CAPT-страница. " +
-                    "HISCOA-полос: ${prepared.bandCount}; растр: ${OfflinePdfHiscoaPreparation.EXPECTED_RASTER_BYTES} байт; " +
-                    "сжато: ${prepared.compressedBytes} байт; максимальная полоса: " +
-                    "${prepared.maximumBandBytes} байт; модельных CAPT-кадров при " +
-                    "ранее проверенном лимите 65280: $videoFrames, $framedBytes байт. " +
-                    "Данные не сохранены. USB/CAPT-команды не выполнялись."
-            }
+            val result = runCatching { source.renderPrintPreview(page, orientation, degrees) {
+                request != generation || render != previewGeneration } }
             runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
-                rasterInProgress = false
-                rasterButton.isEnabled = true
-                if (request == generation) {
-                    planResult.text = result.getOrElse {
-                        "Офлайн-подготовка PDF/HISCOA/CAPT не завершилась (${it.javaClass.simpleName}). Ничего не печаталось."
-                    }
+                if (isDestroyed || isFinishing || request != generation || render != previewGeneration) {
+                    result.getOrNull()?.recycle(); return@runOnUiThread
                 }
+                result.fold({ next ->
+                    preview.clearImage(); bitmap?.recycle(); bitmap = next
+                    displayedPage = page; previewReady = true
+                    preview.showDocument(); preview.showBitmap(next, page, source.overview.pageCount)
+                    status.setText(R.string.document_preview_ready)
+                }, { preview.showError(getString(R.string.document_open_failed)) })
             }
         }
     }
+    private fun plan(source: DocumentSession) = JobSpecification.create(source.overview.pageCount,
+        pageRange.text.toString(), copies.text.toString().trim().toInt(), selectedOrientation(),
+        contentRotationDegrees = if (rotation.isChecked) 90 else 0)
 
-    private fun confirmFirstPdfPrint() {
-        val opened = session ?: return
-        if (rasterInProgress || printInProgress || !previewReady) {
-            planResult.text = "Дождись завершения предпросмотра или текущей подготовки."
-            return
-        }
-        val page = displayedPage
-        val rotation = selectedRotation()
-        fun selectedJob() = JobSpecification.create(opened.overview.pageCount,
-            pageRange.text.toString(), copies.text.toString().trim().toInt(),
-            selectedOrientation(), contentRotationDegrees = selectedRotation())
-        val plan = runCatching { selectedJob() }.getOrElse {
-            planResult.text = "Некорректный диапазон или число копий. Для эксперимента выбери только текущую страницу и одну копию."
-            return
-        }
-        FirstPdfPrintGate.rejection(opened.overview.format, plan, page)?.let {
-            planResult.text = it
-            return
-        }
+    private fun confirmPrint() {
+        val source = session ?: return
+        if (copying || !previewReady) { status.setText(R.string.document_plan_invalid); return }
+        val frozen = runCatching { plan(source) }.getOrElse { status.setText(R.string.document_plan_invalid); return }
+        if (frozen.pageIndices.first() != displayedPage) { status.setText(R.string.document_preview_first); return }
         val usb = getSystemService(USB_SERVICE) as UsbManager
-        val matches = usb.deviceList.values.filter {
+        val device = usb.deviceList.values.filter {
             UsbDeviceProfiles.identify(it.vendorId, it.productId)?.modelName == "Canon LBP2900"
-        }
-        if (matches.size != 1) {
-            planResult.text = if (matches.isEmpty()) "Canon LBP2900 не обнаружен. Проверь подключение на главном экране."
-                else "Несколько подходящих USB-принтеров: однозначный выбор невозможен."
-            return
-        }
-        val device = matches.single()
-        if (!usb.hasPermission(device)) {
-            planResult.text = "Разреши USB-доступ к Canon на главном экране приложения."
-            return
-        }
-        val key = device.deviceName // Only for process-local lookup; never exported.
+        }.singleOrNull()
+        if (device == null || !usb.hasPermission(device)) { status.setText(R.string.document_no_printer); return }
         val request = generation
-        AlertDialog.Builder(this)
-            .setTitle("Первый настоящий отпечаток PDF")
-            .setMessage("Будут отправлены реальные команды принтеру. Только страница ${page + 1} из ${opened.overview.pageCount}, книжный A4, одна копия, поворот содержимого ${rotation}°.\n\nПоля около 11 мм пока не измерены. Если сеанс прервётся, результат может оказаться неизвестным; автоматического повтора не будет. Проверь наличие бумаги.")
+        AlertDialog.Builder(this).setTitle(R.string.document_print)
+            .setMessage(getString(R.string.document_print_confirm, frozen.outputPageOrder.size,
+                frozen.copies, frozen.pageIndices.take(20).joinToString(", ") { (it+1).toString() } +
+                    (if (frozen.pageIndices.size > 20) ", …" else ""),
+                getString(if (frozen.orientation == Orientation.PORTRAIT) R.string.document_portrait
+                    else R.string.document_landscape), frozen.contentRotationDegrees))
             .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton("Напечатать один лист") { _, _ ->
-                val fresh = runCatching { selectedJob() }.getOrNull()
-                if (request != generation || opened !== session || page != displayedPage ||
-                    rotation != selectedRotation() || !previewReady || printInProgress ||
-                    rasterInProgress || fresh == null ||
-                    FirstPdfPrintGate.rejection(opened.overview.format, fresh, page) != null) {
-                    planResult.text = "Документ или настройки изменились. Повтори проверку перед печатью."
-                } else {
-                    startFirstPdfPrint(opened, request, page, rotation, key)
+            .setPositiveButton(R.string.document_print_action) { _, _ ->
+                if (source !== session || request != generation || !previewReady || copying ||
+                    runCatching { plan(source) }.getOrNull() != frozen) return@setPositiveButton
+                // Notification denial does not remove the OS foreground-service requirement.
+                if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 201)
+                }
+                copying = true; pick.isEnabled = false; print.isEnabled = false
+                status.setText(R.string.document_enqueuing)
+                getPreferences(MODE_PRIVATE).edit().putInt("copies", frozen.copies)
+                    .putInt("orientation", findViewById<RadioButton>(orientation.checkedRadioButtonId)?.tag as? Int ?: 0)
+                    .putBoolean("rotation", rotation.isChecked).apply()
+                worker.execute {
+                    val result = runCatching { PrintQueueRuntime.enqueue(applicationContext, source, frozen, device.deviceName) }
+                    runOnUiThread {
+                        copying = false
+                        if (isDestroyed || isFinishing || !visible) {
+                            result.getOrNull()?.let { runCatching { PrintQueueRuntime.cancel(it) } }; return@runOnUiThread
+                        }
+                        pick.isEnabled = true; print.isEnabled = true
+                        result.fold({ id ->
+                            try {
+                                PrintQueueService.start(this)
+                                PrintQueueRuntime.activate(id)
+                                status.setText(R.string.document_queued)
+                                startActivity(Intent(this, PrintQueueActivity::class.java))
+                            } catch (_: Exception) {
+                                runCatching { PrintQueueRuntime.cancel(id) }; status.setText(R.string.queue_start_failed)
+                            }
+                        }, { status.text = getString(R.string.document_enqueue_failed, it.javaClass.simpleName) })
+                    }
                 }
             }.show()
     }
-
-    private fun startFirstPdfPrint(
-        opened: DocumentSession, request: Int, page: Int, rotation: Int, key: String
-    ) {
-        printInProgress = true
-        printCancelled.set(false)
-        pickerButton.isEnabled = false
-        rasterButton.isEnabled = false
-        printPdfButton.isEnabled = false
-        sharePdfReportButton.isEnabled = false
-        pageRange.isEnabled = false
-        copies.isEnabled = false
-        for (i in 0 until orientation.childCount) orientation.getChildAt(i).isEnabled = false
-        rotateContent.isEnabled = false
-        cancelPdfButton.visibility = View.VISIBLE
-        planResult.text = "Подготовка одной PDF-страницы. USB пока не используется…"
-        worker.execute {
-            val summary = FirstPdfPrintAttempt.execute(applicationContext, opened, page,
-                rotation, key, cancelled = { printCancelled.get() || request != generation }) { stage ->
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed && request == generation) planResult.text = stage
-                }
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                printInProgress = false
-                pickerButton.isEnabled = true
-                rasterButton.isEnabled = true
-                printPdfButton.isEnabled = true
-                sharePdfReportButton.isEnabled = FirstPdfPrintAttempt.reportFile(this).isFile
-                pageRange.isEnabled = true
-                copies.isEnabled = true
-                for (i in 0 until orientation.childCount) orientation.getChildAt(i).isEnabled = true
-                rotateContent.isEnabled = true
-                cancelPdfButton.visibility = View.GONE
-                planResult.text = summary
-            }
-        }
-    }
-
-    /** The report is never sent until the user explicitly invokes Sharesheet. */
     private fun sharePdfReport() {
         try {
-            val stored = FirstPdfPrintAttempt.reportFile(this)
-            if (!stored.isFile) return
+            val source = FirstPdfPrintAttempt.reportFile(this)
+            if (!source.isFile) { status.setText(R.string.document_no_report); return }
             val directory = File(cacheDir, "reports").apply { mkdirs() }
-            val copy = File.createTempFile("capt-pdf-print-", ".json", directory)
-            copy.writeText(stored.readText(Charsets.UTF_8), Charsets.UTF_8)
-            directory.listFiles()?.sortedByDescending { it.lastModified() }
-                ?.drop(24)?.forEach { it.delete() }
-            val uri = FileProvider.getUriForFile(this,
-                "${BuildConfig.APPLICATION_ID}.reportprovider", copy)
+            val copy = File.createTempFile("capt-document-", ".json", directory)
+            check(source.length() <= 1024 * 1024)
+            copy.writeText(source.readText(Charsets.UTF_8), Charsets.UTF_8)
+            directory.listFiles()?.sortedByDescending { it.lastModified() }?.drop(24)?.forEach { it.delete() }
+            val uri = FileProvider.getUriForFile(this, "${BuildConfig.APPLICATION_ID}.reportprovider", copy)
             val send = Intent(Intent.ACTION_SEND).apply {
-                type = "application/json"
-                putExtra(Intent.EXTRA_STREAM, uri)
+                type = "application/json"; putExtra(Intent.EXTRA_STREAM, uri)
                 clipData = ClipData.newUri(contentResolver, copy.name, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(send, "Поделиться JSON PDF-печати"))
-        } catch (_: Exception) {
-            message.text = "Не удалось подготовить PDF-отчёт для отправки."
-        }
+            startActivity(Intent.createChooser(send, getString(R.string.document_report)))
+        } catch (_: Exception) { status.setText(R.string.document_share_failed) }
     }
-
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        sourceUri?.let { outState.putString("uri", it.toString()) }
+        outState.putString("pages", pageRange.text.toString()); outState.putString("copies", copies.text.toString())
+        outState.putInt("page", displayedPage)
+        outState.putInt("orientation", findViewById<RadioButton>(orientation.checkedRadioButtonId)?.tag as? Int ?: 0)
+        outState.putBoolean("rotation", rotation.isChecked)
+    }
     override fun onDestroy() {
-        printCancelled.set(true)
-        generation++
-        ++previewGeneration
-        preview.clearImage()
-        displayedBitmap?.recycle()
-        displayedBitmap = null
-        val owned = session
-        session = null
-        // Enqueue deletion after all active preview jobs have finished.
-        worker.execute { owned?.close() }
-        worker.shutdown()
+        ++generation; ++previewGeneration
+        preview.clearImage(); bitmap?.recycle(); bitmap = null
+        val source = session; session = null
+        worker.execute { source?.close() }; worker.shutdown()
         super.onDestroy()
     }
-
-    companion object { private const val REQUEST_DOCUMENT = 101 }
 }

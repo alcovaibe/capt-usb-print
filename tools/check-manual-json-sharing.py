@@ -32,3 +32,27 @@ assert "Intent.createChooser(" not in document[:document.index("    private fun 
 assert "Intent.ACTION_SEND" not in attempt
 assert "USB_ATTEMPT_STARTED" in attempt and "automaticRetry" in attempt
 print("Explicit PDF-report sharing guard passed.")
+
+# Stage C batch report shares the SAME explicit button, with no implicit send.
+batch = Path("app/src/main/java/com/cryonum/captusbprint/PdfBatchPrintAttempt.kt").read_text()
+batch_engine = Path("app/src/main/java/com/cryonum/captusbprint/usb/CaptPdfBatchPrintEngine.kt").read_text()
+assert "Intent.ACTION_SEND" not in batch and "Intent.createChooser(" not in batch
+assert "USB_ATTEMPT_STARTED" in batch and "automaticRetry" in batch
+assert batch.index('persist("USB_ATTEMPT_STARTED")') < batch.index("CaptPdfBatchPrintEngine.run(")
+document_engine = Path("app/src/main/java/com/cryonum/captusbprint/usb/CaptDocumentPrintEngine.kt").read_text()
+assert "OfflinePdfHiscoaPreparation.MAX_COMPRESSED_PAGE_BYTES" in document_engine
+assert "if (number == 1 && totalPages > 1)" in document_engine
+print("PDF batch explicit-sharing and USB-marker guards passed.")
+
+
+queue = Path("app/src/main/java/com/cryonum/captusbprint/queue/PrintQueueRuntime.kt").read_text()
+assert "Intent.ACTION_SEND" not in queue
+assert queue.index('report("USB_ATTEMPT_STARTED")') < queue.index('result = CaptDocumentPrintEngine.run(')
+assert 'START_NOT_STICKY' in Path("app/src/main/java/com/cryonum/captusbprint/queue/PrintQueueService.kt").read_text()
+print("Queue durable-marker and no-automatic-replay guards passed.")
+
+queue_screen = Path("app/src/main/java/com/cryonum/captusbprint/queue/PrintQueueActivity.kt").read_text()
+assert queue_screen.count("shareJobReport(") == 2
+assert "setOnClickListener { shareJobReport(record.id) }" in queue_screen
+assert "Intent.ACTION_SEND" not in queue_screen[:queue_screen.index("    private fun shareJobReport(")]
+print("Per-job queue report sharing is explicit-only.")

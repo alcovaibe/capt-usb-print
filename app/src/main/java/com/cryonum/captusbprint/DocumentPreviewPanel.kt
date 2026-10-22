@@ -27,7 +27,7 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
         adjustViewBounds = true
         scaleType = ImageView.ScaleType.FIT_CENTER
         setBackgroundColor(Color.WHITE)
-        contentDescription = "Предварительный просмотр страницы"
+        contentDescription = context.getString(R.string.preview_content)
     }
     private val spinner = ProgressBar(context)
     private val state = TextView(context).apply {
@@ -37,11 +37,11 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
     }
     private val previous = Button(context).apply {
         text = "‹"
-        contentDescription = "Предыдущая страница"
+        contentDescription = context.getString(R.string.preview_previous)
     }
     private val next = Button(context).apply {
         text = "›"
-        contentDescription = "Следующая страница"
+        contentDescription = context.getString(R.string.preview_next)
     }
     private val page = TextView(context).apply {
         textSize = 15f
@@ -64,14 +64,14 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
             cornerRadius = dp(18).toFloat()
         }
         addView(TextView(context).apply {
-            text = "ПРЕДПРОСМОТР ДОКУМЕНТА"
+            setText(R.string.preview_title)
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(this@DocumentPreviewPanel.inkColor)
             letterSpacing = 0.08f
         })
         addView(TextView(context).apply {
-            text = "Просмотр без USB-печати · файл остаётся на устройстве"
+            setText(R.string.preview_local)
             textSize = 12f
             setTextColor(muted)
             setPadding(0, dp(4), 0, dp(12))
@@ -102,7 +102,7 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
 
     fun setLoading() {
         spinner.visibility = View.VISIBLE
-        state.text = "Готовим изображение страницы…"
+        state.setText(R.string.preview_loading)
         state.visibility = View.VISIBLE
         image.visibility = View.INVISIBLE
         previous.isEnabled = false
@@ -123,7 +123,7 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
         spinner.visibility = View.GONE
         state.visibility = View.GONE
         navigation.visibility = if (total > 1) View.VISIBLE else View.GONE
-        page.text = "Страница ${position + 1} из $total"
+        page.text = context.getString(R.string.preview_page, position + 1, total)
         previous.isEnabled = position > 0
         next.isEnabled = position < total - 1
     }
@@ -142,3 +142,4 @@ internal class DocumentPreviewPanel(context: Context) : LinearLayout(context) {
         image.setImageDrawable(null)
     }
 }
+
