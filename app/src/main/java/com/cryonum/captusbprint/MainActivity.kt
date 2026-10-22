@@ -54,8 +54,7 @@ class MainActivity : Activity() {
     private var currentReport: String = ""
     private var lastSnapshot: UsbSnapshot? = null
     private val diagnosticEvents = mutableListOf<Map<String, Any?>>()
-    private var shareAfterScan = false
-    private var permissionSharePending = false
+    private var permissionRequestPending = false
     private var captProbeInProgress = false
     private var rasterPreparationInProgress = false
     private var testPrintInProgress = false
@@ -119,8 +118,9 @@ class MainActivity : Activity() {
         content.addView(status)
         content.addView(button(getString(R.string.refresh)) {
             recordEvent("RefreshUsb", "requested", "User requested USB rescan")
-            refresh(shareOnComplete = true)
+            refresh()
         })
+        // External sharing is only triggered by this explicit button.
         content.addView(button(getString(R.string.share_report)) { shareReport() })
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(devices)
@@ -183,18 +183,18 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         PermissionEvents.listener = {
-            if (permissionSharePending) {
-                permissionSharePending = false
+            if (permissionRequestPending) {
+                permissionRequestPending = false
                 recordEvent("UsbPermission", "result", PermissionEvents.outcome)
-                refresh(shareOnComplete = true)
-            } else refresh()
+            }
+            refresh()
         }
-        if (permissionSharePending &&
+        if (permissionRequestPending &&
             PermissionEvents.outcome != getString(R.string.permission_pending)
         ) {
-            permissionSharePending = false
+            permissionRequestPending = false
             recordEvent("UsbPermission", "result", PermissionEvents.outcome)
-            refresh(shareOnComplete = true)
+            refresh()
         }
         monitoring = true
         observedKeys = null
@@ -222,8 +222,7 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun refresh(shareOnComplete: Boolean = false) {
-        if (shareOnComplete) shareAfterScan = true
+    private fun refresh() {
         val generation = ++scanGeneration
         status.text = PermissionEvents.outcome + "\nЧтение USB…"
         worker.execute {
@@ -238,10 +237,6 @@ class MainActivity : Activity() {
                         "\nNo print commands were sent.\n"
                     reportView.text = currentReport
                     recordEvent("UsbScan", "failed", reason)
-                }
-                if (shareAfterScan) {
-                    shareAfterScan = false
-                    shareReport()
                 }
             }
         }
@@ -324,12 +319,12 @@ class MainActivity : Activity() {
         val device = manager.deviceList.values.firstOrNull { it.deviceName == row.deviceKey }
         if (device == null) {
             recordEvent("UsbPermission", "failed", "USB device no longer enumerated")
-            refresh(shareOnComplete = true)
+            refresh()
             return
         }
         if (manager.hasPermission(device)) {
             recordEvent("UsbPermission", "already_granted", "Permission from UsbManager")
-            refresh(shareOnComplete = true)
+            refresh()
             return
         }
         try {
@@ -344,13 +339,13 @@ class MainActivity : Activity() {
             )
             PermissionEvents.outcome = getString(R.string.permission_pending)
             status.text = PermissionEvents.outcome
-            permissionSharePending = true
+            permissionRequestPending = true
             manager.requestPermission(device, pending)
         } catch (error: Exception) {
-            permissionSharePending = false
+            permissionRequestPending = false
             PermissionEvents.outcome = "Ошибка запроса USB: " + error.javaClass.simpleName
             recordEvent("UsbPermission", "failed", PermissionEvents.outcome)
-            refresh(shareOnComplete = true)
+            refresh()
         }
     }
 
@@ -420,7 +415,6 @@ class MainActivity : Activity() {
                 )
                 status.text = message
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-                shareReport()
             }
         }
     }
@@ -466,7 +460,6 @@ class MainActivity : Activity() {
                 currentReport += "\n" + details + "\n"
                 reportView.text = currentReport
                 status.text = details
-                shareReport()
             }
         }
     }
@@ -504,7 +497,6 @@ class MainActivity : Activity() {
                     ), detail)
                 status.text = result.summary
                 Toast.makeText(this, result.summary, Toast.LENGTH_LONG).show()
-                shareReport()
             }
         }
     }
@@ -575,10 +567,7 @@ class MainActivity : Activity() {
     }
 
     private fun shareReport() {
-        if (currentReport.isBlank()) {
-            refresh(shareOnComplete = true)
-            return
-        }
+        // Export the current JSON only on an explicit tap; never auto-rescan/share.
         try {
             // Unique immutable snapshot: a later diagnostic must not overwrite a
             // file already selected by Telegram or Android Sharesheet.
