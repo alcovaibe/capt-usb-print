@@ -3,6 +3,7 @@ package com.cryonum.captusbprint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +18,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.cryonum.captusbprint.document.DocumentInspector
 import com.cryonum.captusbprint.document.DocumentOverview
+import com.cryonum.captusbprint.document.DocumentSession
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
 import java.util.concurrent.Executors
@@ -33,7 +35,12 @@ class DocumentActivity : Activity() {
     private lateinit var copies: EditText
     private lateinit var orientation: RadioGroup
     private lateinit var planResult: TextView
+    private lateinit var preview: DocumentPreviewPanel
     private var inspectedDocument: DocumentOverview? = null
+    private var session: DocumentSession? = null
+    private var displayedBitmap: Bitmap? = null
+    private var displayedPage = 0
+    private var previewGeneration = 0
     private var generation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,8 +54,8 @@ class DocumentActivity : Activity() {
             textSize = 22f
         })
         layout.addView(TextView(this).apply {
-            text = "Проверка PDF, JPEG и PNG без печати. Файл не передаётся в сеть. " +
-                "Здесь можно проверить план страниц и копий, но просмотр содержимого и печать ещё не включены."
+            text = "PDF, PNG и JPEG: локальный постраничный предпросмотр и план задания. " +
+                "Файл не передаётся в сеть. Предпросмотр не отправляет документ на принтер."
             textSize = 16f
         })
         layout.addView(Button(this).apply {
@@ -62,6 +69,13 @@ class DocumentActivity : Activity() {
             setTextIsSelectable(true)
         }
         layout.addView(message)
+        preview = DocumentPreviewPanel(this).apply {
+            onPrevious = { requestPreview(displayedPage - 1) }
+            onNext = { requestPreview(displayedPage + 1) }
+        }
+        layout.addView(preview, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = 20
+        })
         planSection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
