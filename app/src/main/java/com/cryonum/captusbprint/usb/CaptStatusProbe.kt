@@ -12,6 +12,7 @@ import com.cryonum.captusbprint.core.CaptBasicStatusParser
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
 import com.cryonum.captusbprint.core.CaptInputStatusParser
+import com.cryonum.captusbprint.core.CaptPrinterInfoParser
 import com.cryonum.captusbprint.core.CaptStatusFlagDecoder
 import com.cryonum.captusbprint.core.CaptFrame
 import com.cryonum.captusbprint.engine.EndpointFact
@@ -35,6 +36,7 @@ object CaptStatusProbe {
     private const val GET_BASIC_STATUS = CaptBasicStatusParser.GET_BASIC_STATUS
     private const val GET_EXTENDED_STATUS = CaptExtendedStatusParser.GET_EXTENDED_STATUS
     private const val GET_INPUT_STATUS = CaptInputStatusParser.GET_INPUT_STATUS
+    private const val GET_PRINTER_INFO = CaptPrinterInfoParser.GET_PRINTER_INFO
     private const val MAX_STATUS_FRAME_BYTES = 1024
     private const val CAPT_HEADER_BYTES = 6
     private const val USB_TIMEOUT_MS = 3000
@@ -47,6 +49,9 @@ object CaptStatusProbe {
 
     fun queryInputStatus(context: Context, deviceKey: String): CaptStatusProbeResult =
         queryCommand(context, deviceKey, GET_INPUT_STATUS)
+
+    fun queryPrinterInfo(context: Context, deviceKey: String): CaptStatusProbeResult =
+        queryCommand(context, deviceKey, GET_PRINTER_INFO)
 
     private fun queryCommand(
         context: Context,
@@ -133,12 +138,36 @@ object CaptStatusProbe {
                 GET_BASIC_STATUS -> basicResult(response)
                 GET_EXTENDED_STATUS -> extendedResult(response)
                 GET_INPUT_STATUS -> inputStatusResult(response)
+                GET_PRINTER_INFO -> printerInfoResult(response)
                 else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
             }
         } finally {
             if (claimed) runCatching { connection.releaseInterface(iface) }
             runCatching { connection.close() }
         }
+    }
+
+    private fun printerInfoResult(frame: ByteArray): CaptStatusProbeResult {
+        val info = try {
+            CaptPrinterInfoParser.parse(frame)
+        } catch (_: IllegalArgumentException) {
+            throw CaptStatusProbeException("Ответ GetPrinterInfo слишком короткий или имеет неверный формат.")
+        }
+        val block = hex16(info.blockSize)
+        val buffer = hex16(info.bufferSize)
+        val safeChunk = info.safeChunkBytes
+        val summary = if (info.transferParametersUsable) {
+            "GetPrinterInfo: Blk=0x$block (${info.blockSize}), Buf=0x$buffer (${info.bufferSize}); " +
+                "ограниченный размер блока для будущей передачи=${safeChunk} байт. Печать не выполнялась."
+        } else {
+            "GetPrinterInfo: ответ получен, но Blk/Buf не позволяют выбрать безопасные параметры передачи. " +
+                "Печать не выполнялась."
+        }
+        val report = "CAPT GetPrinterInfo: valid reply; totalBytes=${frame.size}; " +
+            "payloadBytes=${info.payloadBytes}; Blk=0x$block (${info.blockSize}); " +
+            "Buf=0x$buffer (${info.bufferSize}); safeChunkBytes=${safeChunk ?: "unavailable"}; " +
+            "transferParametersUsable=${info.transferParametersUsable}; no print/page data sent."
+        return CaptStatusProbeResult(summary, report)
     }
 
     private fun inputStatusResult(frame: ByteArray): CaptStatusProbeResult {
@@ -201,12 +230,21 @@ object CaptStatusProbe {
         val cntNames = CaptStatusFlagDecoder.engineCommunication(status.engineCommunicationByte).joinToString("|")
         val engineNames = CaptStatusFlagDecoder.engine(status.engineFlags).joinToString("|")
         val paperName = CaptStatusFlagDecoder.paper(status.paperAvailabilityByte)
+        val countersAvailable = status.pageDecoding != null &&
+            status.pagePrinting != null && status.pageOut != null && status.pageCompleted != null
+        val pageCounterReport = if (countersAvailable) {
+            "pageCounters=Start:${status.pageDecoding},Printing:${status.pagePrinting}," +
+                "Shipped:${status.pageOut},Printed:${status.pageCompleted}; "
+        } else {
+            "pageCounters=unavailable; "
+        }
         val report = "CAPT GetExtendedStatus: valid reply; totalBytes=${frame.size}; " +
             "statusFlags=0x$basic[$basicNames]; secondaryFlags=0x$secondary[$secondaryNames]; " +
             "bufferLevel=0x$bufferLow:0x$bufferHigh; bufferSlots=${status.bufferSlots}; " +
             "auxiliaryFlags=0x$auxiliary[$auxiliaryNames]; " +
             "engineCommunicationFlags=0x$cnt[$cntNames]; " +
             "paperAvailability=0x$paper[$paperName]; engineFlags=0x$engine[$engineNames]; " +
+            pageCounterReport + "pageReceived=${status.pageReceived ?: "unavailable"}; " +
             "no print/page data sent."
         val findings = mutableListOf<String>()
         if ((status.basicStatusByte and 0x10) != 0) findings += "установлен флаг OFFLINE"
@@ -363,6 +401,9 @@ object CaptStatusProbe {
             "declaredLengthBCD=${bcd ?: "invalid"}; " +
             "boundedLengthCandidates=${candidates.joinToString(prefix = "[", postfix = "]")}"
     }
+
+    private fun hex16(value: Int): String =
+        String.format(Locale.ROOT, "%04X", value and 0xffff)
 
     private fun hex(value: Int): String =
         String.format(Locale.ROOT, "%02X", value and 0xff)
