@@ -195,3 +195,23 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
   offline PDF band test on device, image-band decoding, physical landscape
   adapter and common USB queue, then owner-checked physical PDF print.
 - Do not merge/publish without owner action; a main push triggers signed release.
+
+
+## Owner acceptance of signed build 93 and offline PDF-HISCOA branch (2026-10-22)
+
+- Current base main merge SHA: `0d6b536aad317a52c3b3a1753ca8c8187ede2d93`.
+  Private signed release build 93 and its trusted main Actions passed.
+- Owner explicitly confirmed all seven HONOR checks: status bar and bottom nav
+  no longer overlap, A4 Auto portrait, landscape switching, 90-degree content
+  rotation, PDF page navigation, and error-free offline PDF raster check.
+  No numeric raster result was supplied, no physical PDF sheet printed.
+- Feature branch `feat/stage-c-offline-pdf-hiscoa` adds a pure, injectable
+  bounded one-page band consumer, feeds each validated 1bpp band directly to
+  the same native HiscoaNative.encodeBand as Stage B, verifies last marker,
+  lengths, order, cancellation and total budget, then discards compressed data.
+- Document UI explicitly says **PDF-растр и HISCOA (без печати)**; only counts
+  and byte sizes appear, not raw content, filenames, URI or document hashes.
+- The hardware-tested Stage B USB engines, JNI source, signed workflow and
+  AndroidManifest are untouched. No PDF document print is claimed. Native
+  device confirmation for one real PDF page is the next owner checkpoint;
+  thereafter shared job queue and first guarded print can be developed.
