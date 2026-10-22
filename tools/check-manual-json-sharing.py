@@ -27,7 +27,7 @@ document = Path("app/src/main/java/com/cryonum/captusbprint/DocumentActivity.kt"
 attempt = Path("app/src/main/java/com/cryonum/captusbprint/FirstPdfPrintAttempt.kt").read_text()
 assert document.count("sharePdfReport()") == 2
 assert "setOnClickListener { sharePdfReport() }" in document
-assert "Intent.ACTION_SEND" not in document[:document.index("    private fun sharePdfReport() {")]
+assert document.count("val send = Intent(Intent.ACTION_SEND)") == 1, "PDF output sharing must have a single explicit implementation"
 assert "Intent.createChooser(" not in document[:document.index("    private fun sharePdfReport() {")]
 assert "Intent.ACTION_SEND" not in attempt
 assert "USB_ATTEMPT_STARTED" in attempt and "automaticRetry" in attempt
