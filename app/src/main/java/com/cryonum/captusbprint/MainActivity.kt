@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ClipData
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
@@ -21,6 +22,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import com.cryonum.captusbprint.BuildConfig
+import com.cryonum.captusbprint.core.DiagnosticJson
 import com.cryonum.captusbprint.usb.PermissionEvents
 import com.cryonum.captusbprint.usb.CaptStatusProbe
 import com.cryonum.captusbprint.usb.CaptStatusProbeException
@@ -29,6 +33,11 @@ import com.cryonum.captusbprint.usb.UsbRow
 import com.cryonum.captusbprint.usb.UsbSnapshot
 import com.cryonum.captusbprint.usb.UsbObservation
 import com.cryonum.captusbprint.usb.UsbPermissionReceiver
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -39,6 +48,10 @@ class MainActivity : Activity() {
     private lateinit var reportToggle: Button
     private var reportExpanded = false
     private var currentReport: String = ""
+    private var lastSnapshot: UsbSnapshot? = null
+    private val diagnosticEvents = mutableListOf<Map<String, Any?>>()
+    private var shareAfterScan = false
+    private var permissionSharePending = false
     private var captProbeInProgress = false
     private var scanGeneration = 0
     private var receiverRegistered = false
@@ -97,7 +110,10 @@ class MainActivity : Activity() {
         content.addView(text(getString(R.string.no_printing)))
         status = text(getString(R.string.permission_not_requested))
         content.addView(status)
-        content.addView(button(getString(R.string.refresh)) { refresh() })
+        content.addView(button(getString(R.string.refresh)) {
+            recordEvent("RefreshUsb", "requested", "User requested USB rescan")
+            refresh(shareOnComplete = true)
+        })
         content.addView(button(getString(R.string.share_report)) { shareReport() })
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(devices)
@@ -159,7 +175,20 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        PermissionEvents.listener = { refresh() }
+        PermissionEvents.listener = {
+            if (permissionSharePending) {
+                permissionSharePending = false
+                recordEvent("UsbPermission", "result", PermissionEvents.outcome)
+                refresh(shareOnComplete = true)
+            } else refresh()
+        }
+        if (permissionSharePending &&
+            PermissionEvents.outcome != getString(R.string.permission_pending)
+        ) {
+            permissionSharePending = false
+            recordEvent("UsbPermission", "result", PermissionEvents.outcome)
+            refresh(shareOnComplete = true)
+        }
         monitoring = true
         observedKeys = null
         monitor.post(pollUsb)
@@ -186,7 +215,8 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun refresh() {
+    private fun refresh(shareOnComplete: Boolean = false) {
+        if (shareOnComplete) shareAfterScan = true
         val generation = ++scanGeneration
         status.text = PermissionEvents.outcome + "\nЧтение USB…"
         worker.execute {
@@ -196,15 +226,22 @@ class MainActivity : Activity() {
                 scan.onSuccess { render(it) }.onFailure {
                     val reason = it.javaClass.simpleName
                     status.text = getString(R.string.scan_failed, reason)
+                    lastSnapshot = null
                     currentReport = "Diagnostic scan failed: " + reason +
                         "\nNo print commands were sent.\n"
                     reportView.text = currentReport
+                    recordEvent("UsbScan", "failed", reason)
+                }
+                if (shareAfterScan) {
+                    shareAfterScan = false
+                    shareReport()
                 }
             }
         }
     }
 
     private fun render(snapshot: UsbSnapshot) {
+        lastSnapshot = snapshot
         currentReport = snapshot.report + "\n" + UsbObservation.reportLine() +
             "\nUSB permission event in current session: " + PermissionEvents.outcome +
             "\nCurrent USB permission state is listed per device above.\n"
@@ -267,11 +304,13 @@ class MainActivity : Activity() {
         // Device path is only used inside the process, never placed into exported report.
         val device = manager.deviceList.values.firstOrNull { it.deviceName == row.deviceKey }
         if (device == null) {
-            refresh()
+            recordEvent("UsbPermission", "failed", "USB device no longer enumerated")
+            refresh(shareOnComplete = true)
             return
         }
         if (manager.hasPermission(device)) {
-            refresh()
+            recordEvent("UsbPermission", "already_granted", "Permission from UsbManager")
+            refresh(shareOnComplete = true)
             return
         }
         try {
@@ -286,10 +325,13 @@ class MainActivity : Activity() {
             )
             PermissionEvents.outcome = getString(R.string.permission_pending)
             status.text = PermissionEvents.outcome
+            permissionSharePending = true
             manager.requestPermission(device, pending)
         } catch (error: Exception) {
+            permissionSharePending = false
             PermissionEvents.outcome = "Ошибка запроса USB: " + error.javaClass.simpleName
-            refresh()
+            recordEvent("UsbPermission", "failed", PermissionEvents.outcome)
+            refresh(shareOnComplete = true)
         }
     }
 
@@ -336,6 +378,16 @@ class MainActivity : Activity() {
                 )
                 currentReport += "\n" + line + "\n"
                 reportView.text = currentReport
+                result.fold(
+                    { response ->
+                        recordEvent(commandName, "success", response.summary,
+                            response.rawFrameHex, response.decoded, response.reportLine)
+                    },
+                    { error ->
+                        recordEvent(commandName, "failed", error.message ?: error.javaClass.simpleName,
+                            (error as? CaptStatusProbeException)?.rawFrameHex, emptyMap(), line)
+                    }
+                )
                 val message = result.fold(
                     { it.summary },
                     { error ->
@@ -349,22 +401,100 @@ class MainActivity : Activity() {
                 )
                 status.text = message
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                shareReport()
             }
         }
     }
 
+    private fun utcNow(): String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT)
+        .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
+
+    private fun recordEvent(
+        action: String,
+        outcome: String,
+        summary: String,
+        rawFrameHex: String? = null,
+        decoded: Map<String, Any?> = emptyMap(),
+        reportLine: String? = null
+    ) {
+        diagnosticEvents.add(linkedMapOf(
+            "timeUtc" to utcNow(),
+            "action" to action,
+            "outcome" to outcome,
+            "summary" to summary,
+            "rawResponseFrameHex" to rawFrameHex,
+            "decoded" to decoded,
+            "reportText" to reportLine,
+            "printedPages" to 0
+        ))
+        if (diagnosticEvents.size > 64) diagnosticEvents.removeAt(0)
+    }
+
+    private fun jsonReport(): String {
+        val snapshot = lastSnapshot
+        val report = linkedMapOf<String, Any?>(
+            "schemaVersion" to 1,
+            "generatedAtUtc" to utcNow(),
+            "app" to linkedMapOf(
+                "name" to "CAPT USB Print",
+                "versionName" to BuildConfig.VERSION_NAME,
+                "versionCode" to BuildConfig.VERSION_CODE,
+                "sourceRevision" to BuildConfig.SOURCE_REVISION
+            ),
+            // scan.report is the original device diagnostic, not a reconstruction
+            // from labels. It intentionally excludes complete USB paths and serials.
+            "scan" to linkedMapOf(
+                "available" to (snapshot != null),
+                "deviceCount" to snapshot?.devices?.size,
+                "devices" to (snapshot?.devices?.map {
+                    linkedMapOf(
+                        "label" to it.title,
+                        "permissionGranted" to it.permissionGranted,
+                        "profile" to it.profile?.modelName,
+                        "protocolFamily" to it.profile?.protocolFamily
+                    )
+                } ?: emptyList<Any>()),
+                "reportText" to (snapshot?.report ?: currentReport),
+                "usbObservation" to UsbObservation.reportLine(),
+                "permissionEventInSession" to PermissionEvents.outcome
+            ),
+            "commands" to diagnosticEvents.toList(),
+            "note" to "Only manually initiated read-only CAPT requests; raw frames are device replies, not document data. Decoded fields are provisional until physically validated."
+        )
+        return DiagnosticJson.stringify(report) + "\n"
+    }
+
     private fun shareReport() {
         if (currentReport.isBlank()) {
-            refresh()
+            refresh(shareOnComplete = true)
             return
         }
         try {
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "CAPT USB Print A1 diagnostic")
-                putExtra(Intent.EXTRA_TEXT, currentReport)
+            // Unique immutable snapshot: a later diagnostic must not overwrite a
+            // file already selected by Telegram or Android Sharesheet.
+            val directory = File(cacheDir, "reports").apply { mkdirs() }
+            val file = File.createTempFile("capt-diagnostic-", ".json", directory)
+            file.writeText(jsonReport(), Charsets.UTF_8)
+            // Keep a bounded set of cache files for grants to previously shared URIs.
+            directory.listFiles()?.sortedByDescending { it.lastModified() }
+                ?.drop(24)?.forEach { it.delete() }
+            val uri = FileProvider.getUriForFile(
+                this, "${BuildConfig.APPLICATION_ID}.reportprovider", file
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newUri(contentResolver, file.name, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, getString(R.string.share_title)))
+            // Prefer Telegram proper; Android's chooser remains the fallback when
+            // it is not installed or cannot accept a JSON document on this build.
+            val telegram = Intent(send).apply { setPackage("org.telegram.messenger") }
+            if (telegram.resolveActivity(packageManager) != null) {
+                startActivity(telegram)
+            } else {
+                startActivity(Intent.createChooser(send, getString(R.string.share_title)))
+            }
         } catch (error: Exception) {
             Toast.makeText(this, getString(R.string.export_failed,
                 error.javaClass.simpleName), Toast.LENGTH_LONG).show()
