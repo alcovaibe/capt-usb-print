@@ -1,7 +1,11 @@
-# Stage B — explicit two-page hardware experiment
+# Stage B — two-page hardware experiment: accepted 2026-10-22
 
-This is **not PDF/image printing** and is not evidence of completion until the
-owner physically confirms two distinct A4 sheets in order, without shifting.
+The owner has now physically confirmed two different A4 sheets in one job:
+the second sheet contains the two additional lower-left bars. Build 71 JSON
+confirmed `oneReservedCaptJob=true`, `printerConfirmedPages=2`,
+`sentPrintDataBytes=46112`, `TWO_PAGES_CONFIRMED_BY_PRINTER` and one
+job end/release after counters completed 1 then 2. Stage B is owner-accepted.
+PDF/image document printing is not included in Stage B.
 
 ## Hardware facts and protocol source
 
@@ -54,6 +58,7 @@ owner physically confirms two distinct A4 sheets in order, without shifting.
    is uncertain: **do not press Print again**. Preserve the state and share
    diagnostics first. No automatic retry is implemented.
 
-Stage B acceptance additionally requires the owner's visual confirmation
-of order, orientation, and no second-sheet shift; a green CI and CAPT counters
-alone do not prove paper output.
+Acceptance was based on the owner's physical observation and JSON evidence
+from 0.1.0-a2.71 on 2026-10-22, not on green CI alone. Numerical positioning
+tolerances were not measured. Subsequent non-test-document rendering remains
+a separate Stage C verification.
