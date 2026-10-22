@@ -28,6 +28,13 @@ Status: **one physical A4 page verified** by owner photo and matching CAPT compl
 4. Observe if one actual paper sheet emerges, its print orientation, margins and registration marks. Share the generated JSON **even if no page emerges**.
 5. If printing gets stuck or state is unknown, do **not** immediately press Print again. The app deliberately does not automatically resend or reset the printer after an uncertain command. Record the output and power-cycle only if necessary for recovery.
 
+## Next Stage B checkpoint (prepared, NOT yet enabled for USB)
+- After the 0.1.0-a2.62 repeat-one-page hardware test, check that a second independently started job prints without resetting the printer and that CAPT counters advance relative to the preceding job. Preserve and share its JSON.
+- Two distinct offline registration rasters are now available: page 1 is bit-identical to the already physically confirmed pattern; page 2 adds two short lower-left horizontal bars while retaining the same top/left target so relative sheet alignment can be inspected.
+- Offline counter tests require new page 1 and page 2 completion relative to the current job's captured baseline and reject stale, partial or rollover values.
+- **No two-page USB button/job is enabled yet.** The next hardware protocol change must explicitly keep both pages in one reserved job, use page-relative StartPrint indices from the observed CAPT status, wait for both page completions, then end/release the job once. Do not simulate this by silently pressing the one-page print command twice.
+- Only after owner confirms that second independent one-page job and shares the diagnostic, implement and expose an explicitly labelled two-page experimental action for another owner-controlled test.
+
 ## Current limitations
 - The physical device has not been tested with job commands, HISCOA data, or paper output; **stage B is not complete**.
 - Only one test page; multiple pages/restarts of jobs still need observation and additional implementation.
