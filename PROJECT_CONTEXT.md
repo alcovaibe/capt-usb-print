@@ -1,6 +1,6 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Current work: **Stage D Android PrintService**, from owner-merged Stage C PR #25 (`main` merge `130c158f8288db17110ef9bfe433140302917f68`). Main CI 123 passed, including permanent signing and API 36 in-place upgrade. C acceptance remains conditional by owner instruction, not new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. D is being implemented/verified in a new private PR; HONOR system routing/printing is unconfirmed. Historical notes are retained; latest checkpoint is at the end.
+Updated: 2026-10-22. Current work: **Stage D Android PrintService**, from owner-merged Stage C PR #25 (`main` merge `130c158f8288db17110ef9bfe433140302917f68`). Main CI 123 passed, including permanent signing and API 36 in-place upgrade. C acceptance remains conditional by owner instruction, not new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. D code is implemented in private PR #26; final-HEAD CI is the review gate there. HONOR system routing/printing remains unconfirmed. Historical notes are retained; latest checkpoint is at the end.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
@@ -349,3 +349,10 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - CI 124 caught the raster overload issue; CI 125 compiled production but caught PdfDocument not implementing Closeable in the new smoke. The harness now closes it explicitly. Full verification is still pending the updated PR HEAD.
 
 - CI 126 on `800c19420948` passed assembly, lint and all JVM tests; API 36 framework smoke is running. Subsequent review found cancel-all could miss a still-incoming system pipe. A shared cancellation generation now invalidates pending handles and in-flight intake through activation; no late print is allowed. New Android regression checks cancel-all while a real pipe is waiting, plus direct-service stop/failure preserving a system-owned staged job. These changes require final HEAD CI.
+
+### Stage D code checkpoint for continuation
+- PR #26: https://github.com/alcovaibe/capt-usb-print/pull/26 (ordinary non-Draft, owner merge control). D code is implemented within the documented A4/600/mono/simplex and C queue limits. Hardware acceptance is OPEN, not covered by the earlier conditional C acceptance.
+- CI 126 (`39842415469`) on `800c19420948` passed APK assembly/lint/all 148 JVM tests, native/permission/manual-sharing guards and API 36 install/start plus Stage D real pipe/PDF/framework discovery, Stage C PDF/image/native raster and second-process recovery smokes. This is emulator evidence, not a physical printer result.
+- Follow-up implementation `8b28f48736d7` adds cancel-all generation and cross-entry-point ownership checks; its final CI is linked in PR #26. The next developer must inspect the exact PR HEAD checks before merge, not rely on the older green run.
+- No Stage B USB/protocol/native codec or permanent signing/app-ID/version scheme changed. Main remains owner-merged C at `130c158f8288`; no D merge/release has been performed.
+- Next hardware step only after final reviewed CI and an owner merge produces the normal signed APK: enable system CAPT service, test HONOR Documents pages 2–3/copies 2, a second source with one page/copy 1, then manually send system routing JSON and per-job CAPT JSON. Detailed five-step instructions and limitations: docs/STAGE-D-SYSTEM-PRINT.md.

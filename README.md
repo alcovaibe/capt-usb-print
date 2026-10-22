@@ -45,7 +45,8 @@ Printer-confirmed completion, cancellation before printing and uncertain USB
 outcomes remain distinct. Queue history exposes a separate explicit system JSON
 share button, with no document labels, URIs, content or serials.
 
-This code is under automatic verification. Actual routing/printing from HONOR
+Automated build/raster/framework checks and final-HEAD CI are tracked in private
+[PR #26](https://github.com/alcovaibe/capt-usb-print/pull/26). Actual routing/printing from HONOR
 Documents and another Android print source is not yet confirmed; Stage D hardware
 acceptance remains open. No new CAPT command, reset, retry or signing change is
 introduced.

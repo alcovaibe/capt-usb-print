@@ -186,7 +186,7 @@ internal object PrintQueueRuntime {
         }
         allocations[id] = allocations.getValue(id) + extra
     }
-    /** Publish only after the visible caller has successfully requested the foreground service. */
+    /** Publish after the foreground-service request or the durable Android PrintJob tag handoff. */
     @Synchronized fun activate(id: Long) {
         try { queue.activate(id); persist() }
         catch (error: Throwable) {
@@ -240,7 +240,7 @@ internal object PrintQueueRuntime {
         return record to (sources[record.id] ?: error("No owned document source"))
     }
 
-    /** Called only from the foreground service's one serial worker. */
+    /** Called only from the shared serial PrintQueueWorker. */
     fun drain(progress: (QueueRecord) -> Unit) {
         while (true) {
             val (record, work) = take() ?: break
