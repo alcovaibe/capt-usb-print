@@ -28,20 +28,24 @@ class StageCRasterSmoke : Instrumentation() {
             canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
             canvas.drawRect(0f,0f,100f,100f,Paint().apply { color = Color.BLACK })
             png.outputStream().use { image.compress(Bitmap.CompressFormat.PNG,100,it) }
-            jpeg.outputStream().use { image.compress(Bitmap.CompressFormat.JPEG,95,it) }
+            val white = Bitmap.createBitmap(200,100,Bitmap.Config.ARGB_8888)
+            Canvas(white).apply { drawColor(Color.WHITE); drawBitmap(image,0f,0f,null) }
+            jpeg.outputStream().use { white.compress(Bitmap.CompressFormat.JPEG,95,it) }
+            white.recycle()
             image.recycle()
             ExifInterface(jpeg).apply {
                 setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
                 saveAttributes()
             }
-            PdfDocument().use { doc ->
+            val doc = PdfDocument()
+            try {
                 repeat(4) { n ->
                     val page = doc.startPage(PdfDocument.PageInfo.Builder(200,100,n+1).create())
                     page.canvas.drawRect(10f,10f,60f+n*20,90f,Paint().apply { color = Color.BLACK })
                     doc.finishPage(page)
                 }
                 pdf.outputStream().use { doc.writeTo(it) }
-            }
+            } finally { doc.close() }
             for (file in listOf(png,jpeg,pdf)) {
                 val uri = FileProvider.getUriForFile(context,"${context.packageName}.reportprovider",file)
                 DocumentInspector.openSession(context,uri).use { source ->
@@ -61,6 +65,10 @@ class StageCRasterSmoke : Instrumentation() {
                         check(pixels.any { it == Color.BLACK } && pixels.any { it == Color.WHITE })
                         check((preview.width < preview.height) == (orientation == Orientation.PORTRAIT))
                         check(preview.getPixel(0,0) == Color.WHITE)
+                        if (file == png && orientation == Orientation.PORTRAIT && rotation == 0) {
+                            check(preview.getPixel(preview.width*2/5,preview.height/2) == Color.BLACK)
+                            check(preview.getPixel(preview.width*3/5,preview.height/2) == Color.WHITE)
+                        }
                         preview.recycle()
                     }
                     encoded.delete()

@@ -35,7 +35,7 @@
         <activity
             android:name=".DocumentActivity"
             android:exported="true"
-            android:label="CAPT USB Print · Проверка документа">
+            android:label="@string/document_title">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

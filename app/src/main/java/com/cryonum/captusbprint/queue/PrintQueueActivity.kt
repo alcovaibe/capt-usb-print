@@ -3,6 +3,11 @@ package com.cryonum.captusbprint.queue
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
+import android.content.Intent
+import android.content.ClipData
+import androidx.core.content.FileProvider
+import com.cryonum.captusbprint.BuildConfig
+import java.io.File
 import android.widget.*
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -58,9 +63,34 @@ class PrintQueueActivity : Activity() {
             })
             if (!record.phase.terminal) jobs.addView(Button(this).apply {
                 setText(R.string.queue_cancel)
-                setOnClickListener { PrintQueueRuntime.cancel(record.id) }
+                setOnClickListener {
+                    runCatching { PrintQueueRuntime.cancel(record.id) }.onFailure {
+                        Toast.makeText(this@PrintQueueActivity,R.string.failure_preparation,Toast.LENGTH_LONG).show()
+                    }
+                }
+            })
+            if (PrintQueueRuntime.reportFile(record.id).isFile) jobs.addView(Button(this).apply {
+                setText(R.string.document_report)
+                setOnClickListener { shareJobReport(record.id) }
             })
         }
+    }
+    private fun shareJobReport(id: Long) {
+        runCatching {
+            val source = PrintQueueRuntime.reportFile(id)
+            check(source.length() in 1..1024*1024)
+            val directory = File(cacheDir,"reports").apply { mkdirs() }
+            val copy = File.createTempFile("capt-job-", ".json", directory)
+            copy.writeText(source.readText(Charsets.UTF_8),Charsets.UTF_8)
+            directory.listFiles()?.sortedByDescending { it.lastModified() }?.drop(24)?.forEach { it.delete() }
+            val uri = FileProvider.getUriForFile(this,"${BuildConfig.APPLICATION_ID}.reportprovider",copy)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"; putExtra(Intent.EXTRA_STREAM,uri)
+                clipData = ClipData.newUri(contentResolver,copy.name,uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent,getString(R.string.document_report)))
+        }.onFailure { Toast.makeText(this,R.string.document_share_failed,Toast.LENGTH_LONG).show() }
     }
     private fun failure(code: String) = getString(when (code) {
         "PRINTER_DISCONNECTED" -> R.string.failure_disconnected

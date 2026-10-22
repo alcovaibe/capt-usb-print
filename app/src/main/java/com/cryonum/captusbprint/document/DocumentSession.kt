@@ -236,6 +236,7 @@ class DocumentSession internal constructor(
         cancelled: () -> Boolean, consumer: (Int, ByteArray) -> Unit) {
         check(!closed)
         require(pageIndex in 0 until overview.pageCount)
+        if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
         fun emit(width: Int, height: Int, draw: (Bitmap, Rect, Matrix) -> Unit) {
             val bitmap = Bitmap.createBitmap(4960, 64, Bitmap.Config.ARGB_8888)
             val pixels = IntArray(4960 * 64)

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">CAPT USB Print · Диагностика</string>
+    <string name="app_name">CAPT USB Print</string>
     <string name="stage_title">CAPT USB Print · Этап C</string>
     <string name="no_printing">Тестовые CAPT-листы успешно проверены на Canon LBP2900. PDF, JPEG и PNG доступны для локальной печати из очереди. Диагностика сохраняется локально, отправка только отдельной кнопкой.</string>
     <string name="probe_capt_status">Проверить состояние CAPT (без печати)</string>

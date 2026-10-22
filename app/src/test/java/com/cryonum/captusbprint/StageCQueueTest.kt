@@ -10,15 +10,19 @@ class StageCQueueTest {
         val q = DocumentQueue()
         q.add(job(1)); q.add(job(2)); q.add(job(3))
         assertEquals(1L, q.next()!!.id)
+        assertThrows(IllegalStateException::class.java) { q.update(1, QueuePhase.COUNTER_CONFIRMED, 10) }
         assertNull(q.next())
         q.cancel(2)
+        q.update(1, QueuePhase.WAITING_PRINTER)
         q.update(1, QueuePhase.TRANSMITTING, usbStarted = true)
+        q.update(1, QueuePhase.WAITING_CONFIRMATION, 10)
         q.update(1, QueuePhase.COUNTER_CONFIRMED, 10)
         assertEquals(3L, q.next()!!.id)
         assertEquals(QueuePhase.CANCELLED, q.snapshot()[1].phase)
     }
     @Test fun uncertainOutcomePausesSuccessorsAndResumeDoesNotReplayFailedJob() {
         val q = DocumentQueue(); q.add(job(1)); q.add(job(2)); q.next()
+        q.update(1, QueuePhase.WAITING_PRINTER)
         q.update(1, QueuePhase.TRANSMITTING, usbStarted = true)
         q.update(1, QueuePhase.WAITING_CONFIRMATION, 2)
         q.cancel(1)
@@ -42,11 +46,16 @@ class StageCQueueTest {
     @Test fun storageAndHistoryAreBoundedAndCountersCannotRegress() {
         val q = DocumentQueue(); (1L..4L).forEach { q.add(job(it)) }
         assertThrows(IllegalStateException::class.java) { q.add(job(5)) }
-        q.next(); q.update(1, QueuePhase.WAITING_CONFIRMATION, 2)
+        q.next(); q.update(1, QueuePhase.WAITING_PRINTER)
+        q.update(1, QueuePhase.TRANSMITTING, usbStarted = true)
+        q.update(1, QueuePhase.WAITING_CONFIRMATION, 2)
         assertThrows(IllegalArgumentException::class.java) { q.update(1, QueuePhase.WAITING_CONFIRMATION, 1) }
         assertThrows(IllegalArgumentException::class.java) { q.update(1, QueuePhase.WAITING_CONFIRMATION, 11) }
         val history = DocumentQueue()
-        (1L..60L).forEach { history.add(job(it)); history.next(); history.update(it, QueuePhase.COUNTER_CONFIRMED, 10) }
+        (1L..60L).forEach { history.add(job(it)); history.next(); history.update(it, QueuePhase.WAITING_PRINTER)
+            history.update(it, QueuePhase.TRANSMITTING, usbStarted = true)
+            history.update(it, QueuePhase.WAITING_CONFIRMATION, 10)
+            history.update(it, QueuePhase.COUNTER_CONFIRMED, 10) }
         assertEquals(50, history.snapshot().size)
         assertEquals(11L, history.snapshot().first().id)
     }

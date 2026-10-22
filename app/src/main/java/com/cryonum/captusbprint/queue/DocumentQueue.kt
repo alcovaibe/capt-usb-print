@@ -36,6 +36,17 @@ internal class DocumentQueue {
         check(at >= 0)
         val old = records[at]
         check(!old.phase.terminal)
+        val allowed = when (old.phase) {
+            QueuePhase.QUEUED -> setOf(QueuePhase.PREPARING, QueuePhase.CANCELLED, QueuePhase.ERROR)
+            QueuePhase.PREPARING -> setOf(QueuePhase.WAITING_PRINTER, QueuePhase.CANCELLED, QueuePhase.ERROR)
+            QueuePhase.WAITING_PRINTER -> setOf(QueuePhase.TRANSMITTING, QueuePhase.CANCELLED, QueuePhase.ERROR)
+            QueuePhase.TRANSMITTING -> setOf(QueuePhase.WAITING_CONFIRMATION, QueuePhase.CANCELLED, QueuePhase.ERROR, QueuePhase.OUTCOME_UNKNOWN)
+            QueuePhase.WAITING_CONFIRMATION -> setOf(QueuePhase.TRANSMITTING, QueuePhase.WAITING_CONFIRMATION,
+                QueuePhase.COUNTER_CONFIRMED, QueuePhase.ERROR, QueuePhase.OUTCOME_UNKNOWN)
+            else -> emptySet()
+        }
+        check(phase in allowed) { "Invalid queue transition" }
+        if (phase == QueuePhase.COUNTER_CONFIRMED) check((confirmed ?: old.confirmed) == old.sheets)
         require(confirmed == null || confirmed in old.confirmed..old.sheets)
         val next = old.copy(phase = phase, confirmed = confirmed ?: old.confirmed,
             usbStarted = old.usbStarted || usbStarted == true, failure = failure)
@@ -59,7 +70,8 @@ internal class DocumentQueue {
         check(records.isEmpty() && active == null)
         val bounded = old.takeLast(50)
         require(bounded.map { it.id }.distinct().size == bounded.size)
-        bounded.forEach { require(it.id > 0 && it.sheets in 1..2000 && it.confirmed in 0..it.sheets) }
+        bounded.forEach { require(it.id in 1 until Long.MAX_VALUE && it.sheets in 1..2000 && it.confirmed in 0..it.sheets) }
+        bounded.forEach { require(it.phase != QueuePhase.COUNTER_CONFIRMED || it.confirmed == it.sheets) }
         bounded.forEach { record ->
             records.add(if (record.phase.terminal) record else record.copy(
                 phase = if (record.usbStarted) QueuePhase.OUTCOME_UNKNOWN else QueuePhase.ERROR,

@@ -239,7 +239,7 @@ class DocumentActivity : Activity() {
                     runOnUiThread {
                         copying = false
                         if (isDestroyed || isFinishing || !visible) {
-                            result.getOrNull()?.let { PrintQueueRuntime.cancel(it) }; return@runOnUiThread
+                            result.getOrNull()?.let { runCatching { PrintQueueRuntime.cancel(it) } }; return@runOnUiThread
                         }
                         pick.isEnabled = true; print.isEnabled = true
                         result.fold({ id ->
@@ -248,7 +248,7 @@ class DocumentActivity : Activity() {
                                 status.setText(R.string.document_queued)
                                 startActivity(Intent(this, PrintQueueActivity::class.java))
                             } catch (_: Exception) {
-                                PrintQueueRuntime.cancel(id); status.setText(R.string.queue_start_failed)
+                                runCatching { PrintQueueRuntime.cancel(id) }; status.setText(R.string.queue_start_failed)
                             }
                         }, { status.text = getString(R.string.document_enqueue_failed, it.javaClass.simpleName) })
                     }

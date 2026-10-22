@@ -53,7 +53,7 @@ internal object PrintQueueRuntime {
                     val o = items.getJSONObject(n)
                     QueueRecord(o.getLong("id"), o.getString("format"), o.getInt("sheets"),
                         QueuePhase.valueOf(o.getString("phase")), o.getInt("confirmed"),
-                        o.getBoolean("usbStarted"), failure = o.optString("failure").takeIf { it.isNotEmpty() })
+                        o.getBoolean("usbStarted"), failure = if (o.isNull("failure")) null else o.getString("failure"))
                 }, json.optBoolean("paused"))
             }
         } catch (_: Exception) {
@@ -148,6 +148,7 @@ internal object PrintQueueRuntime {
     }
     @Synchronized fun serviceFailure() {
         queue.snapshot().filter { !it.phase.terminal }.forEach {
+            if (it.phase != QueuePhase.QUEUED) queue.cancel(it.id)
             queue.update(it.id, if (it.usbStarted) QueuePhase.OUTCOME_UNKNOWN else QueuePhase.ERROR,
                 failure = "SERVICE_INTERRUPTED")
             cleanup(it.id)
@@ -212,7 +213,7 @@ internal object PrintQueueRuntime {
                     progress = { stage ->
                         val phase = if (stage.contains("counters agree")) QueuePhase.WAITING_CONFIRMATION
                                     else QueuePhase.TRANSMITTING
-                        progress(record.copy(phase = phase))
+                        progress(snapshot().first { it.id == id }.copy(phase = phase))
                     }, checkpoint = { observed ->
                         result = observed
                         report("USB_ATTEMPT_STARTED")

@@ -62,7 +62,7 @@ class PrintQueueService : Service() {
             .build()
     }
     override fun onDestroy() {
-        if (running) PrintQueueRuntime.stopServiceJobs()
+        if (running) runCatching { PrintQueueRuntime.stopServiceJobs() }
         worker.shutdown()
         super.onDestroy()
     }
