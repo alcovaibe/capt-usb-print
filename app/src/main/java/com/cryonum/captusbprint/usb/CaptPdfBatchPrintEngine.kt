@@ -2,6 +2,8 @@ package com.cryonum.captusbprint.usb
 
 import android.content.Context
 import android.os.SystemClock
+import com.cryonum.captusbprint.core.CaptBasicStatusParser
+import com.cryonum.captusbprint.core.PdfBatchPrinterReadiness
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
 import com.cryonum.captusbprint.core.CaptJobProtocol
@@ -104,6 +106,13 @@ internal object CaptPdfBatchPrintEngine {
                     check((current.secondaryByte and 0x02) == 0) { "Pending input status change" }
                 }
 
+                // The previous owner's captured 0x88 BasicStatus preceded
+                // repeated ReserveUnit 0x8C failures across ALL print engines.
+                // This read-only query is an extra fail-closed gate for the
+                // unverified batch experiment, not an automatic repair.
+                val basic = CaptBasicStatusParser.parse(query(CaptJobProtocol.GET_BASIC_STATUS))
+                PdfBatchPrinterReadiness.rejection(basic.statusByte)?.let { error(it) }
+                note("Read-only GetBasicStatus preflight passed")
                 stage = "RESERVING_ONE_JOB"
                 sideEffectsStarted = true
                 val jobId = CaptJobProtocol.parseReservedJob(
