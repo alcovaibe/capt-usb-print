@@ -1,6 +1,6 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Current work: **Stage C code completion in existing PR #25** (same private branch). Owner explicitly authorized conditional acceptance of release/printing for advancing development; this is NOT new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. General queue/images/landscape are being implemented and verified below. Stage D is not yet implemented. Historical notes are retained; latest checkpoint is at the end.
+Updated: 2026-10-22. Current work: **Stage C code implementation complete in existing PR #25; acceptance is conditional by owner instruction** (same private branch). Owner explicitly authorized conditional acceptance of release/printing for advancing development; this is NOT new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. General queue/images/landscape are being implemented and verified below. Stage D is not yet implemented. Historical notes are retained; latest checkpoint is at the end.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
@@ -304,3 +304,9 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Graceful service stop preserves a paused pending queue, while unexpected destruction cancels active/pending work; stopSelfResult(startId) coordinates newer service requests. Permission loss before foreground start leaves the queue paused for explicit recovery.
 - Per-job JSON has a separate explicit share button in queue history. No automatic export. Added actual emulator source-copy ownership/cancellation and second-process recovery checks (no USB or foreground device impersonation).
 - Stage C implementation is now written within its documented bounds; final CI on the updated HEAD remains the code gate. The owner's conditional acceptance applies to the missing hardware evidence, not to failing code checks. Stage D remains the next implementation step.
+
+### Current milestone for the next developer
+- Stage C is code-complete within the documented A4 / page/copy / disk/memory limits. Conditional owner acceptance is recorded, not fabricated hardware proof. Final CI evidence is attached to PR #25; check its exact HEAD before any merge.
+- Do not restart C as a 2–3-page pilot: the UI now uses the general queue, image/landscape renderer and disk spool. Retained first-PDF/pilot classes are compatibility/test adapters and are not document UI submission routes.
+- Stage D is next: Android PrintService must feed the SAME document queue/runner, preserve Android-supplied PDF layout (no extra FIT/margins), handle source-versus-spool page ranges correctly and expose honest PrintJob states/cancel. No PrintService implementation exists yet.
+- Known hardware follow-up remains ReserveUnit 0x8C and real quality/lifecycle checks. Main/release remains unchanged until an authorized merge.

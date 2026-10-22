@@ -261,4 +261,3 @@ internal object CaptDocumentPrintEngine {
         }
     }
 }
-
