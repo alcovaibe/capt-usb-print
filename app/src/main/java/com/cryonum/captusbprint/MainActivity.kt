@@ -119,6 +119,9 @@ class MainActivity : Activity() {
             recordEvent("RefreshUsb", "requested", "User requested USB rescan")
             refresh()
         })
+        content.addView(button("Выбрать PDF / JPEG / PNG (без печати)") {
+            startActivity(Intent(this, DocumentActivity::class.java))
+        })
         content.addView(button(getString(R.string.share_report)) { shareReport() })
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(devices)

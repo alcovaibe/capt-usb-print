@@ -25,6 +25,18 @@
             android:enabled="true"
             android:exported="false" />
         <activity
+            android:name=".DocumentActivity"
+            android:exported="true"
+            android:label="CAPT USB Print · Проверка документа">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/png" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name">
