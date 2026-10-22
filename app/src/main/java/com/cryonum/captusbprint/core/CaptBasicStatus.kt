@@ -26,3 +26,34 @@ object CaptBasicStatusParser {
         )
     }
 }
+
+/** Named interpretations of known GetBasicStatus bits; unknown bits remain visible. */
+object CaptStatusFlagDecoder {
+    fun basicFlags(value: Int): List<String> = decode(
+        value, 0xDF, listOf(
+            0x01 to "PRINTER_FREE",
+            0x02 to "NOT_READY",
+            0x04 to "COMMAND_BUSY",
+            0x08 to "IM_DATA_BUSY",
+            0x10 to "OFFLINE",
+            0x40 to "UNIT_FREE",
+            0x80 to "ERROR_BIT"
+        )
+    )
+
+    fun secondaryFlags(value: Int): List<String> = decode(
+        value, 0x03, listOf(
+            0x01 to "EXTENDED_STATUS_CHANGED",
+            0x02 to "NEED_INPUT_STATUS"
+        )
+    )
+
+    private fun decode(value: Int, knownMask: Int, bits: List<Pair<Int, String>>): List<String> {
+        val normalized = value and 0xff
+        val result = bits.filter { (bit, _) -> normalized and bit != 0 }
+            .map { it.second }.toMutableList()
+        val unknown = normalized and knownMask.inv() and 0xff
+        if (unknown != 0) result += "UNKNOWN_0x" + "%02X".format(unknown)
+        return result.ifEmpty { listOf("NONE") }
+    }
+}
