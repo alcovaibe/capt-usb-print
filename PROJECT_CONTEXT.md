@@ -1,14 +1,14 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Stage: **A confirmed on physical HONOR; real CAPT stage B one-page candidate in PR, hardware printing unverified.**
+Updated: 2026-10-22. Current stage: **A and B physically owner-accepted; Stage C first real PDF single-sheet action wired as an explicitly confirmed experimental action (hardware PDF result pending), not yet physically confirmed.** Historical Stage A notes below are retained for traceability; the current summary is at the end of this file.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
 - Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, and a successful physical PrintHand test page. Latest signed app report confirms VID/PID 04A9:2676, granted USB permission, interface 0/alt 0 class 7/subclass 1/protocol 2, OUT BULK 0x0001, IN BULK 0x0082, unique link selection, successful non-forced claim, and a valid GetInputStatus response.
 - No subscription, PrintHand dependence, cloud, INTERNET permission, public release or printer firmware/service commands.
-- Stage A is read-only USB diagnostics, not a printing driver. Physical printing unverified. Stage progression A→B→C→D→E requires owner hardware results.
+- Stage A USB diagnostics remain read-only; Stage B physical single-sheet, repeat-job and two-different-sheets-in-one-job tests were accepted on build 71. Stage C real PDF output remains unverified; D/E have not been accepted.
 
-## Upstream research (NOT imported yet)
+## Upstream research (historical Stage A audit; HISCOA subsequently imported for Stage B)
 - Candidate: \`ValdikSS/captdriver\` branch \`val\` at \`892f320c019974a5b737e000fcc2c8582264a131\`; README focuses LBP2900/3000/6000, claims multi-page, streaming and state-handling improvements; known aborts after paper jams/cartridge/door conditions. \`src/prn_lbp2900.c\` contains model-specific job/page control; \`capt-command.c\` framing; \`capt-status.c\` status decoding; \`generic-ops.c\` flow control; \`hiscoa-compress.c\` raster compression; \`rastertocapt.c\` includes CUPS raster dependency and Linux/POSIX calls. Do NOT assume other printer generations share command semantics.
 - Alternatives: \`mounaiban/captdriver\` master \`62719249ac34633338be54bc74beddd0e7003d38\`, and passively maintained \`agalakhov/captdriver\` master \`175f8ff4464591feb67728c7752ac752c7b48d43\`.
 - \`ValdikSS/COPYING\` states GNU GPL version 3; source headers say GPLv3 or later. If any source is ported, preserve author/license notices, include GPL-compatible project licensing and source distribution obligations before shipping APK.
@@ -257,3 +257,10 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
   one-sheet first document print behind explicit confirmation, document
   outcome reporting and shared job lifecycle tests. Do not claim document
   physical success based on CI.
+
+
+## Current checkpoint: first PDF print branch (2026-10-22)
+- `main` baseline: `95c715f4d8696dc9e4b8d45cbf8e7431effa81e5`; Stage B owner-accepted on signed build 71; PDF page 1/11 previously completed offline: 110 HISCOA bands, 277764 compressed bytes, 278204 framed bytes. No PDF sheet physically confirmed.
+- Branch `feat/stage-c-first-explicit-pdf-sheet`: a fail-closed gate requires exactly the visible PDF page, one copy, A4 portrait and a completed preview, followed by a separate real-print confirmation. Identifies exactly one LBP2900 with pre-granted USB permission. Uses existing bounded PDF preparation and previously unwired `CaptPdfPrintEngine`. No auto-retry and no Stage B engine changes.
+- Private `capt-pdf-print-latest.json` records PREPARING / USB_ATTEMPT_STARTED / final result without URI, document title, content, raster or serial. USB_ATTEMPT_STARTED without a final status remains uncertain after process loss. A separate document-screen button explicitly shares the report.
+- Next: complete review and PR CI, publish only via the verified private signed-main pipeline, then conduct a controlled physical one-page PDF test. Check paper, inspect real sheet geometry/quality and send JSON only manually. Do not mark Stage C accepted based on build/CI alone. Unified queue, lifecycle, JPEG/PNG raster and PrintService remain pending.
