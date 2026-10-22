@@ -6,6 +6,7 @@ import com.cryonum.captusbprint.core.CaptBasicStatusParser
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
 import com.cryonum.captusbprint.core.CaptJobProtocol
+import com.cryonum.captusbprint.core.CaptPageCounterProgress
 import com.cryonum.captusbprint.core.CaptPageProtocol
 import com.cryonum.captusbprint.core.CaptPrinterInfoParser
 import com.cryonum.captusbprint.core.CaptTestPage
@@ -128,12 +129,8 @@ object CaptTestPrintEngine {
                 check(chunkSize in 64..0xFF00) { "Unusable CAPT chunk size" }
                 note("GetPrinterInfo: Blk=${info.blockSize}; Buf=${info.bufferSize}; chunk=$chunkSize")
                 var status = safeState()
-                check(status.pageDecoding != null && status.pageCompleted != null) {
-                    "Extended status omitted page counters"
-                }
-                check(status.pageDecoding == 0 && status.pagePrinting == 0 &&
-                    status.pageOut == 0 && status.pageCompleted == 0) {
-                    "Printer has an outstanding page/job; refusing to overwrite it"
+                check(CaptPageCounterProgress.hasNoOutstandingPage(status)) {
+                    "Printer's page stage counters disagree; refusing an outstanding page/job"
                 }
                 if ((status.secondaryByte and 0x02) != 0) {
                     query(CaptJobProtocol.GET_INPUT_STATUS)
@@ -163,10 +160,21 @@ object CaptTestPrintEngine {
                 query(CaptJobProtocol.CLEAR_MIS_PRINT)
                 query(CaptJobProtocol.CLEAR_ERROR)
                 query(CaptJobProtocol.GO_ONLINE, CaptJobProtocol.goOnlineSettings())
-                waitState(WAIT_READY_MS) {
+                val ready = waitState(WAIT_READY_MS) {
                     (it.basicStatusByte and 0x06) == 0 &&
                         (it.basicStatusByte and 0x10) == 0
                 }
+                // The first observed successful job left every stage counter at 1.
+                // Capture the baseline AFTER the prologue in case a new job resets it.
+                check(CaptPageCounterProgress.hasNoOutstandingPage(ready)) {
+                    "Printer has a pending page after job initialization; no page data sent"
+                }
+                val initialCounters = CaptPageCounterProgress.snapshot(ready)
+                check(initialCounters.completed < 0xFFFF) {
+                    "CAPT page counters would wrap; behavior not yet verified"
+                }
+                note("CAPT initial counters: decoding=${initialCounters.decoding}; " +
+                    "out=${initialCounters.out}; completed=${initialCounters.completed}")
                 stage = "PAGE_DESCRIPTOR"
                 note("Sending A4/600dpi page descriptor")
                 session.sendFrame(CaptPageProtocol.beginA4TestPage())
@@ -184,7 +192,7 @@ object CaptTestPrintEngine {
                         status = safeState()
                         if (status.bufferSlots == 0) {
                             if (!started) {
-                                waitState(WAIT_READY_MS) { it.pageDecoding == 1 }
+                                waitState(WAIT_READY_MS) { CaptPageCounterProgress.nextPageDecoded(initialCounters, it) }
                                 query(CaptJobProtocol.START_PRINT, CaptJobProtocol.pageNumber(1))
                                 started = true
                                 note("StartPrint(1) to drain full CAPT buffer")
@@ -203,7 +211,7 @@ object CaptTestPrintEngine {
                 stage = "STARTING_PRINT"
                 session.sendOnly(CaptJobProtocol.BLACK_END)
                 if (!started) {
-                    waitState(WAIT_READY_MS) { it.pageDecoding == 1 }
+                    waitState(WAIT_READY_MS) { CaptPageCounterProgress.nextPageDecoded(initialCounters, it) }
                     query(CaptJobProtocol.START_PRINT, CaptJobProtocol.pageNumber(1))
                     note("StartPrint(1) after IC_BLACK_END")
                 }
@@ -211,9 +219,7 @@ object CaptTestPrintEngine {
                 stage = "WAITING_CONFIRMATION"
                 note("Waiting for printer's Shipped/Printed counters")
                 val confirmed = waitState(WAIT_PAGE_MS) {
-                    (it.pageOut ?: 0) >= 1 &&
-                        (it.pageCompleted ?: 0) >= 1 &&
-                        (it.auxiliaryByte and 0x04) == 0
+                    CaptPageCounterProgress.nextPageCompleted(initialCounters, it)
                 }
                 pages = confirmed.pageCompleted
                 stage = "FINALIZING"
