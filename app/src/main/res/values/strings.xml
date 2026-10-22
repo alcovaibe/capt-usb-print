@@ -4,6 +4,8 @@
     <string name="no_printing">Печать пока не реализована. Доступен только ручной запрос состояния без передачи документа.</string>
     <string name="probe_capt_status">Проверить состояние CAPT (без печати)</string>
     <string name="probe_capt_running">Запрос состояния CAPT…</string>
+    <string name="probe_capt_extended_status">Проверить расширенное состояние CAPT (без печати)</string>
+    <string name="probe_capt_extended_running">Запрос расширенного состояния CAPT…</string>
     <string name="probe_capt_failed">Запрос CAPT не выполнен: %1$s</string>
     <string name="probe_capt_unknown_error">неизвестная ошибка</string>
     <string name="refresh">Обновить список USB</string>
