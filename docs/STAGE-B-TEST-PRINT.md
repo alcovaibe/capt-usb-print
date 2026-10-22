@@ -1,6 +1,6 @@
 # Experimental Stage B — one physical A4 test page
 
-Status: source implementation merged, **physical page output still unverified**.
+Status: **one physical A4 page verified** by owner photo and matching CAPT completion counters on 2026-10-22. Independent repeat job and consecutive pages still unverified.
 
 ## Proven hardware facts (user's 2026-10-22 JSON)
 - HONOR X9c / Android API 36; Canon LBP2900 VID:PID 04A9:2676.
@@ -33,6 +33,7 @@ Status: source implementation merged, **physical page output still unverified**.
 - Only one test page; multiple pages/restarts of jobs still need observation and additional implementation.
 - Status mapping may be incomplete; unknown flag 0x20/0x88 are not interpreted as definitive errors.
 - Partial commands and disconnects may leave printer memory in an unknown state; no automatic recovery.
-- Physical confirmation is by owner; `printer_counter_confirmed` only means observed device counters, not a visually verified print.
+- The first physical sheet was verified by owner photo and its JSON confirmed one newly completed page. A second press with build 60 was safely rejected at PREFLIGHT (zero print bytes): after completion, CAPT kept decoding/printing/out/completed/received counters all at 1. Nonzero equal counters are not automatically a pending page. Updated preflight recognizes a quiescent equal state; each new job now captures its own post-prologue baseline and requires genuinely increased counters before claiming success. Repeat physical test remains pending.
+- `printer_counter_confirmed` alone means observed device counters, not a visually verified print; the owner's photo confirms the first sheet.
 - USB job thread serializes with diagnostics via Activity worker. Shared PrintService queue comes after stage B.
 - No PDF/image print, PrintService, or claims of general Android/printer compatibility yet.
