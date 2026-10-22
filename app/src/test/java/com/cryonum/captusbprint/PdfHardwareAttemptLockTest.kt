@@ -5,12 +5,11 @@ import org.junit.Test
 
 class PdfHardwareAttemptLockTest {
     @Test fun singleAndBatchEntryPointsCannotOverlap() {
-        val first = PdfHardwareAttemptLock.tryAcquire()
-        assertNotNull(first)
+        val first = requireNotNull(PdfHardwareAttemptLock.tryAcquire())
         try {
             assertNull(PdfHardwareAttemptLock.tryAcquire())
         } finally {
-            first!!.close()
+            first.close()
             first.close()
         }
         PdfHardwareAttemptLock.tryAcquire()!!.use { assertNull(PdfHardwareAttemptLock.tryAcquire()) }
