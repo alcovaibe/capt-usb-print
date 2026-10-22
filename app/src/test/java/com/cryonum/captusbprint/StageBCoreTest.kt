@@ -73,6 +73,43 @@ class StageBCoreTest {
         }
     }
 
+    @Test fun basicStatusFlagsAreDecodedWithoutInventingAFault() {
+        assertEquals(listOf("IM_DATA_BUSY", "ERROR_BIT"), CaptStatusFlagDecoder.basic(0x88))
+        assertEquals(listOf("NONE"), CaptStatusFlagDecoder.secondary(0x00))
+        assertEquals(
+            listOf("EXTENDED_STATUS_CHANGED", "NEED_INPUT_STATUS"),
+            CaptStatusFlagDecoder.secondary(0x03)
+        )
+    }
+
+    @Test fun extendedStatusParserReadsEngineAndPaperFields() {
+        val payload = ByteArray(14)
+        payload[0] = 0x88.toByte()
+        payload[1] = 0x00
+        payload[4] = 0x0f
+        payload[5] = 0x00
+        payload[8] = 0x02
+        payload[9] = 0x40
+        payload[10] = 0x00
+        payload[12] = 0x00
+        payload[13] = 0x41
+        val parsed = CaptExtendedStatusParser.parse(CaptFrame.encode(0xA0A8, payload))
+        assertEquals(0x88, parsed.basicStatusByte)
+        assertEquals(15, parsed.bufferSlots)
+        assertEquals(0x02, parsed.auxiliaryByte)
+        assertEquals(0x40, parsed.engineCommunicationByte)
+        assertEquals("NO_PAPER", CaptStatusFlagDecoder.paper(parsed.paperAvailabilityByte))
+        assertEquals(0x4100, parsed.engineFlags)
+        assertEquals(listOf("PAPER_JAM", "DOOR_OPEN"), CaptStatusFlagDecoder.engine(parsed.engineFlags))
+    }
+
+    @Test fun extendedStatusParserRejectsReplyWithoutRequiredFields() {
+        val shortReply = CaptFrame.encode(0xA0A8, ByteArray(12))
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptExtendedStatusParser.parse(shortReply)
+        }
+    }
+
     @Test fun nestedCommandUsesBoundedLength() {
         // Outer D0A9; two 4-byte children: D0A0, D0A2; size 12.
         val frame = CaptFrame.encodeMulti(listOf(

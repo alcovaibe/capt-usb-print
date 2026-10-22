@@ -205,8 +205,14 @@ class MainActivity : Activity() {
 
     private fun render(snapshot: UsbSnapshot) {
         currentReport = snapshot.report + "\n" + UsbObservation.reportLine() +
-            "\nLast USB permission event: " + PermissionEvents.outcome + "\n"
-        status.text = PermissionEvents.outcome
+            "\nUSB permission event in current session: " + PermissionEvents.outcome +
+            "\nCurrent USB permission state is listed per device above.\n"
+        val knownCapt = snapshot.devices.firstOrNull { it.profile?.protocolFamily == "CAPT" }
+        status.text = if (knownCapt?.permissionGranted == true) {
+            getString(R.string.permission_granted)
+        } else {
+            PermissionEvents.outcome
+        }
         reportView.text = currentReport
         devices.removeAllViews()
         if (snapshot.devices.isEmpty()) {
@@ -237,6 +243,9 @@ class MainActivity : Activity() {
             } else if (row.profile?.protocolFamily == "CAPT") {
                 card.addView(button(getString(R.string.probe_capt_status)) {
                     probeCaptStatus(row)
+                })
+                card.addView(button(getString(R.string.probe_capt_extended_status)) {
+                    probeCaptExtendedStatus(row)
                 })
             }
             devices.addView(card, LinearLayout.LayoutParams(
@@ -277,11 +286,22 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun probeCaptStatus(row: UsbRow) {
-        status.text = getString(R.string.probe_capt_running)
+    private fun probeCaptStatus(row: UsbRow) = runCaptProbe(row, extended = false)
+
+    private fun probeCaptExtendedStatus(row: UsbRow) = runCaptProbe(row, extended = true)
+
+    private fun runCaptProbe(row: UsbRow, extended: Boolean) {
+        val commandName = if (extended) "GetExtendedStatus" else "GetBasicStatus"
+        status.text = getString(
+            if (extended) R.string.probe_capt_extended_running else R.string.probe_capt_running
+        )
         worker.execute {
             val result = runCatching {
-                CaptStatusProbe.query(applicationContext, row.deviceKey)
+                if (extended) {
+                    CaptStatusProbe.queryExtended(applicationContext, row.deviceKey)
+                } else {
+                    CaptStatusProbe.query(applicationContext, row.deviceKey)
+                }
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
@@ -293,8 +313,7 @@ class MainActivity : Activity() {
                         } else {
                             "USB error (" + error.javaClass.simpleName + ")"
                         }
-                        "CAPT GetBasicStatus: failed; reason=" + reason +
-                            "; no print/page data sent."
+                        "CAPT $commandName: failed; reason=$reason; no print/page data sent."
                     }
                 )
                 currentReport += "\n" + line + "\n"
