@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">CAPT USB Print · Диагностика</string>
     <string name="stage_title">Этап B · Проверка CAPT</string>
-    <string name="no_printing">Печать пока не реализована. Доступны только ручные диагностические запросы CAPT без передачи документа.</string>
+    <string name="no_printing">Этап B: экспериментальная печать одного тестового листа. Печать PDF и изображений ещё не реализована. После теста поделитесь JSON-отчётом.</string>
     <string name="probe_capt_status">Проверить состояние CAPT (без печати)</string>
     <string name="probe_capt_running">Запрос %1$s…</string>
     <string name="probe_capt_extended_status">Проверить расширенное состояние CAPT (без печати)</string>
