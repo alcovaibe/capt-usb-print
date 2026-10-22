@@ -21,3 +21,14 @@ assert "startActivity(telegram)" not in prefix, "Implicit Telegram launch"
 assert "saveDiagnosticSnapshot()" in main and "restoreDiagnosticEvents()" in main
 assert 'File(filesDir, "capt-diagnostic-latest.json")' in main
 print("Manual-only JSON export guard passed.")
+
+# The separate PDF report must also remain share-only-on-explicit-click.
+document = Path("app/src/main/java/com/cryonum/captusbprint/DocumentActivity.kt").read_text()
+attempt = Path("app/src/main/java/com/cryonum/captusbprint/FirstPdfPrintAttempt.kt").read_text()
+assert document.count("sharePdfReport()") == 2
+assert "setOnClickListener { sharePdfReport() }" in document
+assert "Intent.ACTION_SEND" not in document[:document.index("    private fun sharePdfReport() {")]
+assert "Intent.createChooser(" not in document[:document.index("    private fun sharePdfReport() {")]
+assert "Intent.ACTION_SEND" not in attempt
+assert "USB_ATTEMPT_STARTED" in attempt and "automaticRetry" in attempt
+print("Explicit PDF-report sharing guard passed.")
