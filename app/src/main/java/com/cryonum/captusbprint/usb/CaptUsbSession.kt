@@ -63,10 +63,7 @@ internal class CaptUsbSession private constructor(
         val actualCommand = (first[0].toInt() and 0xff) or
             ((first[1].toInt() and 0xff) shl 8)
         check(actualCommand == expectedCommand) { "Unexpected CAPT response command" }
-        val le = (first[2].toInt() and 0xff) or ((first[3].toInt() and 0xff) shl 8)
-        val length = if (le in 6..1024) le
-            else CaptFrame.lengthCandidates(first, 1024).singleOrNull()
-                ?: throw IllegalStateException("Invalid/ambiguous CAPT reply length")
+        val length = CaptFrame.preferredReplyLength(first, 1024)
         check(length >= 6 && length <= 1024)
         val reply = if (length == 6) first
             else first + readExactly(length - 6, 6000)
