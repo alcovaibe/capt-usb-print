@@ -7,7 +7,7 @@ import android.hardware.usb.UsbManager
 
 internal object PermissionEvents {
     const val ACTION = "com.cryonum.captusbprint.action.USB_PERMISSION"
-    @Volatile var outcome: String = "Разрешение USB ещё не запрошено"
+    @Volatile var outcome: String = "Событие разрешения USB в текущем сеансе не зафиксировано"
     // Main-process callback only. It is installed only while Activity is resumed.
     var listener: (() -> Unit)? = null
 }
