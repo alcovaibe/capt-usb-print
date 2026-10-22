@@ -40,7 +40,8 @@ class StageBCoreTest {
         )
         assertEquals(listOf(16, 10), CaptFrame.lengthCandidates(bcd, 1024))
         assertTrue(CaptFrame.headerLengthMatches(bcd, 10))
-        assertFalse(CaptFrame.headerLengthMatches(bcd, 16))
+        assertTrue(CaptFrame.headerLengthMatches(bcd, 16))
+        assertFalse(CaptFrame.headerLengthMatches(bcd, 12))
         assertEquals(6, CaptFrame.parseReply(0xE0A0, bcd).size)
     }
 
