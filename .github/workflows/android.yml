@@ -33,8 +33,19 @@ jobs:
             app/src/main/cpp/upstream/hiscoa-common.c \
             -o /tmp/capt-hiscoa-smoke
           /tmp/capt-hiscoa-smoke
-      - name: Validate Python release automation syntax
-        run: python3 -m py_compile tools/prepare-signing.py tools/signed-release.py
+      - name: Validate release and emulator setup scripts
+        run: |
+          python3 -m py_compile tools/prepare-signing.py tools/signed-release.py
+          bash -n tools/prepare-emulator.sh
+          # Reproduce duplicate partition-size entries from a device profile.
+          fixture="$(mktemp -d)"
+          mkdir -p "$fixture/test.avd"
+          printf 'hw.cpu.ncore=2\ndisk.dataPartition.size=7200M\ndisk.dataPartition.size=2048M\n' > "$fixture/test.avd/config.ini"
+          ANDROID_AVD_HOME="$fixture" bash tools/prepare-emulator.sh
+          test "$(grep -c '^disk.dataPartition.size=' "$fixture/test.avd/config.ini")" -eq 1
+          grep -Fx 'disk.dataPartition.size=2048M' "$fixture/test.avd/config.ini"
+          grep -Fx 'hw.cpu.ncore=2' "$fixture/test.avd/config.ini"
+          rm -rf "$fixture"
       - name: Build, lint and tests
         run: |
           chmod +x ./gradlew
@@ -141,6 +152,10 @@ jobs:
           # An explicit 2 GiB userdata partition is sufficient for two APK
           # installations and avoids a deterministic AVD boot failure.
           disk-size: 2048M
+          # Remove the Pixel 6 profile's original large data-partition key.
+          # android-emulator-runner appends overrides instead of replacing keys.
+          pre-emulator-launch-script: bash tools/prepare-emulator.sh
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -partition-size 2048
           disable-animations: true
           script: bash tools/emulator-upgrade-check.sh
       - name: Publish verified signed APK only after emulator success
