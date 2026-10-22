@@ -12,7 +12,11 @@ class StageDSystemPagesTest {
     @Test fun fullOriginalAppliesNoncontiguousSelectionOnce() {
         val s = SystemPageSelection.resolve(11, 11, listOf(Range(1, 2), Range(7, 7)))
         assertEquals(listOf(1, 2, 7), s.pdfIndices)
-        assertEquals("FULL_PDF", s.mode)
+        assertEquals("SPOOL_RANGES", s.mode)
+    }
+    @Test fun androidAlreadyReducedAndRenumberedPdfIsNotSelectedAgain() {
+        assertEquals(listOf(0,1),SystemPageSelection.resolve(2,2,listOf(Range(0,Int.MAX_VALUE))).pdfIndices)
+        assertEquals(listOf(0,1),SystemPageSelection.resolve(2,2,listOf(Range(0,1))).pdfIndices)
     }
     @Test fun reducedPdfUsesSpoolIndicesEvenWhenOriginalIndicesFitInsideIt() {
         val s = SystemPageSelection.resolve(3, 11, listOf(Range(1, 3)))

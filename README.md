@@ -22,7 +22,7 @@ The general engine retains the accepted portrait CAPT descriptor: landscape is a
 
 Private history is bounded to 50 jobs and reports to 24; JSON records settings, app/device versions, CAPT state and confirmed counters, excluding document names/URIs/content/raster/hashes/serials. Sharing is explicit. Preview/settings survive screen recreation; queued jobs own independent private source copies.
 
-**Acceptance distinction:** the owner authorized conditional release/print success to finish code. Actual hardware evidence remains separate PDF sheets on build 105 and accepted Stage A/B. New queue, image output, landscape and MagicOS screen-off behavior are not reported as physically observed. Stage D PrintService is a separate next implementation.
+**Acceptance distinction:** the owner authorized conditional release/print success to finish code. Actual hardware evidence remains separate PDF sheets on build 105 and accepted Stage A/B. New queue, image output, landscape and MagicOS screen-off behavior are not reported as physically observed. Stage D PrintService is under verification below; its hardware acceptance remains open.
 
 ## Stage D: Android system printing (under verification)
 

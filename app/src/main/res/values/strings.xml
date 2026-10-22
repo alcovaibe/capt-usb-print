@@ -123,5 +123,6 @@
     <string name="system_outcome_unknown">Результат не определён; часть листов могла выйти. Автоповтора нет. Проверьте принтер и JSON задания.</string>
     <string name="system_cancelling">Остановка новых отправок… Уже принятый лист может выйти.</string>
     <string name="system_report">Поделиться JSON системной печати</string>
+    <string name="system_pdf_format">Системная печать (PDF)</string>
 </resources>
 

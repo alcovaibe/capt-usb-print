@@ -15,7 +15,7 @@ Updated: 2026-10-22. Current work: **Stage D Android PrintService**, from owner-
 - CUPS requirement in ValdikSS README concerns Linux USB backend; Android transport must instead handle its own coordination and USB timeouts. Upstream source was audited but **no upstream GPL code has been copied into stage A**.
 
 ## Minimal architecture / planned
-Kotlin Android App. Stage A: Activity → single-thread executor → UsbScanner → Android UsbManager; explicit internal permission receiver; share-only-on-user-action report. Scanner enumerates all USB devices, checks a unique BULK IN/OUT interface before short claim probe, does not send data. Later: file URI/PdfRenderer → page specification and bounded raster bands → isolated CAPT/HISCOA adapter (possibly NDK after audit) → single-owner USB transport → shared serial job queue → Activity and PrintService clients. Fake transport strictly for tests only. PrintService NOT implemented yet.
+Kotlin Android App. Stage A: Activity → single-thread executor → UsbScanner → Android UsbManager; explicit internal permission receiver; share-only-on-user-action report. Scanner enumerates all USB devices, checks a unique BULK IN/OUT interface before short claim probe, does not send data. Later: file URI/PdfRenderer → page specification and bounded raster bands → isolated CAPT/HISCOA adapter (possibly NDK after audit) → single-owner USB transport → shared serial job queue → Activity and PrintService clients. Fake transport strictly for tests only. PrintService is implemented in the Stage D feature branch and is under verification.
 
 ## Toolchain
 JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with built-in Kotlin (minimum 2.2.10); compileSdk 36, targetSdk 36, minSdk 29 (deliberate development floor, not claim of wider support). No Compose/NDK/CMake needed for read-only diagnostic proof. Inherited Gradle distribution SHA is retained. Runtime no INTERNET; CI requires network to install SDK and dependencies.
@@ -341,3 +341,9 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
   Explicit share button only; no label, URI, origin app identity, content or serial.
 - Pending: PR build/lint/tests, API 36 system-PDF/pipe tests and real HONOR
   Documents + second-source routing/printing. Do not mark D hardware accepted.
+
+### PR #26 verification follow-up
+- Initial CI caught a raster API trailing-lambda compatibility error; preserved the original overload and added a separate system-layout overload. No accepted Stage B code changed.
+- Reviewed AOSP PrintSpooler range/count adjustment and final shredding: normal PrintJob ranges are file-relative or ALL_PAGES after reduction. Resolver names this SPOOL_RANGES; original-metadata fallback is bounded and ambiguous cases fail. See docs/STAGE-D-SYSTEM-PRINT.md for primary references.
+- Added a debug-only API 36 smoke: real bounded pipes/timeout/cancellation, system portrait/landscape PDF marks at original point scale, shared-queue source ownership/cleanup, manifest protection and actual system Print dialog discovery with production Canon correctly unavailable. No fake USB grant or printer is introduced.
+- CI 124 caught the raster overload issue; CI 125 compiled production but caught PdfDocument not implementing Closeable in the new smoke. The harness now closes it explicitly. Full verification is still pending the updated PR HEAD.

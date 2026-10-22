@@ -2,7 +2,7 @@ package com.cryonum.captusbprint.printservice
 
 import com.cryonum.captusbprint.core.JobSpecification
 
-/** Android ranges refer to the original document; the delivered PDF may already be reduced. */
+/** Standard Android rewrites ranges/counts to the spooled PDF; OEM sources may retain original values. */
 internal object SystemPageSelection {
     data class Range(val first: Int, val last: Int)
     data class Selection(val pdfIndices: List<Int>, val mode: String)
@@ -21,9 +21,9 @@ internal object SystemPageSelection {
             require(it.first in 0 until limit && it.last in it.first until limit) { "INVALID_PAGE_RANGES" }
             selected.addAll(it.first..it.last)
         }
-        // Full original PDF: apply the selection exactly once.
+        // Consistent spool metadata (full or partial file): apply these file-relative ranges once.
         if (declaredPages == pdfPages && selected.last() < pdfPages)
-            return Selection(selected.toList(), "FULL_PDF")
+            return Selection(selected.toList(), "SPOOL_RANGES")
         // Reduced PDF: page zero is the first selected source page, not source page zero.
         if (pdfPages == selected.size)
             return Selection((0 until pdfPages).toList(), "REDUCED_PDF")

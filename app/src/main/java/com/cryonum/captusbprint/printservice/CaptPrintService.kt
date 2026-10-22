@@ -70,7 +70,8 @@ class CaptPrintService : PrintService() {
             updateJobs()
         } catch (error: Exception) {
             SystemPrintDiagnostics.record(this, "REQUEST_REJECTED", error = errorCode(error))
-            printJob.fail(getString(R.string.system_request_rejected))
+            printJob.fail(getString(if (errorCode(error) == "SYSTEM_QUEUE_FULL") R.string.system_queue_full
+                else R.string.system_request_rejected))
         }
     }
 

@@ -61,7 +61,8 @@ class PrintQueueActivity : Activity() {
         records.asReversed().forEach { record ->
             jobs.addView(TextView(this).apply {
                 text = getString(R.string.queue_item, record.id.toString().takeLast(6),
-                    record.format, phase(record.phase), record.confirmed, record.sheets) +
+                    if (record.format == "SYSTEM_PDF") getString(R.string.system_pdf_format) else record.format,
+                    phase(record.phase), record.confirmed, record.sheets) +
                     (record.failure?.let { "\n" + getString(R.string.queue_failure, failure(it)) } ?: "")
                 textSize = 16f; setPadding(0, 24, 0, 8); setTextIsSelectable(true)
             })

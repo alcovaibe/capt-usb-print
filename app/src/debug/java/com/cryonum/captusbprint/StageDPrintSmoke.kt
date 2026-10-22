@@ -113,6 +113,7 @@ class StageDPrintSmoke : Instrumentation() {
             val currentServices = shell("settings get secure enabled_print_services").trim()
             previousServices = currentServices
             val existing = currentServices.takeUnless { it == "null" || it.isEmpty() }
+            val discoveryStartedAt = System.currentTimeMillis()
             shell("settings put secure enabled_print_services " +
                 ((existing?.plus(":") ?: "") + component.flattenToString()))
             activity = startActivitySync(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -135,8 +136,12 @@ class StageDPrintSmoke : Instrumentation() {
                         .setColorMode(PrintAttributes.COLOR_MODE_MONOCHROME).build())
             }
             val deadline = SystemClock.elapsedRealtime()+20_000
-            fun discovered() = runCatching { SystemPrintDiagnostics.file(context).readText()
-                .contains("DISCOVERY_PUBLISHED_UNAVAILABLE") }.getOrDefault(false)
+            fun discovered() = runCatching {
+                val events = org.json.JSONObject(SystemPrintDiagnostics.file(context).readText()).getJSONArray("events")
+                (0 until events.length()).any { n -> events.getJSONObject(n).let {
+                    it.getString("event") == "DISCOVERY_PUBLISHED_UNAVAILABLE" && it.getLong("atMillis") >= discoveryStartedAt
+                } }
+            }.getOrDefault(false)
             while (SystemClock.elapsedRealtime() < deadline &&
                 !discovered()) SystemClock.sleep(100)
             check(discovered()) {
@@ -152,10 +157,10 @@ class StageDPrintSmoke : Instrumentation() {
                 uiAutomation.injectInputEvent(KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BACK),true)
             }
             runCatching { runOnMainSync { activity?.finish() } }
-            previousServices?.let {
+            runCatching { previousServices?.let {
                 shell(if (it == "null" || it.isEmpty()) "settings delete secure enabled_print_services"
                     else "settings put secure enabled_print_services $it")
-            }
+            } }
             directory.deleteRecursively()
         }
         finish(resultCode,result)
@@ -163,7 +168,8 @@ class StageDPrintSmoke : Instrumentation() {
     private fun shell(command: String) = ParcelFileDescriptor.AutoCloseInputStream(uiAutomation.executeShellCommand(command))
         .bufferedReader().use { it.readText() }
     private fun writePdf(file: File, landscape: Boolean) {
-        PdfDocument().use { pdf ->
+        val pdf = PdfDocument()
+        try {
             repeat(3) { n ->
                 val page = pdf.startPage(PdfDocument.PageInfo.Builder(if (landscape) 842 else 595,
                     if (landscape) 595 else 842,n+1).create())
@@ -172,6 +178,6 @@ class StageDPrintSmoke : Instrumentation() {
                 pdf.finishPage(page)
             }
             file.outputStream().use { pdf.writeTo(it) }
-        }
+        } finally { pdf.close() }
     }
 }
