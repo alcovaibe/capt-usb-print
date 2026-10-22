@@ -5,6 +5,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageBCoreTest {
+    @Test fun captLeLengthWinsOverShorterPlausibleBcd() {
+        val header = byteArrayOf(0xA8.toByte(), 0xA0.toByte(),
+            0x38, 0x00, 0x31, 0x88.toByte())
+        assertEquals(listOf(56, 38), CaptFrame.lengthCandidates(header, 1024))
+        assertEquals(56, CaptFrame.preferredReplyLength(header, 1024))
+    }
+
     @Test fun knownGetBasicStatusRequestVector() {
         // Independent wire vector from upstream enum 0xE0A0 + 4-byte LE header.
         assertArrayEquals(byteArrayOf(0xA0.toByte(), 0xE0.toByte(), 0x04, 0x00),
