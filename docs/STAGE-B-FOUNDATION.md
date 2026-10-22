@@ -24,3 +24,7 @@ Public ValdikSS/captdriver `val` at `892f320c019974a5b737e000fcc2c8582264a131`, 
 
 ## Hardware checkpoint update — 2026-10-22
 The owner now reports that the app enumerates exactly one USB device **04A9:2676** and that Android permission was granted. Public USB records map this ID to Canon LBP2900. The screenshot omits the expanded technical report, so interface class/subclass/protocol, endpoint addresses and types, and claim result are not yet confirmed. Next: use the exact-ID profile only for UI identification, then validate the full report and add a manually triggered read-only status request gated by a unique BULK IN/OUT pair and successful interface claim. No print commands are enabled.
+
+
+## Read-only CAPT status probe added (2026-10-22; physical result pending)
+The UI now offers a manual **Check CAPT status (no printing)** action only for exact VID:PID 04A9:2676 after USB permission is granted. It issues only GetBasicStatus (0xE0A0), after requiring a unique BULK IN/OUT pair, alternate setting 0, and successful non-forced claim. The bounded reply reader accepts LE or BCD length only when it matches the received frame. The scanner still sends no commands automatically. No page data, job setup, printer reset, or print command is implemented. This query still requires physical validation; synthetic unit tests do not prove the printer responds.

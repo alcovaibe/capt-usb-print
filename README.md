@@ -9,7 +9,7 @@ The diagnostic screenshot from HONOR reports API 36, ARM64, **4096-byte** memory
 The launcher now uses an adaptive icon like the Bluetooth Disable project: a solid white background, the approved black printer line-art, a round variant, and a monochrome foreground for themed icons.
 
 ### Known device identity
-The exact USB ID `04A9:2676` is mapped to Canon LBP2900. This only labels the device in diagnostics; interface selection, a valid read-only CAPT status response, and physical printing remain unverified.
+The exact USB ID `04A9:2676` is mapped to Canon LBP2900. After USB permission is granted, the app offers a manually triggered read-only `GetBasicStatus` query, guarded by a unique BULK IN/OUT pair and successful interface claim. This does not print. A valid response and physical printing remain unverified.
 
 ### Stage B foundations, not a working driver
 Pure Kotlin USB descriptor selection refuses ambiguous BULK pairs; a bounded USB writer handles partial returns and interrupted writes without resending complete CAPT commands; a job state model makes completion contingent on explicit result confirmation and never automatically resumes after interruption. Page ranges and copies are parsed and bounded. All are covered by unit tests. **These foundations are not wired to a real printer and send zero CAPT traffic**. Hardware-gated CAPT profile integration follows only after enumerating and checking the actual USB descriptors.
@@ -34,7 +34,7 @@ CI never generates or changes the private signing key and cannot publish a relea
 
 JDK 21; Android Gradle Plugin 9.2.1; Gradle Wrapper 9.4.1; compileSdk/targetSdk 36; minSdk 29; Android SDK Build Tools 36.0.0. Build debug with `./gradlew :app:assembleDebug`. Debug is NOT upgradeable release. Never use ephemeral debug signing for user-facing Releases.
 
-For the next controlled hardware test: connect the powered-on LBP2900 by USB-C/USB-B to the HONOR X9c, keep the diagnostics app in front, refresh the USB list, and share **Поделиться отчётом**. This check has not yet been completed for the current diagnostic app. Only request USB permission after Android enumerates the device. Technical details are collapsible to improve phone readability, but the shared report remains complete. If zero devices are shown with the printer powered on, reconnect the existing USB cable once and keep the diagnostics app in front; it refreshes on device-list changes. USB sends no print data at this stage.
+For the next controlled hardware test: connect the powered-on LBP2900 to the HONOR X9c, grant USB permission, then use **Проверить состояние CAPT (без печати)** once. This sends only GetBasicStatus (0xE0A0) if the known VID:PID and unambiguous interface checks pass; it does not print. Share **Поделиться отчётом** afterwards. The first physical CAPT response is still unverified. Technical details are collapsible to improve phone readability, but the shared report remains complete. If zero devices are shown with the printer powered on, reconnect the existing USB cable once and keep the diagnostics app in front; it refreshes on device-list changes. USB sends no print data at this stage.
 
 See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for audit, limitations and next steps. This is unofficial software not endorsed by Canon.
 

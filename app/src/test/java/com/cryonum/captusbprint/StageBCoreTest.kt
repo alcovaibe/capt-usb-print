@@ -32,6 +32,33 @@ class StageBCoreTest {
         }
     }
 
+    @Test fun acceptsBcdReplyLengthOnlyWhenItMatchesReceivedBytes() {
+        // LE=16, BCD=10: upstream CAPT devices may use the BCD interpretation.
+        val bcd = byteArrayOf(
+            0xA0.toByte(), 0xE0.toByte(), 0x10, 0x00,
+            0x41, 0x03, 0x00, 0x00, 0x0F, 0x00
+        )
+        assertEquals(listOf(16, 10), CaptFrame.lengthCandidates(bcd, 1024))
+        assertTrue(CaptFrame.headerLengthMatches(bcd, 10))
+        assertFalse(CaptFrame.headerLengthMatches(bcd, 16))
+        assertEquals(6, CaptFrame.parseReply(0xE0A0, bcd).size)
+    }
+
+    @Test fun statusParserReadsOnlyTheValidatedBasicStatusFrame() {
+        val frame = byteArrayOf(
+            0xA0.toByte(), 0xE0.toByte(), 10, 0,
+            0x41, 0x03, 0x00, 0x00, 0x0F, 0x00
+        )
+        val parsed = CaptBasicStatusParser.parse(frame)
+        assertEquals(0x41, parsed.statusByte)
+        assertEquals(0x03, parsed.secondaryByte)
+        assertEquals(0x0F, parsed.bufferLowByte)
+        assertEquals(0x00, parsed.bufferHighByte)
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptBasicStatusParser.parse(frame.copyOf(9))
+        }
+    }
+
     @Test fun nestedCommandUsesBoundedLength() {
         // Outer D0A9; two 4-byte children: D0A0, D0A2; size 12.
         val frame = CaptFrame.encodeMulti(listOf(

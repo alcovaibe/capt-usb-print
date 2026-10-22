@@ -111,3 +111,11 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Cross-check against public USB device records identifies 04A9:2676 as **Canon LBP2900**. The exact VID:PID match is good model evidence; it does not prove interface compatibility or that CAPT exchanges work.
 - The screenshot does not show the detailed technical report. Interface classes, alternate settings, endpoint addresses/types, descriptor header, interface-claim result and any printer response are not yet recorded in the project evidence.
 - Next code step: label the known device from the exact VID:PID table; keep unknown IDs unnamed. Then inspect the full anonymized report and implement an explicitly user-triggered, read-only CAPT status query only if the selected interface is unambiguous and claim succeeds. No print/page commands until status parsing is validated.
+
+
+## Read-only CAPT status probe (source checkpoint, 2026-10-22)
+- Added a button for the exact known profile Canon LBP2900 (VID:PID 04A9:2676) only after Android USB permission is granted.
+- The button sends only CAPT GetBasicStatus (command 0xE0A0), and only after a unique BULK IN/OUT pair, alternate setting 0, successful non-forced interface claim, and exact VID:PID match. The automatic scanner itself still sends no CAPT commands.
+- The response reader is bounded to 1024 bytes and finite timeouts. It validates command ID and either LE or BCD frame length against the actual received length. Partial request writes are not retried; interface is released and connection closed in finally.
+- The UI/report records only the basic status bytes and whether a valid response arrived. It does not send a page, print payload, or any job/service command.
+- This source-level probe is not yet validated on the physical printer. Next step after CI: install the latest signed private release, press the new status button once, and share the report. A valid response is required before developing the first page path.

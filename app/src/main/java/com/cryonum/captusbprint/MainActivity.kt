@@ -22,6 +22,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.cryonum.captusbprint.usb.PermissionEvents
+import com.cryonum.captusbprint.usb.CaptStatusProbe
+import com.cryonum.captusbprint.usb.CaptStatusProbeException
 import com.cryonum.captusbprint.usb.UsbDiagnostic
 import com.cryonum.captusbprint.usb.UsbRow
 import com.cryonum.captusbprint.usb.UsbSnapshot
@@ -232,6 +234,10 @@ class MainActivity : Activity() {
                 card.addView(button(getString(R.string.permission_request)) {
                     requestUsbAccess(row)
                 })
+            } else if (row.profile?.protocolFamily == "CAPT") {
+                card.addView(button(getString(R.string.probe_capt_status)) {
+                    probeCaptStatus(row)
+                })
             }
             devices.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -268,6 +274,45 @@ class MainActivity : Activity() {
         } catch (error: Exception) {
             PermissionEvents.outcome = "Ошибка запроса USB: " + error.javaClass.simpleName
             refresh()
+        }
+    }
+
+    private fun probeCaptStatus(row: UsbRow) {
+        status.text = getString(R.string.probe_capt_running)
+        worker.execute {
+            val result = runCatching {
+                CaptStatusProbe.query(applicationContext, row.deviceKey)
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val line = result.fold(
+                    { it.reportLine },
+                    { error ->
+                        val reason = if (error is CaptStatusProbeException) {
+                            error.message ?: getString(R.string.probe_capt_unknown_error)
+                        } else {
+                            "USB error (" + error.javaClass.simpleName + ")"
+                        }
+                        "CAPT GetBasicStatus: failed; reason=" + reason +
+                            "; no print/page data sent."
+                    }
+                )
+                currentReport += "\\n" + line + "\\n"
+                reportView.text = currentReport
+                val message = result.fold(
+                    { it.summary },
+                    { error ->
+                        val reason = if (error is CaptStatusProbeException) {
+                            error.message ?: getString(R.string.probe_capt_unknown_error)
+                        } else {
+                            "USB error (" + error.javaClass.simpleName + ")"
+                        }
+                        getString(R.string.probe_capt_failed, reason)
+                    }
+                )
+                status.text = message
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
         }
     }
 

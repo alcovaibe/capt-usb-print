@@ -182,7 +182,7 @@ object UsbDiagnostic {
             report.appendLine("  probe duration ms=" + (SystemClock.elapsedRealtime() - started))
         }
         report.appendLine("")
-        report.appendLine("CAPT traffic: NONE. Printed pages: NONE.")
+        report.appendLine("This scan sent no CAPT command. Printing is not implemented; printed pages: NONE.")
         report.appendLine("No serial numbers, complete device paths, document or payload logged.")
         return UsbSnapshot(rows, report.toString())
     }

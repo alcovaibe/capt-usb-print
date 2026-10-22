@@ -28,22 +28,48 @@ object CaptFrame {
     }
 
     /**
-     * Upstream normally obtains six bytes before finishing reply retrieval:
-     * the 4-byte frame header plus two body bytes. Never infer device success
-     * from a frame merely passing structural checks.
-     *
-     * Some upstream replies use a variant BCD length; that is intentionally
-     * unsupported until a real device trace validates the variant.
+     * Parse a complete bounded reply. Some CAPT responses encode the length
+     * as four decimal BCD nibbles instead of a little-endian integer.
+     * Accept either only when it matches the exact received byte count.
      */
     fun parseReply(expectedCommand: Int, bytes: ByteArray): ByteArray {
         require(expectedCommand in 0..0xffff)
         require(bytes.size in 6..MAX_FRAME_BYTES) { "Reply size invalid" }
         val command = u8(bytes[0]) or (u8(bytes[1]) shl 8)
-        val length = u8(bytes[2]) or (u8(bytes[3]) shl 8)
         require(command == expectedCommand) { "Unexpected reply command" }
-        require(length == bytes.size) { "Incomplete or invalid CAPT reply" }
+        require(headerLengthMatches(bytes, bytes.size)) { "Incomplete or invalid CAPT reply" }
         // Includes the two as-yet-uninterpreted protocol response bytes.
         return bytes.copyOfRange(HEADER_BYTES, bytes.size)
+    }
+
+    /** Plausible bounded total lengths from the LE and BCD header interpretations. */
+    fun lengthCandidates(header: ByteArray, maxSize: Int = MAX_FRAME_BYTES): List<Int> {
+        require(header.size >= HEADER_BYTES) { "CAPT header too short" }
+        require(maxSize in 6..MAX_FRAME_BYTES) { "Invalid maximum reply size" }
+        val lo = u8(header[2])
+        val hi = u8(header[3])
+        val littleEndian = lo or (hi shl 8)
+        val bcd = decodeBcdLength(lo, hi)
+        return listOfNotNull(littleEndian, bcd)
+            .distinct()
+            .filter { it in 6..maxSize }
+    }
+
+    fun headerLengthMatches(header: ByteArray, actualSize: Int): Boolean {
+        if (header.size < HEADER_BYTES || actualSize < HEADER_BYTES) return false
+        val lo = u8(header[2])
+        val hi = u8(header[3])
+        val littleEndian = lo or (hi shl 8)
+        return littleEndian == actualSize || decodeBcdLength(lo, hi) == actualSize
+    }
+
+    private fun decodeBcdLength(lo: Int, hi: Int): Int? {
+        val a = (hi ushr 4) and 0x0f
+        val b = hi and 0x0f
+        val c = (lo ushr 4) and 0x0f
+        val d = lo and 0x0f
+        if (a > 9 || b > 9 || c > 9 || d > 9) return null
+        return a * 1000 + b * 100 + c * 10 + d
     }
 
     fun encodeMulti(children: List<Pair<Int, ByteArray>>): ByteArray {
