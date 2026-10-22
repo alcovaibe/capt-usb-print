@@ -2,7 +2,7 @@
 
 Independent offline Android CAPT prototype for the owner's HONOR X9c (Android API 36) and Canon LBP2900. No PrintHand dependency or app-side INTERNET permission. Other Android devices and printers are not claimed supported.
 
-**Verified on the owner's hardware:** Stage A USB diagnostics; Stage B A4/600-dpi test sheets, repeated separate jobs and two distinct sheets in one CAPT job (signed build 71). On signed build 105 the owner printed actual PDF pages 1 and 2 as two separate jobs after a printer power cycle. Stage C remains in development: the new 2–3-sheet PDF job is not hardware-confirmed, and intermittent ReserveUnit `0x8C` is unresolved. JPEG/PNG intake and preview exist; image printing, the production queue and PrintService are pending.
+**Verified on the owner's hardware:** Stage A USB diagnostics; Stage B A4/600-dpi test sheets, repeated separate jobs and two distinct sheets in one CAPT job (signed build 71). On signed build 105 the owner printed actual PDF pages 1 and 2 as two separate jobs after a printer power cycle. Stage C code completion is in PR #25 with owner-authorized conditional acceptance. General queue, image and landscape code are described below; intermittent ReserveUnit `0x8C` remains unresolved. Physical confirmation of the new paths and PrintService integration are separate.
 
 ## Hardware and bounded diagnostic
 On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, interface 0 / class 7/1/2, BULK OUT 0x01 and IN 0x82, permission and guarded claim verified. Manual CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo responses are tracked in private JSON. Device-list monitoring itself does not send CAPT commands; diagnostics exclude document content and printer serial numbers.
@@ -10,17 +10,19 @@ On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, inte
 ### Launcher icon
 The launcher uses an adaptive white background and black printer line-art, with round and monochrome variants.
 
-## Stage C: guarded document printing
+## Stage C: local document queue
 
-Local PDF/JPEG/PNG intake, sampled image previews (including EXIF and white-paper transparency), page selection, collated copy plans, orientation and content rotation are implemented. The owner confirmed preview/insets and offline PDF preparation on signed build 93. Portrait PDF pages are prepared in 64-row bands using the existing HISCOA encoder; a full 600-dpi ARGB page is never allocated.
+PDF, JPEG and PNG share one bounded document queue and CAPT runner. Select page ranges, 1–20 collated copies, A4 portrait/landscape and optional content rotation, inspect the actual monochrome print preview, then explicitly confirm submission. Limits are 1000 source pages, 2000 output sheets and four live jobs; an unsupported plan is rejected without truncation.
 
-Single-sheet PDF printing requires exactly the visible page, one copy and portrait A4. The experimental batch requires exactly **2–3 total sheets**, including copies, and the first source page visible in the preview. Each distinct page is prepared before USB, at most 4 MiB compressed per page. Both actions require explicit confirmation and previously granted USB permission.
+Each distinct page is rasterized/compressed before USB into private CRC-checked spool files. Copies reuse the same files. Memory holds a bounded sampled image (at most 4M decoded pixels), a 64-row raster band and the current encoded strip. A compressed page is limited to 12 MiB, total private queue reservations to 256 MiB, with an additional 8 MiB free-space reserve. Disk exhaustion or preparation failure stops before printing. The provisional 260 px (~11 mm) FIT inset is not a measured mechanical margin; 100% scale is not offered.
 
-The batch uses one reservation, sequential page-counter confirmation, **one** continuation after sheet 1 and one end/release. Its separate three-sheet counter checks leave Stage B unchanged. GetBasicStatus `0x88` stops the batch before reservation; this detects the captured condition and does not repair it. No automatic retry, undocumented reset or speculative recovery is performed.
+A connected-device foreground service owns serial document execution beyond the Activity lifecycle. Queue and notification expose cancellation. After uncertain/failed USB execution, successor jobs pause until explicit inspection/continue. Unfinished work never resumes after process restart, reconnect or reboot; USB-started records become unknown, other unfinished records fail, sources/spools are removed. No automatic replay or speculative CAPT reset is implemented. Grant USB access on the main screen before adding jobs; notification permission is optional for printing but permits a visible foreground notification.
 
-A private JSON marker is written before USB and after each confirmed batch sheet, followed by a terminal result. An unfinished marker remains uncertain even if some sheets were confirmed. Only the explicit report-share button exports it. No document name, URI, raster, content hash or serial number is included.
+The general engine retains the accepted portrait CAPT descriptor: landscape is a raster transform. It sends one reservation, sequential StartPrint(N), one inter-page continuation for multi-sheet jobs and one end/release. Accepted Stage B engines/helpers and signing identity are unchanged. Read-only BasicStatus 0x88 detection does not repair ReserveUnit 0x8C.
 
-The 260 px (about 11 mm) FIT inset is provisional, not a measured mechanical margin. Landscape printing, JPEG/PNG print bands, a lifecycle-safe unified queue and Android PrintService are not ready.
+Private history is bounded to 50 jobs and reports to 24; JSON records settings, app/device versions, CAPT state and confirmed counters, excluding document names/URIs/content/raster/hashes/serials. Sharing is explicit. Preview/settings survive screen recreation; queued jobs own independent private source copies.
+
+**Acceptance distinction:** the owner authorized conditional release/print success to finish code. Actual hardware evidence remains separate PDF sheets on build 105 and accepted Stage A/B. New queue, image output, landscape and MagicOS screen-off behavior are not reported as physically observed. Stage D PrintService is a separate next implementation.
 
 ## Signed releases and upgrade compatibility
 
@@ -36,7 +38,7 @@ CI never generates or changes the private signing key and cannot publish a relea
 
 JDK 21; Android Gradle Plugin 9.2.1; Gradle Wrapper 9.4.1; compileSdk/targetSdk 36; minSdk 29; Android SDK Build Tools 36.0.0. Build debug with `./gradlew :app:assembleDebug`. Debug is NOT upgradeable release. Never use ephemeral debug signing for user-facing Releases.
 
-Next hardware checkpoint after an owner-authorized signed release: known PDF, portrait A4, preview page 1, range `1-3`, copies `1`; submit once, check three physical sheets in order, then manually share the latest PDF JSON. Stop after an error or uncertain result. Two copies of one page are a separate later checkpoint; do not combine independent experimental prints without checking the first outcome.
+PR CI builds/lints/tests the APK, checks permissions/native packaging and installs/launches it on API 36. Debug-only offline instrumentation runs Android PDF, PNG alpha, JPEG EXIF, actual monochrome preview, spool and native HISCOA checks without printer access. The signed-main pipeline independently verifies permanent signature and in-place upgrade before publication.
 
 See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for audit, limitations and next steps. This is unofficial software not endorsed by Canon.
 

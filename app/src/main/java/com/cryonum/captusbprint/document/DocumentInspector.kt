@@ -68,7 +68,7 @@ object DocumentInspector {
                         }
                         val n = input.read(buffer)
                         if (n < 0) break
-                        if (n == 0) continue
+                        if (n == 0) throw IOException("Document provider returned no data")
                         require(total + n <= MAX_SOURCE_BYTES) {
                             "Document exceeds the inspection size limit"
                         }
@@ -137,3 +137,4 @@ object DocumentInspector {
             "pixels", degrees, bytes)
     }
 }
+

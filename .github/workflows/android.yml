@@ -73,7 +73,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   emulator-preflight:
-    name: Android 16 emulator boot smoke on PR
+    name: Android 16 install and offline raster smoke on PR
     needs: android
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -82,6 +82,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: capt-usb-print-a1-debug
+          path: pr-apk
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
@@ -106,6 +110,10 @@ jobs:
           script: |
             adb shell getprop sys.boot_completed | tr -d '\r' | grep -x '1'
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '36'
+            adb install pr-apk/app-debug.apk
+            adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
+            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-raster-smoke.txt
+            grep -F 'CAPT_STAGE_C_RASTER_SMOKE_PASSED' /tmp/capt-raster-smoke.txt
 
   signing-availability:
     name: Owner signing configuration
@@ -209,3 +217,4 @@ jobs:
       - name: Remove temporary signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/capt-usb-print-release.p12"
+

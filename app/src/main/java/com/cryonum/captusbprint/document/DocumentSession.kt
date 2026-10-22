@@ -210,6 +210,114 @@ class DocumentSession internal constructor(
         }
     }
 
+    /** Queue owns a separate private source; closing the preview cannot delete it. */
+    fun copyForPrint(directory: File, reserve: (Long) -> Unit): DocumentSession {
+        check(!closed)
+        val copy = File(directory, "source.bin")
+        try {
+            source.inputStream().use { input -> copy.outputStream().use { output ->
+                val bytes = ByteArray(65536)
+                while (true) {
+                    if (Thread.currentThread().isInterrupted) throw CancellationException()
+                    val n = input.read(bytes)
+                    if (n < 0) break
+                    if (n == 0) throw IOException("Source stopped producing data")
+                    reserve(n.toLong())
+                    output.write(bytes, 0, n)
+                }
+            } }
+            check(copy.length() == overview.copiedBytes)
+            return DocumentSession(copy, overview)
+        } catch (error: Throwable) { copy.delete(); throw error }
+    }
+
+    /** General PDF/JPEG/PNG path. At most a bounded decoded image + a 64-row strip. */
+    fun forEachPrintBand(pageIndex: Int, orientation: Orientation, rotation: Int,
+        cancelled: () -> Boolean, consumer: (Int, ByteArray) -> Unit) {
+        check(!closed)
+        require(pageIndex in 0 until overview.pageCount)
+        fun emit(width: Int, height: Int, draw: (Bitmap, Rect, Matrix) -> Unit) {
+            val bitmap = Bitmap.createBitmap(4960, 64, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(4960 * 64)
+            try {
+                var y = 0
+                while (y < 7016) {
+                    if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+                    val lines = minOf(64, 7016 - y)
+                    bitmap.eraseColor(Color.WHITE)
+                    val matrix = Matrix().apply {
+                        setValues(PrintRasterGeometry.matrix(width, height, orientation, rotation, y))
+                    }
+                    draw(bitmap, Rect(0, 0, 4960, lines), matrix)
+                    bitmap.getPixels(pixels, 0, 4960, 0, 0, 4960, lines)
+                    consumer(y, MonochromeBands.packArgb(
+                        if (lines == 64) pixels else pixels.copyOf(4960 * lines), 4960, y, lines))
+                    y += lines
+                }
+            } finally { bitmap.recycle() }
+        }
+        if (overview.format == DocumentFormat.PDF) {
+            val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = try { PdfRenderer(descriptor) } catch (error: Throwable) {
+                descriptor.close(); throw error
+            }
+            renderer.use { pdf -> pdf.openPage(pageIndex).use { page ->
+                emit(page.width, page.height) { bitmap, clip, matrix ->
+                    page.render(bitmap, clip, matrix, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                }
+            } }
+        } else {
+            require(pageIndex == 0)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(source.absolutePath, bounds)
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = PrintRasterGeometry.sampleSize(bounds.outWidth, bounds.outHeight)
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inScaled = false
+            }
+            val decoded = BitmapFactory.decodeFile(source.absolutePath, options)
+                ?: throw IOException("Image cannot be decoded")
+            val oriented = try {
+                check(decoded.width.toLong() * decoded.height <= PrintRasterGeometry.MAX_IMAGE_PIXELS)
+                applyExifOrientation(decoded)
+            } catch (error: Throwable) { decoded.recycle(); throw error }
+            if (oriented !== decoded) decoded.recycle()
+            try {
+                emit(oriented.width, oriented.height) { bitmap, clip, matrix ->
+                    val canvas = Canvas(bitmap)
+                    canvas.clipRect(clip)
+                    canvas.drawBitmap(oriented, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+                }
+            } finally { oriented.recycle() }
+        }
+    }
+
+    /** Preview samples the actual PRINT-mode monochrome raster, including paper rotation. */
+    fun renderPrintPreview(pageIndex: Int, orientation: Orientation, rotation: Int,
+        cancelled: () -> Boolean): Bitmap {
+        val raw = ByteArray(620 * 7016)
+        forEachPrintBand(pageIndex, orientation, rotation, cancelled) { y, band ->
+            band.copyInto(raw, y * 620)
+        }
+        val landscape = orientation == Orientation.LANDSCAPE
+        val logicalWidth = if (landscape) 7016 else 4960
+        val logicalHeight = if (landscape) 4960 else 7016
+        val size = PreviewSizing.fit(logicalWidth, logicalHeight)
+        val pixels = IntArray(size.first * size.second)
+        for (y in 0 until size.second) {
+            if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+            for (x in 0 until size.first) {
+                val lx = (x.toLong() * logicalWidth / size.first).toInt()
+                val ly = (y.toLong() * logicalHeight / size.second).toInt()
+                val px = if (landscape) 4959 - ly else lx
+                val py = if (landscape) lx else ly
+                pixels[y * size.first + x] = if ((raw[py * 620 + px / 8].toInt() and
+                        (0x80 ushr (px and 7))) != 0) Color.BLACK else Color.WHITE
+            }
+        }
+        return Bitmap.createBitmap(pixels, size.first, size.second, Bitmap.Config.ARGB_8888)
+    }
+
     /** Affine source-to-A4 mapping, identical for PDF and decoded image content.
      * 90 degrees clockwise: (x,y) -> (H-y,x), then FIT into target.
      */
@@ -262,3 +370,4 @@ class DocumentSession internal constructor(
         source.delete()
     }
 }
+

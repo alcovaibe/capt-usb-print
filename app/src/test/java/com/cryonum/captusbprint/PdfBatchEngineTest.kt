@@ -4,6 +4,7 @@ import com.cryonum.captusbprint.core.CaptFrame
 import com.cryonum.captusbprint.core.CaptJobProtocol as P
 import com.cryonum.captusbprint.core.CaptTestPage
 import com.cryonum.captusbprint.document.PreparedPdfCaptPageBuilder
+import com.cryonum.captusbprint.usb.CaptDocumentPrintEngine
 import com.cryonum.captusbprint.usb.CaptPdfBatchPrintEngine
 import com.cryonum.captusbprint.usb.CaptTestPrintResult
 import com.cryonum.captusbprint.usb.PdfBatchSession
@@ -107,8 +108,20 @@ class PdfBatchEngineTest {
                     progress: (String) -> Unit = {},
                     checkpoint: (CaptTestPrintResult) -> Unit = {}): CaptTestPrintResult {
         var millis = 0L
-        return CaptPdfBatchPrintEngine.runPrepared(List(pages) { sheet }, cancelled,
+        return CaptDocumentPrintEngine.runPrepared(List(pages) { sheet }, cancelled,
             progress, checkpoint, { printer }, { millis }, { millis += it })
+    }
+
+    @Test fun generalOneAndTenSheetJobsKeepExactCountsAndOneReservation() {
+        for (pages in listOf(1, 10)) {
+            val printer = Printer()
+            val result = run(printer, pages)
+            assertEquals(result.trace.joinToString("\n"), "printer_counter_confirmed", result.outcome)
+            assertEquals(pages, result.printerConfirmedPages)
+            assertEquals((1..pages).toList(), printer.starts)
+            assertEquals(if (pages == 1) listOf(1,6) else listOf(1,2,6), printer.flags)
+            assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
+        }
     }
 
     @Test fun threeSheetsUseOneJobAndOneContinuationIncludingTheThirdCounter() {
