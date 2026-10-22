@@ -9,7 +9,7 @@ The latest owner report from signed build 0.1.0-a2.33 (2026-10-22) confirms HONO
 Public ValdikSS/captdriver `val` at `892f320c019974a5b737e000fcc2c8582264a131`, examined `src/capt-command.c/.h`, `generic-ops.c`, `prn_lbp2900.c`, and `canon-lbp.drv`. Some routines and comments mix LBP2900 and LBP3000 protocol paths. Do not assume their command profiles are interchangeable. Protocol coding, flow-control details, replies and physical capabilities require separate hardware validation. Upstream source is GPLv3-or-later; **we have not copied its implementation** and any later native port must carry appropriate notices/license/source obligations.
 
 ## New source-only offline preparatory components
-- `core/CaptFrame`: bounded LE header and multi-command encoding with structural, command and exact-length reply validation. No control, status, transport, printer output, or BCD variant implemented; invalid/partial input is rejected.
+- `core/CaptFrame`: bounded LE frame and multi-command encoding; replies accept LE or BCD length only when the interpreted length matches the exact received byte count. No printer output or automatic command retry is implemented.
 - `core/BulkIo`: bounded short read/write support, finite deadlines, explicit partial-write uncertainty, no hidden command retry. `BulkChannel` is a unit-test seam, not an Android transport attached to the app.
 - `core/JobSpecification`: validates simple page ranges, duplicates, source bounds, copies and collated order. This is a logical job model only, NOT a verified device profile.
 - `core/JobLedger`: conservative single-job state machine with unknown physical outcome if disconnected in transmission/confirmation; no automatic replay.
