@@ -44,3 +44,13 @@ The JSON contains app version/revision, a scan text record plus structured numer
 
 ### Experimental first physical sheet
 This branch introduces a native GPLv3-or-later HISCOA compressor (JNI/NDK), an A4 600dpi one-bit registration page, bounded CAPT job initiation/GoOnline, page descriptor, video data and StartPrint. The printer's read-only GetPrinterInfo and GetExtendedStatus response shapes were checked with the owner's 2026-10-22 raw JSON frames, but the actual job sequence **has not yet been tried on hardware**. The tester must first use **Подготовить тестовый растр (без печати)**, then **Напечатать один тестовый лист (эксперимент)** once. Both actions create JSON reports shared to Telegram; Save/Send is initiated by the user. No automatic print retries. A stale/uncertain job may require printer recovery before another attempt. See [Stage B instructions](docs/STAGE-B-TEST-PRINT.md), [third-party licensing](docs/THIRD-PARTY-NOTICES.md), and [GPLv3 COPYING](COPYING).
+
+## Current Stage C scope (supersedes the historical Stage B introduction above)
+
+The owner accepted Stage B after repeat physical test sheets and two distinct
+pages in one CAPT job. Stage C implements offline PDF/JPEG/PNG intake and preview.
+Build 89 displayed an 11-page PDF on HONOR; it does not claim printed PDFs.
+The follow-up branch fixes Android 16 scrolling insets, adds first-page-based
+Auto orientation and explicit content rotation, and begins offline portrait PDF
+64-line band rasterization. Do not infer PrintService or real-document print
+support from this README's older Stage B notes.

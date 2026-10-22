@@ -174,3 +174,24 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Required next checks: PR CI, phone preview confirmation, then a bounded
   sequential print rasterizer/landscape rotation/HISCOA adapter and a real
   document physical print. Stage C acceptance remains open.
+
+## Stage C follow-up: post-build-89 preview corrections + PDF band foundation (2026-10-22)
+
+- Owner screenshot: 11-page portrait PDF renders; landscape FIT correctly shrinks
+  unrotated portrait content, but the scrolling Activity content overlapped
+  Android status/navigation overlays. No new physical document print occurred.
+- Feature branch `feat/stage-c-insets-rotation-pdf-bands` based on main
+  `0c73567fc4b713cb48d11d2c27af87ba231036ae`.
+- Apply system bars/display cutout/IME insets to root ScrollView viewport,
+  clip scrolling content, leave the Stage B test-print engine unchanged.
+- Auto orientation is FIRST-page based only; keep manual choices and a separate
+  90-degree content rotation in JobSpecification. Preview PDF / EXIF-adjusted
+  images use the same fit coordinates. Explicit software inset remains
+  provisional (260 px), not a confirmed mechanical margin.
+- Offline portrait-PDF PRINT-mode renderer emits bounded 64-row strips and
+  converts each to MSB-first 1bpp ordered-dither data. Explicit button verifies
+  one PDF page without USB/HISCOA/PrintService; does not retain full 600-dpi page.
+- Remaining: PR CI, actual HONOR screenshot/insets and rotating-preview test,
+  offline PDF band test on device, image-band decoding, physical landscape
+  adapter and common USB queue, then owner-checked physical PDF print.
+- Do not merge/publish without owner action; a main push triggers signed release.

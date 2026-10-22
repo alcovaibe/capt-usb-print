@@ -88,3 +88,27 @@ Do not interpret the green app build as validation of physical document printing
   mono conversion and owner-measured printed scale BEFORE enabling document print.
 - Neither Stage B engines nor USB ownership, signed release, sharing or PrintService
   are changed by this proposal.
+
+## Stage C: Android 16 insets, explicit content rotation, offline PDF bands (PR pending)
+
+- The owner inspected signed build 89 and confirmed A4 PDF preview. A portrait PDF
+  on landscape paper is intentionally smaller under FIT; this is not a printer fault.
+  Screenshot exposed scroll content moving underneath status/navigation bars.
+- The ScrollView **viewport** (not its inner scrolling content) now receives
+  system-bar, display-cutout and IME insets; clipToPadding protects scrolled text.
+- Orientation defaults to Auto, resolved from the FIRST document page (not device
+  rotation); portrait/landscape are explicit overrides. Auto does not promise
+  per-page mixed-orientation printing. A separate optional clockwise 90-degree
+  **content** rotation is retained in immutable JobSpecification and reused
+  by both PDF and EXIF-adjusted image previews. A portrait source on landscape
+  paper without content rotation still remains smaller under FIT.
+- Initial offline PDF PRINT-mode preparation streams one page in 64-line ARGB
+  strips at 4960 × 7016 A4/600 dpi. Each strip becomes MSB-first 1bpp with a
+  deterministic absolute-coordinate 4×4 ordered grayscale dither. The full
+  600-dpi ARGB page is never allocated; no full-page band list is retained.
+  The user-triggered current-page verification only counts bounded raster bytes.
+  It makes **no** USB, HISCOA, job, PrintService, Telegram or network call.
+- This new band prototype is deliberately **portrait only**. Landscape wire
+  rotation, JPEG/PNG full-resolution bands, validated HISCOA conversion, unified
+  job queue, physical document printing and interruption recovery are still
+  pending. Passing JVM and CI does NOT prove visual strip seams or printed DPI.

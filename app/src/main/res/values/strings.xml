@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">CAPT USB Print · Диагностика</string>
-    <string name="stage_title">Этап B · Проверка CAPT</string>
-    <string name="no_printing">Этап B: экспериментальная печать одного или двух тестовых листов. PDF и изображения ещё не поддерживаются. Результаты действий сохраняются в локальный JSON; Telegram открывается только кнопкой «Поделиться JSON-ответом».</string>
+    <string name="stage_title">CAPT USB Print · Этап C</string>
+    <string name="no_printing">Тестовые CAPT-листы успешно проверены на Canon LBP2900. PDF и изображения доступны для локального предпросмотра; печать документов пока отключена. Диагностика сохраняется локально, отправка только отдельной кнопкой.</string>
     <string name="probe_capt_status">Проверить состояние CAPT (без печати)</string>
     <string name="probe_capt_running">Запрос %1$s…</string>
     <string name="probe_capt_extended_status">Проверить расширенное состояние CAPT (без печати)</string>

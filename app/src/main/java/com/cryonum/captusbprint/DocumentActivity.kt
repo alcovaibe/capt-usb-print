@@ -7,6 +7,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import android.text.InputType
 import android.view.View
 import android.widget.Button
@@ -19,13 +22,15 @@ import android.widget.TextView
 import com.cryonum.captusbprint.document.DocumentInspector
 import com.cryonum.captusbprint.document.DocumentOverview
 import com.cryonum.captusbprint.document.DocumentSession
+import com.cryonum.captusbprint.document.PageOrientationChoice
+import com.cryonum.captusbprint.core.CaptTestPage
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
 import java.util.concurrent.Executors
 
 /**
- * Stage C entry point: local intake and metadata only. Nothing here sends
- * document contents or USB/CAPT commands, or uploads content to any service.
+ * Stage C offline local preview, job planning and optional PDF band verification.
+ * None of these document actions sends USB/CAPT commands or uploads content.
  */
 class DocumentActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
@@ -35,19 +40,23 @@ class DocumentActivity : Activity() {
     private lateinit var copies: EditText
     private lateinit var orientation: RadioGroup
     private lateinit var planResult: TextView
+    private lateinit var rotateContent: android.widget.CheckBox
+    private lateinit var rasterButton: Button
+    private var rasterInProgress = false
     private lateinit var preview: DocumentPreviewPanel
     private var inspectedDocument: DocumentOverview? = null
     private var session: DocumentSession? = null
     private var displayedBitmap: Bitmap? = null
     private var displayedPage = 0
     private var previewGeneration = 0
-    private var generation = 0
+    @Volatile private var generation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 40, 24, 24)
+            setPadding(dp(16), dp(16), dp(16), dp(20))
         }
         layout.addView(TextView(this).apply {
             text = "Этап C · Локальные документы"
@@ -100,19 +109,26 @@ class DocumentActivity : Activity() {
             setText("1")
         }
         planSection.addView(copies)
-        planSection.addView(TextView(this).apply { text = "Ориентация A4" })
+        planSection.addView(TextView(this).apply {
+            text = "Ориентация A4 (авто — по первой странице)"
+        })
         orientation = RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
+            orientation = RadioGroup.VERTICAL
+            addView(RadioButton(this@DocumentActivity).apply {
+                id = View.generateViewId()
+                text = "Авто (по первой странице)"
+                isChecked = true
+                tag = PageOrientationChoice.AUTO
+            })
             addView(RadioButton(this@DocumentActivity).apply {
                 id = View.generateViewId()
                 text = "Книжная"
-                isChecked = true
-                tag = Orientation.PORTRAIT
+                tag = PageOrientationChoice.PORTRAIT
             })
             addView(RadioButton(this@DocumentActivity).apply {
                 id = View.generateViewId()
                 text = "Альбомная"
-                tag = Orientation.LANDSCAPE
+                tag = PageOrientationChoice.LANDSCAPE
             })
         }
         orientation.setOnCheckedChangeListener { _, _ ->
@@ -120,6 +136,17 @@ class DocumentActivity : Activity() {
             if (session != null) requestPreview(displayedPage)
         }
         planSection.addView(orientation)
+        rotateContent = android.widget.CheckBox(this).apply {
+            text = "Повернуть содержимое на 90° по часовой стрелке"
+            setOnCheckedChangeListener { _, _ ->
+                if (session != null) requestPreview(displayedPage)
+            }
+        }
+        planSection.addView(rotateContent)
+        planSection.addView(TextView(this).apply {
+            text = "Книжный документ на альбомном листе без поворота будет меньше — это режим «Вписать»."
+            textSize = 13f
+        })
         planSection.addView(Button(this).apply {
             text = "Проверить план задания (без печати)"
             setOnClickListener { checkJobPlan() }
@@ -129,21 +156,32 @@ class DocumentActivity : Activity() {
             setTextIsSelectable(true)
         }
         planSection.addView(planResult)
+        rasterButton = Button(this).apply {
+            text = "Проверить PDF-растр текущей страницы (без печати)"
+            setOnClickListener { verifyPdfBands() }
+        }
+        planSection.addView(rasterButton)
         layout.addView(planSection)
-        setContentView(ScrollView(this).apply {
+        val scrolling = ScrollView(this).apply {
             isFillViewport = true
+            clipToPadding = true
             addView(layout)
-            if (Build.VERSION.SDK_INT >= 30) {
-                setOnApplyWindowInsetsListener { _, insets ->
-                    val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or
-                        android.view.WindowInsets.Type.displayCutout())
-                    layout.setPadding(24 + bars.left, 24 + bars.top,
-                        24 + bars.right, 24 + bars.bottom)
-                    insets
-                }
-                requestApplyInsets()
-            }
-        })
+        }
+        // Apply insets to the scrolling viewport, NOT the scrolling content:
+        // otherwise the text can scroll underneath Android 16 status/nav bars.
+        val spacing = dp(8)
+        ViewCompat.setOnApplyWindowInsetsListener(scrolling) { view, insets ->
+            val safe = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.ime()
+            )
+            view.setPadding(spacing + safe.left, safe.top,
+                spacing + safe.right, safe.bottom)
+            insets
+        }
+        setContentView(scrolling)
+        ViewCompat.requestApplyInsets(scrolling)
         if (intent?.action == Intent.ACTION_SEND) {
             val shared = if (Build.VERSION.SDK_INT >= 33) {
                 intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
@@ -188,6 +226,7 @@ class DocumentActivity : Activity() {
         session = null
         inspectedDocument = null
         (orientation.getChildAt(0) as RadioButton).isChecked = true
+        rotateContent.isChecked = false
         displayedBitmap?.let {
             preview.clearImage()
             it.recycle()
@@ -202,7 +241,9 @@ class DocumentActivity : Activity() {
             val outcome = runCatching {
                 val opened = DocumentInspector.openSession(applicationContext, uri)
                 try {
-                    opened to opened.renderPreview(0, 1000, 1450, Orientation.PORTRAIT)
+                    opened to opened.renderPreview(0, 1000, 1450,
+                        PageOrientationChoice.AUTO.resolve(opened.overview.width,
+                            opened.overview.height))
                 } catch (error: Throwable) {
                     opened.close()
                     throw error
@@ -228,11 +269,12 @@ class DocumentActivity : Activity() {
                     copies.setText("1")
                     planResult.text = ""
                     planSection.visibility = View.VISIBLE
+                    rasterButton.visibility = if (doc.format.label == "PDF") View.VISIBLE else View.GONE
                     val rotation = doc.rotationDegrees?.let { "; EXIF: ${it}°" } ?: ""
                     "${doc.format.label}: ${doc.pageCount} стр.; " +
                         "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
                         "${doc.copiedBytes} байт.\n" +
-                        "Предпросмотр A4 (вписать; предварительный отступ около 11 мм) готов. " +
+                        "Предпросмотр A4 (вписать; программный отступ около 11 мм) готов. " +
                         "Фактическая геометрия печати ещё не проверена; USB-команды не выполнялись."
                 }, { error ->
                     preview.visibility = View.GONE
@@ -252,10 +294,11 @@ class DocumentActivity : Activity() {
         val request = generation
         val previewRequest = ++previewGeneration
         val requestedOrientation = selectedOrientation()
+        val rotation = selectedRotation()
         preview.setLoading()
         worker.execute {
             if (request != generation) return@execute
-            val outcome = runCatching { opened.renderPreview(index, 1000, 1450, requestedOrientation) }
+            val outcome = runCatching { opened.renderPreview(index, 1000, 1450, requestedOrientation, rotation) }
             runOnUiThread {
                 if (isFinishing || isDestroyed || request != generation ||
                     previewRequest != previewGeneration) {
@@ -291,7 +334,8 @@ class DocumentActivity : Activity() {
                 sourcePageCount = doc.pageCount,
                 pages = pageRange.text.toString(),
                 copies = count,
-                orientation = chosenOrientation
+                orientation = chosenOrientation,
+                contentRotationDegrees = selectedRotation()
             )
         }
         planResult.text = plan.fold({ job ->
@@ -300,6 +344,8 @@ class DocumentActivity : Activity() {
                 if (order.size > 16) ", …" else ""
             "План корректен. Формат: ${doc.format.label}; A4; " +
                 "ориентация: ${if (job.orientation == Orientation.PORTRAIT) "книжная" else "альбомная"}.\n" +
+                "Поворот содержимого: ${job.contentRotationDegrees}°. " +
+                "Автоориентация определяется по первой странице.\n" +
                 "Исходных страниц выбрано: ${job.pageIndices.size}; копий: ${job.copies}; " +
                 "листов в задании: ${order.size}.\n" +
                 "Порядок (номера страниц исходного документа): $preview.\n" +
@@ -311,12 +357,63 @@ class DocumentActivity : Activity() {
         })
     }
 
-    private fun selectedOrientation(): Orientation =
-        if ((orientation.getChildAt(1) as RadioButton).isChecked) {
-            Orientation.LANDSCAPE
-        } else {
-            Orientation.PORTRAIT
+    private fun selectedOrientation(): Orientation {
+        val first = inspectedDocument ?: return Orientation.PORTRAIT
+        val index = orientation.checkedRadioButtonId
+        val choice = (findViewById<RadioButton>(index)?.tag as? PageOrientationChoice)
+            ?: PageOrientationChoice.AUTO
+        return choice.resolve(first.width, first.height)
+    }
+
+    private fun selectedRotation(): Int = if (rotateContent.isChecked) 90 else 0
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    /** Only offline band preparation. This does NOT reserve/claim the USB device. */
+    private fun verifyPdfBands() {
+        val opened = session ?: return
+        if (opened.overview.format.label != "PDF" || rasterInProgress) return
+        if (selectedOrientation() != Orientation.PORTRAIT) {
+            planResult.text = "Офлайн-растр пока доступен только для книжной A4. Альбомное преобразование в CAPT ещё в разработке."
+            return
         }
+        val index = displayedPage
+        val rotation = selectedRotation()
+        val request = generation
+        rasterInProgress = true
+        rasterButton.isEnabled = false
+        planResult.text = "Готовим PDF последовательно полосами по 64 строки. USB-команды не отправляются…"
+        worker.execute {
+            val result = runCatching {
+                var count = 0
+                var totalBytes = 0L
+                var expectedY = 0
+                opened.forEachPortraitPdfBand(index, rotation,
+                    cancelled = { request != generation }
+                ) { start, packed ->
+                    check(start == expectedY) { "Non-sequential band" }
+                    val lines = minOf(CaptTestPage.BAND_LINES, CaptTestPage.HEIGHT - start)
+                    check(packed.size == CaptTestPage.LINE_BYTES * lines)
+                    expectedY += lines
+                    count++
+                    totalBytes += packed.size
+                }
+                check(expectedY == CaptTestPage.HEIGHT)
+                "PDF-страница ${index + 1}: подготовлено полос: $count; " +
+                    "монохромных данных: $totalBytes байт. Только RAM; USB/CAPT не использовались."
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                rasterInProgress = false
+                rasterButton.isEnabled = true
+                if (request == generation) {
+                    planResult.text = result.getOrElse {
+                        "Офлайн-подготовка PDF не завершилась (${it.javaClass.simpleName}). Ничего не печаталось."
+                    }
+                }
+            }
+        }
+    }
 
     override fun onDestroy() {
         generation++
