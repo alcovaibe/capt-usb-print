@@ -11,6 +11,7 @@ import android.os.SystemClock
 import com.cryonum.captusbprint.core.CaptBasicStatusParser
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
+import com.cryonum.captusbprint.core.CaptInputStatusParser
 import com.cryonum.captusbprint.core.CaptStatusFlagDecoder
 import com.cryonum.captusbprint.core.CaptFrame
 import com.cryonum.captusbprint.engine.EndpointFact
@@ -33,6 +34,7 @@ class CaptStatusProbeException(message: String) : Exception(message)
 object CaptStatusProbe {
     private const val GET_BASIC_STATUS = CaptBasicStatusParser.GET_BASIC_STATUS
     private const val GET_EXTENDED_STATUS = CaptExtendedStatusParser.GET_EXTENDED_STATUS
+    private const val GET_INPUT_STATUS = CaptInputStatusParser.GET_INPUT_STATUS
     private const val MAX_STATUS_FRAME_BYTES = 1024
     private const val CAPT_HEADER_BYTES = 6
     private const val USB_TIMEOUT_MS = 3000
@@ -42,6 +44,9 @@ object CaptStatusProbe {
 
     fun queryExtended(context: Context, deviceKey: String): CaptStatusProbeResult =
         queryCommand(context, deviceKey, GET_EXTENDED_STATUS)
+
+    fun queryInputStatus(context: Context, deviceKey: String): CaptStatusProbeResult =
+        queryCommand(context, deviceKey, GET_INPUT_STATUS)
 
     private fun queryCommand(
         context: Context,
@@ -127,12 +132,33 @@ object CaptStatusProbe {
             return when (commandToSend) {
                 GET_BASIC_STATUS -> basicResult(response)
                 GET_EXTENDED_STATUS -> extendedResult(response)
+                GET_INPUT_STATUS -> inputStatusResult(response)
                 else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
             }
         } finally {
             if (claimed) runCatching { connection.releaseInterface(iface) }
             runCatching { connection.close() }
         }
+    }
+
+    private fun inputStatusResult(frame: ByteArray): CaptStatusProbeResult {
+        val payload = try {
+            CaptInputStatusParser.parse(frame)
+        } catch (_: IllegalArgumentException) {
+            throw CaptStatusProbeException("Ответ GetInputStatus имеет неподдерживаемый формат.")
+        }
+        // The public CAPT driver requests this status when NEED_INPUT_STATUS is set,
+        // but does not decode its payload. Preserve the bytes without guessing fields.
+        val maxLoggedBytes = 64
+        val payloadHex = payload.take(maxLoggedBytes)
+            .joinToString(" ") { hex(it.toInt() and 0xff) }
+        val truncated = payload.size > maxLoggedBytes
+        val summary = "GetInputStatus: корректный ответ; байт данных=${payload.size}. " +
+            "Поля пока не расшифрованы; печать не выполнялась."
+        val report = "CAPT GetInputStatus: valid reply; totalBytes=${frame.size}; " +
+            "statusPayloadBytes=${payload.size}; statusPayloadHex=$payloadHex; " +
+            "payloadHexTruncated=$truncated; no document/page data sent."
+        return CaptStatusProbeResult(summary, report)
     }
 
     private fun basicResult(frame: ByteArray): CaptStatusProbeResult {
