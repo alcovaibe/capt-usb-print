@@ -97,7 +97,9 @@ jobs:
           ANDROID_SIGNING: ${{ secrets.ANDROID_SIGNING }}
         run: python3 tools/prepare-signing.py
       - name: Lint and build signed non-debuggable APK
-        run: ./gradlew --no-daemon :app:lintRelease :app:assembleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:lintRelease :app:assembleRelease
       - name: Verify APK signature, stable package, prior release and versionCode
         run: python3 tools/signed-release.py verify
       - name: Verify forbidden Android permissions
