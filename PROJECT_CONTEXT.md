@@ -153,3 +153,24 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Fixed an identified diagnostic framing risk: a 56-byte LE length can look like a 38-byte BCD length; new shared preferredReplyLength avoids prematurely accepting the shorter BCD candidate on partial USB reads.
 - Upstream sources are preserved with GPL headers. A single compiler-only local change initializes HISCOA best_cmd to zero for -Wmaybe-uninitialized, documented in THIRD-PARTY-NOTICES.md. The entire combined APK is subject to applicable GPLv3 source and redistribution obligations.
 - Do not claim B complete until owner confirms physical A4 print, orientation and two follow-up jobs. No PDF/PrintService.
+
+
+## Stage C shared A4 geometry feature branch (2026-10-22; awaiting PR CI)
+
+- Starting main SHA: `630492b337a9c1202c1d0bf981c85dfec2f64c42`.
+  Private branch: `feat/stage-c-shared-a4-preview-geometry`; do not merge
+  automatically because main publishes a permanent-key private test release.
+- The Stage B owner-accepted CAPT page grid is 4960 × 7016 at 600 dpi.
+  Added pure `document/A4PageGeometry` fit layout and a scaled preview
+  mapping. Landscape is logical only; the physical CAPT adapter still sends its
+  proven portrait descriptor, and no landscape document print is enabled.
+- The 260 px (~11 mm) software FIT inset is provisional, based on the safe
+  registration-mark region, NOT verified as the device's mechanical margin.
+- PDF and EXIF-oriented PNG/JPEG display previews are composed onto white A4
+  sheets with this shared geometry. Switching the document orientation
+  re-renders the current page. No USB/CAPT document commands were added.
+- New pure unit tests validate paper dimensions, fit/aspect, boundaries,
+  logical orientations, scaled coordinates and memory/pixel limits.
+- Required next checks: PR CI, phone preview confirmation, then a bounded
+  sequential print rasterizer/landscape rotation/HISCOA adapter and a real
+  document physical print. Stage C acceptance remains open.

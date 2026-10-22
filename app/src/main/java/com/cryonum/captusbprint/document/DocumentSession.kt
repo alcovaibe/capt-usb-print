@@ -2,18 +2,25 @@ package com.cryonum.captusbprint.document
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.media.ExifInterface
 import android.os.ParcelFileDescriptor
+import com.cryonum.captusbprint.core.Orientation
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
+import kotlin.math.ceil
+import kotlin.math.floor
 
 data class PreviewDimensions(val width: Int, val height: Int)
 
-/** Pure, testable fit calculation: no page image is ever decoded at print DPI. */
+/** Legacy standalone sizing helper retained for its existing pure tests. */
 object PreviewGeometry {
     fun fit(width: Int, height: Int, maxWidth: Int, maxHeight: Int): PreviewDimensions {
         require(width > 0 && height > 0 && maxWidth in 1..1600 && maxHeight in 1..2200)
@@ -29,9 +36,11 @@ object PreviewGeometry {
 }
 
 /**
- * One validated private local source. UI owns this session and closes it on
- * replacement or Activity destruction. No USB/CAPT, network, or export.
- * Only the requested PDF page (or a sampled image) is decoded at a time.
+ * One validated private local source. UI owns and closes this on replacement
+ * or Activity destruction. Display previews use the shared A4 placement; only
+ * the requested PDF page or a sampled image is ever decoded.
+ *
+ * This does NOT yet produce CAPT bands or guarantee a measured printable area.
  */
 class DocumentSession internal constructor(
     private val source: File,
@@ -39,17 +48,22 @@ class DocumentSession internal constructor(
 ) : Closeable {
     @Volatile private var closed = false
 
-    fun renderPreview(pageIndex: Int, maxWidth: Int, maxHeight: Int): Bitmap {
+    fun renderPreview(
+        pageIndex: Int,
+        maxWidth: Int,
+        maxHeight: Int,
+        orientation: Orientation = Orientation.PORTRAIT
+    ): Bitmap {
         check(!closed) { "Document preview source already closed" }
         require(pageIndex in 0 until overview.pageCount)
         require(maxWidth in 1..1600 && maxHeight in 1..2200)
         return when (overview.format) {
-            DocumentFormat.PDF -> renderPdf(pageIndex, maxWidth, maxHeight)
-            DocumentFormat.JPEG, DocumentFormat.PNG -> renderImage(maxWidth, maxHeight)
+            DocumentFormat.PDF -> renderPdf(pageIndex, maxWidth, maxHeight, orientation)
+            DocumentFormat.JPEG, DocumentFormat.PNG -> renderImage(maxWidth, maxHeight, orientation)
         }
     }
 
-    private fun renderPdf(index: Int, width: Int, height: Int): Bitmap {
+    private fun renderPdf(index: Int, width: Int, height: Int, orientation: Orientation): Bitmap {
         val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY)
         val renderer = try {
             PdfRenderer(descriptor)
@@ -60,12 +74,24 @@ class DocumentSession internal constructor(
         return renderer.use { pdf ->
             require(index < pdf.pageCount) { "PDF page index out of range" }
             pdf.openPage(index).use { page ->
-                val fitted = PreviewGeometry.fit(page.width, page.height, width, height)
-                val bitmap = Bitmap.createBitmap(fitted.width, fitted.height,
+                val layout = A4PageGeometry.fit(page.width, page.height, orientation)
+                    .preview(width, height)
+                val bitmap = Bitmap.createBitmap(layout.width, layout.height,
                     Bitmap.Config.ARGB_8888)
                 try {
                     bitmap.eraseColor(Color.WHITE)
-                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    val target = layout.content.asRectF()
+                    val transform = Matrix().apply {
+                        setRectToRect(RectF(0f, 0f, page.width.toFloat(), page.height.toFloat()),
+                            target, Matrix.ScaleToFit.FILL)
+                    }
+                    val clip = Rect(
+                        floor(target.left).toInt().coerceAtLeast(0),
+                        floor(target.top).toInt().coerceAtLeast(0),
+                        ceil(target.right).toInt().coerceAtMost(layout.width),
+                        ceil(target.bottom).toInt().coerceAtMost(layout.height)
+                    )
+                    page.render(bitmap, clip, transform, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     bitmap
                 } catch (error: Exception) {
                     bitmap.recycle()
@@ -75,7 +101,7 @@ class DocumentSession internal constructor(
         }
     }
 
-    private fun renderImage(maxWidth: Int, maxHeight: Int): Bitmap {
+    private fun renderImage(maxWidth: Int, maxHeight: Int, orientation: Orientation): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(source.absolutePath, bounds)
         require(bounds.outWidth in 1..50000 && bounds.outHeight in 1..50000) {
@@ -96,17 +122,31 @@ class DocumentSession internal constructor(
             throw error
         }
         if (oriented !== decoded) decoded.recycle()
-        val size = PreviewGeometry.fit(oriented.width, oriented.height, maxWidth, maxHeight)
-        if (size.width == oriented.width && size.height == oriented.height) return oriented
-        return try {
-            Bitmap.createScaledBitmap(oriented, size.width, size.height, true).also {
-                if (it !== oriented) oriented.recycle()
+        try {
+            // Fit the decoded, EXIF-corrected image into the same physical A4
+            // coordinates later used by the print rasterizer. White paper also
+            // correctly composites PNG transparency.
+            val layout = A4PageGeometry.fit(overview.width, overview.height, orientation)
+                .preview(maxWidth, maxHeight)
+            val paper = Bitmap.createBitmap(layout.width, layout.height, Bitmap.Config.ARGB_8888)
+            try {
+                val canvas = Canvas(paper)
+                canvas.drawColor(Color.WHITE)
+                canvas.drawBitmap(oriented, null, layout.content.asRectF(),
+                    Paint(Paint.FILTER_BITMAP_FLAG))
+                return paper
+            } catch (error: Exception) {
+                paper.recycle()
+                throw error
             }
-        } catch (error: Exception) {
+        } finally {
             oriented.recycle()
-            throw error
         }
     }
+
+    private fun PageBox.asRectF() = RectF(
+        left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat()
+    )
 
     private fun applyExifOrientation(bitmap: Bitmap): Bitmap {
         val orientation = runCatching {
