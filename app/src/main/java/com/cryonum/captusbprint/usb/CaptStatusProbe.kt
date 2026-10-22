@@ -23,10 +23,17 @@ import java.util.Locale
 
 data class CaptStatusProbeResult(
     val summary: String,
-    val reportLine: String
+    val reportLine: String,
+    /** Full bounded device response, including its four-byte CAPT header. */
+    val rawFrameHex: String,
+    val decoded: Map<String, Any?>
 )
 
-class CaptStatusProbeException(message: String) : Exception(message)
+class CaptStatusProbeException(
+    message: String,
+    /** Preserved even if the bounded reply was rejected by its field parser. */
+    val rawFrameHex: String? = null
+) : Exception(message)
 
 /**
  * One user-triggered, read-only CAPT GetBasicStatus query.
@@ -134,12 +141,18 @@ object CaptStatusProbe {
             }
 
             val response = readResponseFrame(connection, inEndpoint, commandToSend)
-            return when (commandToSend) {
-                GET_BASIC_STATUS -> basicResult(response)
-                GET_EXTENDED_STATUS -> extendedResult(response)
-                GET_INPUT_STATUS -> inputStatusResult(response)
-                GET_PRINTER_INFO -> printerInfoResult(response)
-                else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
+            return try {
+                when (commandToSend) {
+                    GET_BASIC_STATUS -> basicResult(response)
+                    GET_EXTENDED_STATUS -> extendedResult(response)
+                    GET_INPUT_STATUS -> inputStatusResult(response)
+                    GET_PRINTER_INFO -> printerInfoResult(response)
+                    else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
+                }
+            } catch (error: CaptStatusProbeException) {
+                // A structurally valid frame may still fail field validation.
+                // Keep the actual bytes in the exported error event for independent review.
+                throw CaptStatusProbeException(error.message ?: "Ошибка CAPT", frameHex(response))
             }
         } finally {
             if (claimed) runCatching { connection.releaseInterface(iface) }
@@ -167,7 +180,13 @@ object CaptStatusProbe {
             "payloadBytes=${info.payloadBytes}; Blk=0x$block (${info.blockSize}); " +
             "Buf=0x$buffer (${info.bufferSize}); safeChunkBytes=${safeChunk ?: "unavailable"}; " +
             "transferParametersUsable=${info.transferParametersUsable}; no print/page data sent."
-        return CaptStatusProbeResult(summary, report)
+        return CaptStatusProbeResult(summary, report, frameHex(frame), mapOf(
+            "blockSize" to info.blockSize,
+            "bufferSize" to info.bufferSize,
+            "payloadBytes" to info.payloadBytes,
+            "safeChunkBytes" to info.safeChunkBytes,
+            "transferParametersUsable" to info.transferParametersUsable
+        ))
     }
 
     private fun inputStatusResult(frame: ByteArray): CaptStatusProbeResult {
@@ -187,7 +206,10 @@ object CaptStatusProbe {
         val report = "CAPT GetInputStatus: valid reply; totalBytes=${frame.size}; " +
             "rawResponseDataBytes=${payload.size}; rawResponseDataHex=$payloadHex; " +
             "rawResponseDataHexTruncated=$truncated; no document/page data sent."
-        return CaptStatusProbeResult(summary, report)
+        return CaptStatusProbeResult(summary, report, frameHex(frame), mapOf(
+            "rawResponseDataBytes" to payload.size,
+            "payloadDecoded" to false
+        ))
     }
 
     private fun basicResult(frame: ByteArray): CaptStatusProbeResult {
@@ -205,7 +227,14 @@ object CaptStatusProbe {
             "statusFlags=0x$basic[$basicNames]; secondaryFlags=0x$secondary[$secondaryNames]; " +
             "bufferLevel=${status.bufferLowByte?.let { hex(it) } ?: "unavailable"}:" +
             "${status.bufferHighByte?.let { hex(it) } ?: "unavailable"}; no print/page data sent."
-        return CaptStatusProbeResult(summary, report)
+        return CaptStatusProbeResult(summary, report, frameHex(frame), mapOf(
+            "statusByte" to status.statusByte,
+            "secondaryByte" to status.secondaryByte,
+            "statusFlags" to CaptStatusFlagDecoder.basic(status.statusByte),
+            "secondaryFlags" to CaptStatusFlagDecoder.secondary(status.secondaryByte),
+            "bufferLowByte" to status.bufferLowByte,
+            "bufferHighByte" to status.bufferHighByte
+        ))
     }
 
     private fun extendedResult(frame: ByteArray): CaptStatusProbeResult {
@@ -284,8 +313,26 @@ object CaptStatusProbe {
             "Расширенный ответ CAPT получен; известные флаги аппаратной ошибки не установлены. " +
                 "Печать не выполнялась."
         }
-        return CaptStatusProbeResult(summary, report)
+        return CaptStatusProbeResult(summary, report, frameHex(frame), mapOf(
+            "basicStatusByte" to status.basicStatusByte,
+            "secondaryByte" to status.secondaryByte,
+            "bufferLowByte" to status.bufferLowByte,
+            "bufferHighByte" to status.bufferHighByte,
+            "bufferSlots" to status.bufferSlots,
+            "auxiliaryByte" to status.auxiliaryByte,
+            "engineCommunicationByte" to status.engineCommunicationByte,
+            "paperAvailabilityByte" to status.paperAvailabilityByte,
+            "engineFlags" to status.engineFlags,
+            "pageDecoding" to status.pageDecoding,
+            "pagePrinting" to status.pagePrinting,
+            "pageOut" to status.pageOut,
+            "pageCompleted" to status.pageCompleted,
+            "pageReceived" to status.pageReceived
+        ))
     }
+
+    private fun frameHex(frame: ByteArray): String =
+        frame.joinToString(" ") { hex(it.toInt() and 0xff) }
 
     private fun hexCommand(value: Int): String =
         String.format(Locale.ROOT, "%04X", value and 0xffff)
