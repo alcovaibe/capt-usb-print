@@ -156,8 +156,8 @@ object CaptStatusProbe {
         val summary = "GetInputStatus: корректный ответ; байт данных=${payload.size}. " +
             "Поля пока не расшифрованы; печать не выполнялась."
         val report = "CAPT GetInputStatus: valid reply; totalBytes=${frame.size}; " +
-            "statusPayloadBytes=${payload.size}; statusPayloadHex=$payloadHex; " +
-            "payloadHexTruncated=$truncated; no document/page data sent."
+            "rawResponseDataBytes=${payload.size}; rawResponseDataHex=$payloadHex; " +
+            "rawResponseDataHexTruncated=$truncated; no document/page data sent."
         return CaptStatusProbeResult(summary, report)
     }
 
