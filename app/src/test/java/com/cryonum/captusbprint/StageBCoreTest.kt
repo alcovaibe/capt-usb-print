@@ -82,8 +82,8 @@ class StageBCoreTest {
         )
     }
 
-    @Test fun extendedStatusParserReadsEngineAndPaperFields() {
-        val payload = ByteArray(14)
+    @Test fun extendedStatusParserReadsEnginePaperAndPageCounters() {
+        val payload = ByteArray(36)
         payload[0] = 0x88.toByte()
         payload[1] = 0x00
         payload[4] = 0x0f
@@ -93,6 +93,11 @@ class StageBCoreTest {
         payload[10] = 0x00
         payload[12] = 0x00
         payload[13] = 0x41
+        payload[14] = 0x02
+        payload[16] = 0x01
+        payload[18] = 0x01
+        payload[20] = 0x01
+        payload[34] = 0x03
         val parsed = CaptExtendedStatusParser.parse(CaptFrame.encode(0xA0A8, payload))
         assertEquals(0x88, parsed.basicStatusByte)
         assertEquals(15, parsed.bufferSlots)
@@ -101,11 +106,71 @@ class StageBCoreTest {
         assertEquals("NO_PAPER", CaptStatusFlagDecoder.paper(parsed.paperAvailabilityByte))
         assertEquals(0x4100, parsed.engineFlags)
         assertEquals(listOf("PAPER_JAM", "DOOR_OPEN"), CaptStatusFlagDecoder.engine(parsed.engineFlags))
+        assertEquals(2, parsed.pageDecoding)
+        assertEquals(1, parsed.pagePrinting)
+        assertEquals(1, parsed.pageOut)
+        assertEquals(1, parsed.pageCompleted)
+        assertEquals(3, parsed.pageReceived)
+    }
+
+    @Test fun extendedStatusParserKeepsPageCountersUnavailableForShortPayload() {
+        val parsed = CaptExtendedStatusParser.parse(CaptFrame.encode(0xA0A8, ByteArray(14)))
+        assertNull(parsed.pageDecoding)
+        assertNull(parsed.pagePrinting)
+        assertNull(parsed.pageOut)
+        assertNull(parsed.pageCompleted)
+        assertNull(parsed.pageReceived)
+    }
+
+    @Test fun printerInfoParserUsesDocumentedLittleEndianOffsetsAndClampsChunk() {
+        val payload = ByteArray(10)
+        payload[6] = 0xf0.toByte()
+        payload[7] = 0xff.toByte()
+        payload[8] = 0x40
+        payload[9] = 0x00
+        val parsed = CaptPrinterInfoParser.parse(CaptFrame.encode(0xA1A1, payload))
+        assertEquals(65520, parsed.blockSize)
+        assertEquals(64, parsed.bufferSize)
+        assertEquals(0xff00, parsed.safeChunkBytes)
+        assertTrue(parsed.transferParametersUsable)
+        assertEquals(10, parsed.payloadBytes)
+    }
+
+    @Test fun printerInfoParserRejectsShortOrWrongCommandReplies() {
+        val short = CaptFrame.encode(0xA1A1, ByteArray(9))
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptPrinterInfoParser.parse(short)
+        }
+        val wrongCommand = CaptFrame.encode(0xA0A8, ByteArray(10))
+        assertThrows(IllegalArgumentException::class.java) {
+            CaptPrinterInfoParser.parse(wrongCommand)
+        }
+    }
+
+    @Test fun printerInfoParserDoesNotTrustZeroBlockOrBufferValues() {
+        val payload = ByteArray(10)
+        payload[8] = 0x40
+        val parsed = CaptPrinterInfoParser.parse(CaptFrame.encode(0xA1A1, payload))
+        assertNull(parsed.safeChunkBytes)
+        assertFalse(parsed.transferParametersUsable)
     }
 
     @Test fun inputStatusParserPreservesOpaquePayloadWithoutInventingFields() {
         val payload = byteArrayOf(0x11, 0x22, 0x80.toByte(), 0x00)
         val frame = CaptFrame.encode(CaptInputStatusParser.GET_INPUT_STATUS, payload)
+        assertArrayEquals(payload, CaptInputStatusParser.parse(frame))
+    }
+
+    @Test fun inputStatusParserAcceptsTheObservedTwentyTwoByteReplyShape() {
+        // Hardware report from 2026-10-22; payload remains opaque because upstream
+        // requests GetInputStatus but does not define these fields.
+        val payload = byteArrayOf(
+            0x00, 0x10, 0xc0.toByte(), 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x96.toByte(), 0x00, 0xfd.toByte(), 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        )
+        val frame = CaptFrame.encode(CaptInputStatusParser.GET_INPUT_STATUS, payload)
+        assertEquals(22, frame.size)
         assertArrayEquals(payload, CaptInputStatusParser.parse(frame))
     }
 
