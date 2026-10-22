@@ -31,7 +31,7 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 
 | Item | State | Method |
 | --- | --- | --- |
-| Printer/cable/phone and PrintHand test | Owner reported | Stage A real phone test |
+| Physical printer connection during diagnostic screenshot | Not confirmed; owner says USB has not yet been tested in this app | Controlled hardware test still required |
 | Repository privacy | Confirmed private via GitHub metadata | Recheck on new commit |
 | Device API/build/ABI/page size | Confirmed on owner's A1.4 screenshot | Recheck only if phone OS changes |
 | USB VID/PID/interface/endpoints | Unknown | Stage A report |
@@ -60,10 +60,10 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Existing old A1 debug releases kept for history; they are not part of the signed update chain. We did not modify VK Music Export.
 
 
-## Continuation after first physical report (2026-10-21)
-**Measured by owner's diagnostic APK 0.1.0-a1.4, not assumed from product specs:**
+## Continuation after first diagnostic screenshot (physical USB test still pending)
+**The screenshot from diagnostic APK 0.1.0-a1.4 displays the following values; it was not a controlled printer-connection test:**
 - Device model `HONOR BRP-NX1`; Android API 36, MagicOS build string `BRP-N21 10.0.0.172(C636E6R4P1)` (as shown in screenshot); ABIs `arm64-v8a, armeabi-v7a, armeabi`; memory page size exactly **4096 bytes**; USB Host feature `true`.
-- **Connected USB device count: 0**; no printer descriptor, no VID:PID, no endpoints, no permission request. Do not blame printer or cable without new evidence. Physical PrintHand test previously succeeded on the same phone/printer/cable, but timing and active connections in this report are not independently established.
+- Screenshot says **Connected USB device count: 0**; no printer descriptor, no VID:PID, no endpoints, no permission request. Owner clarified the USB connection was not deliberately checked during this step; it is unknown whether the printer was physically connected when the screenshot was captured. This is not evidence of a failed cable, printer, or USB discovery. Previously the owner reported a PrintHand test page worked, but that does not verify this app's current discovery.
 - UI issue: system status bar overlapped activity heading on Android 16; root window now accounts for system-bar/display-cutout insets; long report is collapsed by default (share still exports full report).
 - Device attach is an Activity intent, **not** a broadcast (see https://developer.android.com/reference/android/hardware/usb/UsbManager). The prior dynamic ATTACHED receiver was unreliable; now only foreground list-key observation at 2.5-second intervals (no repeated probe when unchanged), plus a DETACHED broadcast.
 - Redacted count-only `UsbObservation` ring holds 16 changes and exports with each snapshot; zero-device guidance expressly says OS enumeration is a prerequisite for USB permission.
@@ -90,3 +90,10 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Read-only USB probe now reuses tested `UsbLinkSelector` instead of a separate permissive candidate check. Ambiguous/truncated descriptor lists skip interface claim. No new CAPT transport or real print implemented.
 - Zero-result USB writes immediately return uncertain, never silently repeat. Pure range parser accepts the typographic `1–3` example in the original technical specification.
 - Parallel source-only CAPT frame, I/O and job model changes were merged separately and are covered by StageBCoreTest. The components have deliberately not been attached to the live device. Before wiring, consolidate any overlapping prototype models; do not claim real printing from passing mocked tests.
+
+
+## Launcher icon (2026-10-22)
+- Replaced the manifest launcher reference with `@mipmap/ic_launcher` and `@mipmap/ic_launcher_round`.
+- Added adaptive and round adaptive launcher icons matching the structure in `alcovaibe/Bluetooth-disabler`: solid white background, printer line-art foreground, and monochrome foreground for themed Android icons. The foreground is a scalable VectorDrawable based on the approved printer graphic.
+- Added layer-list fallback resources. The old `ic_app.xml` remains unused; the manifest now resolves the new adaptive icon.
+- This is an icon/resource change only; it does not imply USB hardware validation or printing support.
