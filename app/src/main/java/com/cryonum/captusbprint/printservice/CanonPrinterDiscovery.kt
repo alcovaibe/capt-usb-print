@@ -41,6 +41,7 @@ internal class CanonPrinterDiscovery(private val service: PrintService) : Printe
     private val main = Handler(Looper.getMainLooper())
     private var discovering = false
     private val tracking = HashSet<PrinterId>()
+    private var lastPublishedStatus: Int? = null
     private val tick = object : Runnable {
         override fun run() {
             if (isDestroyed) return
@@ -81,5 +82,9 @@ internal class CanonPrinterDiscovery(private val service: PrintService) : Printe
             .setDescription(service.getString(CanonUsbAvailability.reason(service)))
             .setCapabilities(capabilities).setInfoIntent(info).build()
         addPrinters(listOf(printer))
+        if (lastPublishedStatus != printer.status) {
+            lastPublishedStatus = printer.status
+            SystemPrintDiagnostics.record(service, if (ready) "DISCOVERY_PUBLISHED_AVAILABLE" else "DISCOVERY_PUBLISHED_UNAVAILABLE")
+        }
     }
 }

@@ -233,8 +233,12 @@ class DocumentSession internal constructor(
 
     /** General PDF/JPEG/PNG path. At most a bounded decoded image + a 64-row strip. */
     fun forEachPrintBand(pageIndex: Int, orientation: Orientation, rotation: Int,
+        cancelled: () -> Boolean, consumer: (Int, ByteArray) -> Unit) =
+        forEachPrintBand(pageIndex, orientation, rotation, cancelled, consumer, false)
+
+    fun forEachPrintBand(pageIndex: Int, orientation: Orientation, rotation: Int,
         cancelled: () -> Boolean, consumer: (Int, ByteArray) -> Unit,
-        preservePdfLayout: Boolean = false) {
+        preservePdfLayout: Boolean) {
         check(!closed)
         require(!preservePdfLayout || (overview.format == DocumentFormat.PDF && rotation == 0))
         require(pageIndex in 0 until overview.pageCount)

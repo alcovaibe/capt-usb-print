@@ -16,7 +16,9 @@ internal class SystemPrintRequest(
     fun validate() {
         require(declaredPages == -1 || declaredPages in 1..JobSpecification.MAX_SOURCE_PAGES) { "UNSUPPORTED_PAGE_COUNT" }
         require(copies in 1..JobSpecification.MAX_COPIES) { "UNSUPPORTED_COPIES" }
-        require(minOf(widthMils, heightMils) == 8268 && maxOf(widthMils, heightMils) == 11693) { "UNSUPPORTED_PAPER" }
+        // Android ISO_A4 uses 8270x11690; exact mm-to-mil conversions round to 8268x11693.
+        require((minOf(widthMils,heightMils) to maxOf(widthMils,heightMils)) in
+            setOf(8270 to 11690, 8268 to 11693)) { "UNSUPPORTED_PAPER" }
         require(horizontalDpi == 600 && verticalDpi == 600) { "UNSUPPORTED_RESOLUTION" }
         require(colorMode == 1 && duplexMode in 0..1) { "UNSUPPORTED_PRINT_MODE" }
         require(this.margins.size == 4 && this.margins.all { it >= 0 })

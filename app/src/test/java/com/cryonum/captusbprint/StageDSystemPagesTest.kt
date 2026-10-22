@@ -61,6 +61,7 @@ class StageDSystemPagesTest {
         rejects { request(copies = 3, declared = 1000).plan(1000) }
     }
     @Test fun unsupportedMediaDpiColorAndDuplexAreRejected() {
+        request(width = 8270, height = 11690)
         rejects { request(width = 8500) }
         rejects { request(dpi = 300) }
         rejects { request(color = 2) }
