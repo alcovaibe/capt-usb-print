@@ -24,6 +24,32 @@ Private history is bounded to 50 jobs and reports to 24; JSON records settings, 
 
 **Acceptance distinction:** the owner authorized conditional release/print success to finish code. Actual hardware evidence remains separate PDF sheets on build 105 and accepted Stage A/B. New queue, image output, landscape and MagicOS screen-off behavior are not reported as physically observed. Stage D PrintService is a separate next implementation.
 
+## Stage D: Android system printing (under verification)
+
+The Android PrintService advertises one stable Canon LBP2900 USB slot and the
+existing A4 / 600 dpi / monochrome / simplex profile. Enable CAPT USB Print through
+the app's system-print settings button, grant USB access on the main screen, then
+select the Canon from an application's Android Print dialog. Missing/ambiguous USB
+devices or permissions block an unstarted job with a setup message.
+
+System PDFs enter the same bounded queue and serial worker as direct documents.
+Their existing point scale, margins and layout are preserved; the app's FIT inset
+is not applied again. Original-versus-reduced PDF page selections are resolved
+once, with ambiguous mappings rejected. One layer expands collated copies.
+PrintDocument pipes are read off the main thread with a 64 MiB / 30-second bound,
+cancellation and shared disk quotas. PrintJob APIs stay on the main thread.
+
+Disabling/disconnecting the service cancels its work without cancelling unrelated
+direct jobs. Tagged interrupted jobs are reconciled without automatic replay.
+Printer-confirmed completion, cancellation before printing and uncertain USB
+outcomes remain distinct. Queue history exposes a separate explicit system JSON
+share button, with no document labels, URIs, content or serials.
+
+This code is under automatic verification. Actual routing/printing from HONOR
+Documents and another Android print source is not yet confirmed; Stage D hardware
+acceptance remains open. No new CAPT command, reset, retry or signing change is
+introduced.
+
 ## Signed releases and upgrade compatibility
 
 Private signed prereleases: [Releases](https://github.com/alcovaibe/capt-usb-print/releases). Future installed **signed** versions upgrade in place via the ordinary Android APK installer, keeping app settings. Signing certificate and `applicationId=com.cryonum.captusbprint` are permanently pinned. `versionCode` increases for each GitHub Actions release build.

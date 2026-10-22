@@ -35,6 +35,10 @@ class PrintQueueActivity : Activity() {
         jobs.removeAllViews()
         jobs.addView(TextView(this).apply { text = getString(R.string.queue_title); textSize = 22f })
         jobs.addView(TextView(this).apply { text = getString(R.string.queue_explanation) })
+        jobs.addView(Button(this).apply {
+            setText(R.string.system_report)
+            setOnClickListener { shareSystemReport() }
+        })
         if (PrintQueueRuntime.isPaused()) {
             jobs.addView(TextView(this).apply { text = getString(R.string.queue_paused) })
             jobs.addView(Button(this).apply {
@@ -76,8 +80,14 @@ class PrintQueueActivity : Activity() {
         }
     }
     private fun shareJobReport(id: Long) {
+        shareReportFile(PrintQueueRuntime.reportFile(id))
+    }
+    private fun shareSystemReport() {
+        com.cryonum.captusbprint.printservice.SystemPrintDiagnostics.record(this, "MANUAL_SNAPSHOT")
+        shareReportFile(com.cryonum.captusbprint.printservice.SystemPrintDiagnostics.file(this))
+    }
+    private fun shareReportFile(source: File) {
         runCatching {
-            val source = PrintQueueRuntime.reportFile(id)
             check(source.length() in 1..1024*1024)
             val directory = File(cacheDir,"reports").apply { mkdirs() }
             val copy = File.createTempFile("capt-job-", ".json", directory)

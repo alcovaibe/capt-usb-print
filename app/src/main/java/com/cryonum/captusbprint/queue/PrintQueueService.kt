@@ -6,12 +6,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import com.cryonum.captusbprint.R
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Started from a visible user action with an existing USB grant. Never sticky/replayed. */
 class PrintQueueService : Service() {
-    private val worker = Executors.newSingleThreadExecutor()
     private val expectedStop = AtomicBoolean(false)
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onCreate() {
@@ -27,7 +25,7 @@ class PrintQueueService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
             PrintQueueRuntime.initialize(this)
             if (intent?.action == CANCEL) PrintQueueRuntime.stopServiceJobs()
-            worker.execute {
+            PrintQueueWorker.execute {
                     try {
                         PrintQueueRuntime.drain { record ->
                             runCatching {
@@ -47,7 +45,7 @@ class PrintQueueService : Service() {
                     }
             }
         } catch (_: Exception) {
-            PrintQueueRuntime.serviceFailure()
+            PrintQueueRuntime.serviceFailure(directOnly = true)
             stopSelf(startId)
         }
         return START_NOT_STICKY
@@ -64,8 +62,7 @@ class PrintQueueService : Service() {
             .build()
     }
     override fun onDestroy() {
-        if (!expectedStop.get()) runCatching { PrintQueueRuntime.stopServiceJobs() }
-        worker.shutdown()
+        if (!expectedStop.get()) runCatching { PrintQueueRuntime.stopServiceJobs(directOnly = true) }
         super.onDestroy()
     }
     companion object {

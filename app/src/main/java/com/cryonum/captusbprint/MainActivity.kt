@@ -122,6 +122,14 @@ class MainActivity : Activity() {
         content.addView(button("Выбрать PDF / JPEG / PNG (без печати)") {
             startActivity(Intent(this, DocumentActivity::class.java))
         })
+        content.addView(button(getString(R.string.system_settings)) {
+            runCatching { startActivity(Intent(android.provider.Settings.ACTION_PRINT_SETTINGS)) }
+                .onFailure { Toast.makeText(this, R.string.system_settings_unavailable, Toast.LENGTH_LONG).show() }
+        })
+        content.addView(text(getString(R.string.system_setup_help)))
+        content.addView(button(getString(R.string.queue_title)) {
+            startActivity(Intent(this, com.cryonum.captusbprint.queue.PrintQueueActivity::class.java))
+        })
         content.addView(button(getString(R.string.share_report)) { shareReport() })
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(devices)

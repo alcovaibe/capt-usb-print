@@ -1,6 +1,6 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Current work: **Stage C code implementation complete in existing PR #25; acceptance is conditional by owner instruction** (same private branch). Owner explicitly authorized conditional acceptance of release/printing for advancing development; this is NOT new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. General queue/images/landscape are being implemented and verified below. Stage D is not yet implemented. Historical notes are retained; latest checkpoint is at the end.
+Updated: 2026-10-22. Current work: **Stage D Android PrintService**, from owner-merged Stage C PR #25 (`main` merge `130c158f8288db17110ef9bfe433140302917f68`). Main CI 123 passed, including permanent signing and API 36 in-place upgrade. C acceptance remains conditional by owner instruction, not new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. D is being implemented/verified in a new private PR; HONOR system routing/printing is unconfirmed. Historical notes are retained; latest checkpoint is at the end.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
@@ -310,3 +310,34 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Do not restart C as a 2–3-page pilot: the UI now uses the general queue, image/landscape renderer and disk spool. Retained first-PDF/pilot classes are compatibility/test adapters and are not document UI submission routes.
 - Stage D is next: Android PrintService must feed the SAME document queue/runner, preserve Android-supplied PDF layout (no extra FIT/margins), handle source-versus-spool page ranges correctly and expose honest PrintJob states/cancel. No PrintService implementation exists yet.
 - Known hardware follow-up remains ReserveUnit 0x8C and real quality/lifecycle checks. Main/release remains unchanged until an authorized merge.
+
+## 2026-10-22 — Stage D after owner merge of PR #25
+
+- User confirmed merging C and requested D implementation. Verified `main` merge
+  `130c158f8288db17110ef9bfe433140302917f68`, exact merged tree and successful
+  Actions run 123 (`39839011710`), including signed APK/in-place upgrade.
+- New private branch `feat/stage-d-android-print-service`. Preserve manual merge
+  control and permanent signing/application ID/version scheme. Stage B engines,
+  CAPT command sequence and native codec are not changed.
+- PrintService uses BIND_PRINT_SERVICE, standard metadata and main-thread Android
+  APIs. One stable model/slot ID, no serial dependency; USB-list-only discovery
+  advertises A4/600/mono/simplex and a setup PendingIntent. Settings link goes to
+  the standard Android print settings, without guessing HONOR menu labels.
+- System and direct jobs share PrintQueueRuntime, disk budget, USB ownership and
+  one serial PrintQueueWorker. The system-bound service does not launch an FGS
+  from the background; Android owns its active-job lifetime. FGS teardown affects
+  only its direct jobs. Disabling PrintService cancels only that service's work.
+- System PDFs preserve 600/72 point scale and source layout, with portrait/landscape
+  paper rotation only; no second FIT/margins. Selected full-original PDF pages and
+  already-reduced PDF indices are distinguished; ambiguous count/range mappings
+  fail before USB. Collated copies expand in one layer; usual C limits remain.
+- Read PrintDocument file/pipe off-main with 64 MiB/30 s bounds and 250 ms polling
+  for cancellation. Quota reservation covers incoming source plus compressed
+  spool. Descriptor and source cleanup occur on success, failure and cancel.
+- Persist Android job tags before intake and queue activation. Reconnected tagged
+  jobs are reconciled against durable history, never reimported/replayed. Printer
+  confirmation, safe cancellation, error and unknown USB outcome stay distinct.
+- Private bounded system routing/request/error JSON complements per-job CAPT JSON.
+  Explicit share button only; no label, URI, origin app identity, content or serial.
+- Pending: PR build/lint/tests, API 36 system-PDF/pipe tests and real HONOR
+  Documents + second-source routing/printing. Do not mark D hardware accepted.

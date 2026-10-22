@@ -7,6 +7,7 @@ package com.cryonum.captusbprint.core
  */
 enum class Orientation { PORTRAIT, LANDSCAPE }
 enum class Paper { A4 }
+enum class DocumentLayout { APP_FIT, ANDROID_PDF }
 
 @ConsistentCopyVisibility
 data class JobSpecification private constructor(
@@ -14,7 +15,8 @@ data class JobSpecification private constructor(
     val copies: Int,
     val orientation: Orientation,
     val contentRotationDegrees: Int,
-    val paper: Paper
+    val paper: Paper,
+    val layout: DocumentLayout = DocumentLayout.APP_FIT
 ) {
     val outputPageOrder: List<Int>
         get() = List(copies) { pageIndices }.flatten() // collated copies
@@ -23,6 +25,17 @@ data class JobSpecification private constructor(
         const val MAX_SOURCE_PAGES = 1000
         const val MAX_OUTPUT_PAGES = 2000
         const val MAX_COPIES = 20
+
+        /** System PDF already includes the originating application's layout and page selection. */
+        fun systemPdf(sourcePageCount: Int, indices: List<Int>, copies: Int,
+                      orientation: Orientation): JobSpecification {
+            require(sourcePageCount in 1..MAX_SOURCE_PAGES)
+            require(copies in 1..MAX_COPIES)
+            require(indices.isNotEmpty() && indices.size.toLong() * copies <= MAX_OUTPUT_PAGES)
+            require(indices.all { it in 0 until sourcePageCount } && indices.distinct().size == indices.size)
+            return JobSpecification(java.util.Collections.unmodifiableList(indices.toList()), copies,
+                orientation, 0, Paper.A4, DocumentLayout.ANDROID_PDF)
+        }
 
         fun create(
             sourcePageCount: Int,

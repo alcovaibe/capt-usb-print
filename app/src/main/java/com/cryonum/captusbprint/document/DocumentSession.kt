@@ -233,8 +233,10 @@ class DocumentSession internal constructor(
 
     /** General PDF/JPEG/PNG path. At most a bounded decoded image + a 64-row strip. */
     fun forEachPrintBand(pageIndex: Int, orientation: Orientation, rotation: Int,
-        cancelled: () -> Boolean, consumer: (Int, ByteArray) -> Unit) {
+        cancelled: () -> Boolean, consumer: (Int, ByteArray) -> Unit,
+        preservePdfLayout: Boolean = false) {
         check(!closed)
+        require(!preservePdfLayout || (overview.format == DocumentFormat.PDF && rotation == 0))
         require(pageIndex in 0 until overview.pageCount)
         if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
         fun emit(width: Int, height: Int, draw: (Bitmap, Rect, Matrix) -> Unit) {
@@ -247,7 +249,8 @@ class DocumentSession internal constructor(
                     val lines = minOf(64, 7016 - y)
                     bitmap.eraseColor(Color.WHITE)
                     val matrix = Matrix().apply {
-                        setValues(PrintRasterGeometry.matrix(width, height, orientation, rotation, y))
+                        setValues(if (preservePdfLayout) SystemPdfGeometry.matrix(width, height, orientation, y)
+                            else PrintRasterGeometry.matrix(width, height, orientation, rotation, y))
                     }
                     draw(bitmap, Rect(0, 0, 4960, lines), matrix)
                     bitmap.getPixels(pixels, 0, 4960, 0, 0, 4960, lines)
