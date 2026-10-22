@@ -24,6 +24,7 @@ import com.cryonum.captusbprint.document.DocumentOverview
 import com.cryonum.captusbprint.document.DocumentSession
 import com.cryonum.captusbprint.document.PageOrientationChoice
 import com.cryonum.captusbprint.core.HiscoaNative
+import com.cryonum.captusbprint.document.PreparedPdfCaptPageBuilder
 import com.cryonum.captusbprint.document.OfflinePdfHiscoaPreparation
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
@@ -158,7 +159,7 @@ class DocumentActivity : Activity() {
         }
         planSection.addView(planResult)
         rasterButton = Button(this).apply {
-            text = "Проверить PDF-растр и HISCOA (без печати)"
+            text = "Проверить PDF/HISCOA и CAPT-кадры (без печати)"
             setOnClickListener { verifyPdfBands() }
         }
         planSection.addView(rasterButton)
@@ -383,10 +384,10 @@ class DocumentActivity : Activity() {
         val request = generation
         rasterInProgress = true
         rasterButton.isEnabled = false
-        planResult.text = "Готовим PDF полосами по 64 строки и проверяем HISCOA локально. USB-команды не отправляются…"
+        planResult.text = "Подготавливаем PDF, HISCOA и CAPT-кадры локально. USB-команды не отправляются…"
         worker.execute {
             val result = runCatching {
-                val summary = OfflinePdfHiscoaPreparation.prepare(
+                val prepared = PreparedPdfCaptPageBuilder.prepare(
                     produceBands = { accept ->
                         opened.forEachPortraitPdfBand(
                             index,
@@ -400,11 +401,21 @@ class DocumentActivity : Activity() {
                     },
                     cancelled = { request != generation }
                 )
-                "PDF-страница ${index + 1}: подготовлено HISCOA-полос: ${summary.bandCount}; " +
-                    "однобитный растр: ${summary.rasterBytes} байт; " +
-                    "сжато: ${summary.compressedBytes} байт; " +
-                    "максимальная полоса: ${summary.maxCompressedBandBytes} байт. " +
-                    "Только офлайн-подготовка: USB/CAPT-команды не выполнялись."
+                // Stage B previously observed 65280 bytes as a safe chunk size.
+                // This is a dry-run ONLY; a future real job must query fresh
+                // GetPrinterInfo after obtaining exclusive USB ownership.
+                var videoFrames = 0
+                var framedBytes = 0L
+                prepared.forEachVideoFrame(65_280, cancelled = { request != generation }) { _, frame ->
+                    videoFrames++
+                    framedBytes += frame.size
+                }
+                "PDF-страница ${index + 1}: подготовлена одна A4 CAPT-страница. " +
+                    "HISCOA-полос: ${prepared.bandCount}; растр: ${OfflinePdfHiscoaPreparation.EXPECTED_RASTER_BYTES} байт; " +
+                    "сжато: ${prepared.compressedBytes} байт; максимальная полоса: " +
+                    "${prepared.maximumBandBytes} байт; модельных CAPT-кадров при " +
+                    "ранее проверенном лимите 65280: $videoFrames, $framedBytes байт. " +
+                    "Данные не сохранены. USB/CAPT-команды не выполнялись."
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
@@ -412,7 +423,7 @@ class DocumentActivity : Activity() {
                 rasterButton.isEnabled = true
                 if (request == generation) {
                     planResult.text = result.getOrElse {
-                        "Офлайн-подготовка PDF/HISCOA не завершилась (${it.javaClass.simpleName}). Ничего не печаталось."
+                        "Офлайн-подготовка PDF/HISCOA/CAPT не завершилась (${it.javaClass.simpleName}). Ничего не печаталось."
                     }
                 }
             }

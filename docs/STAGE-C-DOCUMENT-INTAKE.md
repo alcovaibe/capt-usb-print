@@ -145,3 +145,32 @@ raster counts were not provided in that report.
 - After this checkpoint: validate a real PDF band preparation result, inspect
   print-mode raster content/strip seams and grayscale, then design one shared
   job-owner queue and a guarded, separately consented first physical PDF sheet.
+
+
+## Stage C — confirmed owner HISCOA check and buffered CAPT page proposal
+
+- The owner supplied an HONOR X9c screenshot of a successful one-page,
+  offline PDF/HISCOA run: 110 bands, 4,349,920 bytes MSB-first 1bpp,
+  277,764 compressed bytes and a maximum compressed band of 11,244 bytes.
+  The screen explicitly stated no USB/CAPT commands were issued. This proves
+  on-device execution for the tested PDF page, **not** physical print quality,
+  printer reception, or per-band visual correctness.
+- The subsequent private PR prepares one complete portrait A4 PDF page
+  offline and retains only its *compressed* 110 HISCOA bands, capped at
+  4 MiB (same buffered-page budget as owner-tested Stage B). Source/encoder
+  arrays are copied so they cannot later mutate an accepted prepared page;
+  no full ARGB page is constructed or kept.
+- The prepared page exposes the unchanged Stage B A4 descriptor and feeds
+  each compressed strip to the unchanged Stage B CAPT C0A0 video framing
+  routine. Packetization is bounded one band at a time; the local preview
+  button dry-runs framing at the **previously observed** 65,280-byte chunk
+  limit. This is not a live GetPrinterInfo reading: a future real print
+  engine must acquire shared USB ownership and query the limit again.
+- Tests validate order and completion, the 40-row final band/last marker,
+  immutability, Stage B descriptor compatibility, frame splitting,
+  cancellation, incomplete/duplicate bands, and 4-MiB rejection.
+- No new USB/CAPT command, job or PrintService is enabled by this PR.
+  The buffered page exists only during the current offline worker operation;
+  document bytes, compressed bytes, paths and hashes are not exported.
+  A single shared print-job owner, fail-closed physical transport,
+  page-counter confirmation and one physical PDF test remain pending.
