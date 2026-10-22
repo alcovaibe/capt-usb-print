@@ -311,7 +311,15 @@ class DocumentActivity : Activity() {
 
     override fun onDestroy() {
         generation++
-        worker.shutdownNow()
+        ++previewGeneration
+        preview.clearImage()
+        displayedBitmap?.recycle()
+        displayedBitmap = null
+        val owned = session
+        session = null
+        // Enqueue deletion after all active preview jobs have finished.
+        worker.execute { owned?.close() }
+        worker.shutdown()
         super.onDestroy()
     }
 
