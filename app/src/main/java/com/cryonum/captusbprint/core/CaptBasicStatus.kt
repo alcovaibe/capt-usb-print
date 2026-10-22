@@ -48,6 +48,48 @@ object CaptStatusFlagDecoder {
         )
     )
 
+    fun basic(value: Int): List<String> = basicFlags(value)
+    fun secondary(value: Int): List<String> = secondaryFlags(value)
+
+    fun auxiliary(value: Int): List<String> = decode(value, 0x86, listOf(
+        0x02 to "PRINTER_BUSY",
+        0x04 to "PAPER_DELIVERY",
+        0x80 to "SAFE_TIMER"
+    ))
+
+    fun engineCommunication(value: Int): List<String> = decode(value, 0x7f, listOf(
+        0x01 to "OVERRUN",
+        0x02 to "UNDERRUN",
+        0x04 to "MISSING_EOP",
+        0x08 to "INVALID_DATA",
+        0x10 to "ENGINE_COMM_ERROR",
+        0x20 to "ENGINE_RESET",
+        0x40 to "PRINT_REJECTED"
+    ))
+
+    fun engine(value: Int): List<String> {
+        val flags = value and 0xffff
+        val bits = listOf(
+            0x0002 to "SERVICE_CALL",
+            0x0004 to "CLEANING",
+            0x0008 to "ILLEGAL_CONNECTION",
+            0x0100 to "PAPER_JAM",
+            0x2000 to "NO_CARTRIDGE",
+            0x4000 to "DOOR_OPEN"
+        )
+        val result = bits.filter { (bit, _) -> flags and bit != 0 }.map { it.second }.toMutableList()
+        val known = bits.fold(0) { mask, item -> mask or item.first }
+        val unknown = flags and known.inv()
+        if (unknown != 0) result += "UNKNOWN_0x" + "%04X".format(unknown)
+        return result.ifEmpty { listOf("NONE") }
+    }
+
+    fun paper(value: Int): String = when {
+        (value and 0x80) != 0 -> "PAPER_AVAILABLE"
+        (value and 0xff) == 0 -> "NO_PAPER"
+        else -> "UNKNOWN_0x" + "%02X".format(value and 0xff)
+    }
+
     private fun decode(value: Int, knownMask: Int, bits: List<Pair<Int, String>>): List<String> {
         val normalized = value and 0xff
         val result = bits.filter { (bit, _) -> normalized and bit != 0 }
