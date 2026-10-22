@@ -1,12 +1,12 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Current stage: **A and B physically owner-accepted; Stage C first real PDF single-sheet action wired as an explicitly confirmed experimental action (hardware PDF result pending), not yet physically confirmed.** Historical Stage A notes below are retained for traceability; the current summary is at the end of this file.
+Updated: 2026-10-22. Current stage: **A and B physically owner-accepted. Owner printed actual PDF pages 1 and 2 as separate jobs on signed build 105 after a printer power cycle. Stage C remains in development: PR #25 adds an unverified 2–3-sheet PDF pilot; ReserveUnit 0x8C, unified queue/lifecycle and image printing remain open.** Historical Stage A notes below are retained for traceability; the current summary is at the end of this file.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
 - Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, and a successful physical PrintHand test page. Latest signed app report confirms VID/PID 04A9:2676, granted USB permission, interface 0/alt 0 class 7/subclass 1/protocol 2, OUT BULK 0x0001, IN BULK 0x0082, unique link selection, successful non-forced claim, and a valid GetInputStatus response.
 - No subscription, PrintHand dependence, cloud, INTERNET permission, public release or printer firmware/service commands.
-- Stage A USB diagnostics remain read-only; Stage B physical single-sheet, repeat-job and two-different-sheets-in-one-job tests were accepted on build 71. Stage C real PDF output remains unverified; D/E have not been accepted.
+- Stage A USB diagnostics remain read-only; Stage B physical single-sheet, repeat-job and two-different-sheets-in-one-job tests were accepted on build 71. Stage C single-sheet PDF output is owner-confirmed on build 105; multi-sheet PDF, image printing and production stability remain unverified. D/E have not been accepted.
 
 ## Upstream research (historical Stage A audit; HISCOA subsequently imported for Stage B)
 - Candidate: \`ValdikSS/captdriver\` branch \`val\` at \`892f320c019974a5b737e000fcc2c8582264a131\`; README focuses LBP2900/3000/6000, claims multi-page, streaming and state-handling improvements; known aborts after paper jams/cartridge/door conditions. \`src/prn_lbp2900.c\` contains model-specific job/page control; \`capt-command.c\` framing; \`capt-status.c\` status decoding; \`generic-ops.c\` flow control; \`hiscoa-compress.c\` raster compression; \`rastertocapt.c\` includes CUPS raster dependency and Linux/POSIX calls. Do NOT assume other printer generations share command semantics.

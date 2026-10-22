@@ -46,6 +46,7 @@ class PdfBatchEngineTest {
         var noPaperOnPage = 0
         var rejectEnd = false
         var bufferSlots = 15
+        var drainOnStart = false
         var onBasic: () -> Unit = {}
 
         override fun query(command: Int, payload: ByteArray): ByteArray {
@@ -69,6 +70,7 @@ class PdfBatchEngineTest {
                 P.START_PRINT -> {
                     val number = payload[0].toInt() and 255
                     starts.add(number)
+                    if (drainOnStart) bufferSlots = 15
                     if (number != stalledPage) completed = number
                 }
                 P.GET_EXTENDED_STATUS -> return observed.copyOf().also {
@@ -130,6 +132,16 @@ class PdfBatchEngineTest {
         assertEquals(listOf(1, 2), printer.starts)
         assertEquals(listOf(1, 2, 6), printer.flags)
         assertEquals(2, printer.descriptors)
+    }
+
+    @Test fun boundedBufferDrainStartsEachSheetOnlyOnce() {
+        val printer = Printer().apply { bufferSlots = 0; drainOnStart = true }
+        val result = run(printer)
+        assertEquals("printer_counter_confirmed", result.outcome)
+        assertEquals(listOf(1, 2, 3), printer.starts)
+        assertEquals(listOf(1, 2, 6), printer.flags)
+        assertTrue(result.trace.any { it.contains("during bounded buffer drain") })
+        assertTrue(printer.closed)
     }
 
     @Test fun capturedBusyStatusStopsBeforeReserve() {
