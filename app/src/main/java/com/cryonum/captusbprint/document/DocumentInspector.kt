@@ -32,7 +32,14 @@ object DocumentInspector {
     private const val MAX_DIMENSION = 50_000
     private const val MAX_IMAGE_PIXELS = 150_000_000L
 
-    fun inspect(context: Context, uri: Uri): DocumentOverview {
+    fun inspect(context: Context, uri: Uri): DocumentOverview =
+        openSession(context, uri).use { it.overview }
+
+    /**
+     * Keep one validated, bounded private copy for page-by-page previews.
+     * Caller must close the returned session when replacing or leaving a file.
+     */
+    fun openSession(context: Context, uri: Uri): DocumentSession {
         require(uri.scheme == "content") { "Only user-granted content URI is supported" }
         val reportedSize = context.contentResolver.query(uri,
             arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
@@ -75,12 +82,14 @@ object DocumentInspector {
             val read = FileInputStream(temp).use { it.read(header) }
             val format = DocumentSignature.detect(header.copyOf(maxOf(0, read)))
                 ?: throw IllegalArgumentException("Unsupported or invalid PDF/JPEG/PNG")
-            return when (format) {
+            val overview = when (format) {
                 DocumentFormat.PDF -> inspectPdf(temp, total)
                 DocumentFormat.JPEG, DocumentFormat.PNG -> inspectImage(temp, format, total)
             }
-        } finally {
+            return DocumentSession(temp, overview)
+        } catch (error: Exception) {
             temp.delete()
+            throw error
         }
     }
 

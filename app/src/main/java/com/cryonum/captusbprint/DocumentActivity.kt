@@ -3,6 +3,7 @@ package com.cryonum.captusbprint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +18,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.cryonum.captusbprint.document.DocumentInspector
 import com.cryonum.captusbprint.document.DocumentOverview
+import com.cryonum.captusbprint.document.DocumentSession
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
 import java.util.concurrent.Executors
@@ -33,7 +35,12 @@ class DocumentActivity : Activity() {
     private lateinit var copies: EditText
     private lateinit var orientation: RadioGroup
     private lateinit var planResult: TextView
+    private lateinit var preview: DocumentPreviewPanel
     private var inspectedDocument: DocumentOverview? = null
+    private var session: DocumentSession? = null
+    private var displayedBitmap: Bitmap? = null
+    private var displayedPage = 0
+    private var previewGeneration = 0
     private var generation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,8 +54,8 @@ class DocumentActivity : Activity() {
             textSize = 22f
         })
         layout.addView(TextView(this).apply {
-            text = "Проверка PDF, JPEG и PNG без печати. Файл не передаётся в сеть. " +
-                "Здесь можно проверить план страниц и копий, но просмотр содержимого и печать ещё не включены."
+            text = "PDF, PNG и JPEG: локальный постраничный предпросмотр и план задания. " +
+                "Файл не передаётся в сеть. Предпросмотр не отправляет документ на принтер."
             textSize = 16f
         })
         layout.addView(Button(this).apply {
@@ -62,6 +69,13 @@ class DocumentActivity : Activity() {
             setTextIsSelectable(true)
         }
         layout.addView(message)
+        preview = DocumentPreviewPanel(this).apply {
+            onPrevious = { requestPreview(displayedPage - 1) }
+            onNext = { requestPreview(displayedPage + 1) }
+        }
+        layout.addView(preview, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = 20
+        })
         planSection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -165,15 +179,46 @@ class DocumentActivity : Activity() {
 
     private fun inspect(uri: Uri) {
         val request = ++generation
+        ++previewGeneration
+        val previous = session
+        session = null
         inspectedDocument = null
+        displayedBitmap?.let {
+            preview.clearImage()
+            it.recycle()
+            displayedBitmap = null
+        }
+        preview.visibility = View.GONE
         planSection.visibility = View.GONE
-        message.text = "Проверка выбранного документа… На принтер ничего не отправляется."
+        message.text = "Проверка выбранного документа и подготовка первой страницы…"
         worker.execute {
-            val outcome = runCatching { DocumentInspector.inspect(applicationContext, uri) }
+            // The worker serializes all renders; never delete a source mid-render.
+            previous?.close()
+            val outcome = runCatching {
+                val opened = DocumentInspector.openSession(applicationContext, uri)
+                try {
+                    opened to opened.renderPreview(0, 1000, 1450)
+                } catch (error: Throwable) {
+                    opened.close()
+                    throw error
+                }
+            }
             runOnUiThread {
-                if (isFinishing || isDestroyed || request != generation) return@runOnUiThread
-                message.text = outcome.fold({ doc ->
+                if (isFinishing || isDestroyed || request != generation) {
+                    outcome.getOrNull()?.let { (opened, bitmap) ->
+                        bitmap.recycle()
+                        opened.close()
+                    }
+                    return@runOnUiThread
+                }
+                message.text = outcome.fold({ (opened, bitmap) ->
+                    session = opened
+                    val doc = opened.overview
                     inspectedDocument = doc
+                    displayedBitmap = bitmap
+                    displayedPage = 0
+                    preview.showDocument()
+                    preview.showBitmap(bitmap, 0, doc.pageCount)
                     pageRange.setText("")
                     copies.setText("1")
                     (orientation.getChildAt(0) as RadioButton).isChecked = true
@@ -183,13 +228,42 @@ class DocumentActivity : Activity() {
                     "${doc.format.label}: ${doc.pageCount} стр.; " +
                         "${doc.width} × ${doc.height} ${doc.dimensionsUnit}${rotation}; " +
                         "${doc.copiedBytes} байт.\n" +
-                        "Проверка успешна. Печать и загрузка в сеть не выполнялись."
+                        "Предпросмотр готов. Печатные и сетевые команды не выполнялись."
                 }, { error ->
+                    preview.visibility = View.GONE
                     when (error) {
                         is SecurityException -> "Нет доступа к документу или PDF защищён паролем."
-                        is IllegalArgumentException -> "Файл не поддерживается, повреждён или превышает безопасные пределы проверки."
-                        else -> "Не удалось прочитать документ. Проверь доступность файла и свободное место."
+                        is IllegalArgumentException -> "Файл не поддерживается, повреждён или превышает безопасные пределы."
+                        else -> "Не удалось открыть предпросмотр. Проверь доступность файла и свободное место."
                     } + "\nПечатные команды не отправлялись."
+                })
+            }
+        }
+    }
+
+    private fun requestPreview(index: Int) {
+        val opened = session ?: return
+        if (index !in 0 until opened.overview.pageCount) return
+        val request = generation
+        val previewRequest = ++previewGeneration
+        preview.setLoading()
+        worker.execute {
+            if (request != generation) return@execute
+            val outcome = runCatching { opened.renderPreview(index, 1000, 1450) }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || request != generation ||
+                    previewRequest != previewGeneration) {
+                    outcome.getOrNull()?.recycle()
+                    return@runOnUiThread
+                }
+                outcome.fold({ bitmap ->
+                    preview.clearImage()
+                    displayedBitmap?.recycle()
+                    displayedBitmap = bitmap
+                    displayedPage = index
+                    preview.showBitmap(bitmap, index, opened.overview.pageCount)
+                }, {
+                    preview.showError("Не удалось показать страницу ${index + 1}. Выберите другой документ.")
                 })
             }
         }
@@ -237,7 +311,15 @@ class DocumentActivity : Activity() {
 
     override fun onDestroy() {
         generation++
-        worker.shutdownNow()
+        ++previewGeneration
+        preview.clearImage()
+        displayedBitmap?.recycle()
+        displayedBitmap = null
+        val owned = session
+        session = null
+        // Enqueue deletion after all active preview jobs have finished.
+        worker.execute { owned?.close() }
+        worker.shutdown()
         super.onDestroy()
     }
 
