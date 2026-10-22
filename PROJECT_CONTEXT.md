@@ -1,6 +1,6 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Current stage: **A and B physically owner-accepted; Stage C first real PDF single-sheet action wired in an unmerged experimental PR, not yet physically confirmed.** Historical Stage A notes below are retained for traceability; the current summary is at the end of this file.
+Updated: 2026-10-22. Current stage: **A and B physically owner-accepted; Stage C first real PDF single-sheet action wired as an explicitly confirmed experimental action (hardware PDF result pending), not yet physically confirmed.** Historical Stage A notes below are retained for traceability; the current summary is at the end of this file.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
@@ -263,4 +263,4 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - `main` baseline: `95c715f4d8696dc9e4b8d45cbf8e7431effa81e5`; Stage B owner-accepted on signed build 71; PDF page 1/11 previously completed offline: 110 HISCOA bands, 277764 compressed bytes, 278204 framed bytes. No PDF sheet physically confirmed.
 - Branch `feat/stage-c-first-explicit-pdf-sheet`: a fail-closed gate requires exactly the visible PDF page, one copy, A4 portrait and a completed preview, followed by a separate real-print confirmation. Identifies exactly one LBP2900 with pre-granted USB permission. Uses existing bounded PDF preparation and previously unwired `CaptPdfPrintEngine`. No auto-retry and no Stage B engine changes.
 - Private `capt-pdf-print-latest.json` records PREPARING / USB_ATTEMPT_STARTED / final result without URI, document title, content, raster or serial. USB_ATTEMPT_STARTED without a final status remains uncertain after process loss. A separate document-screen button explicitly shares the report.
-- Next: pass PR CI, then owner-approved merge to private main and a controlled physical one-page PDF test. Check paper, inspect real sheet geometry/quality and send JSON only manually. Do not mark Stage C accepted based on build/CI alone. Unified queue, lifecycle, JPEG/PNG raster and PrintService remain pending.
+- Next: complete review and PR CI, publish only via the verified private signed-main pipeline, then conduct a controlled physical one-page PDF test. Check paper, inspect real sheet geometry/quality and send JSON only manually. Do not mark Stage C accepted based on build/CI alone. Unified queue, lifecycle, JPEG/PNG raster and PrintService remain pending.
