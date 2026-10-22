@@ -8,6 +8,12 @@
     <string name="probe_capt_extended_running">Запрос расширенного состояния CAPT…</string>
     <string name="probe_capt_input_status">Запросить GetInputStatus (диагностика, без печати)</string>
     <string name="probe_capt_printer_info">Получить параметры принтера (GetPrinterInfo, без печати)</string>
+    <string name="prepare_test_page">Подготовить тестовый растр (без печати)</string>
+    <string name="preparing_test_page">Кодирование тестовой страницы HISCOA (локально)…</string>
+    <string name="test_page_print">Напечатать один тестовый лист (эксперимент)</string>
+    <string name="cancel_test_page">Отменить текущий тест печати</string>
+    <string name="test_page_started">Подготовка тестового листа перед USB-печатью…</string>
+    <string name="test_page_cancel_requested">Запрошена отмена; автоматического повтора не будет.</string>
     <string name="probe_capt_failed">Запрос CAPT не выполнен: %1$s</string>
     <string name="probe_capt_unknown_error">неизвестная ошибка</string>
     <string name="refresh">Обновить список USB</string>
