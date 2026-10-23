@@ -38,7 +38,31 @@ class PrintQueueActivity : Activity() {
         jobs.removeAllViews()
         jobs.addView(TextView(this).apply { text = getString(R.string.queue_title); textSize = 22f })
         jobs.addView(TextView(this).apply { text = getString(R.string.queue_explanation) })
-        if (PrintQueueRuntime.isPaused()) {
+        val records = PrintQueueRuntime.snapshot()
+        val maintenance = PrintQueueRuntime.maintenanceState()
+        val busy = PrintQueueRuntime.isMaintenanceBusy()
+        val maintenanceText = when (maintenance) {
+            "BUSY" -> R.string.queue_clear_busy
+            "REQUIRED" -> R.string.queue_clear_required
+            "CLEARED" -> R.string.queue_clear_verified
+            "PAPER_NOT_READY" -> R.string.queue_paper_not_ready
+            else -> null
+        }
+        maintenanceText?.let { jobs.addView(TextView(this).apply { setText(it) }) }
+        jobs.addView(Button(this).apply {
+            setText(R.string.queue_clear_all); isEnabled = !busy
+            setOnClickListener {
+                AlertDialog.Builder(this@PrintQueueActivity).setMessage(R.string.queue_clear_confirm)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.queue_clear_all) { _, _ ->
+                        runCatching { PrintQueueService.clear(this@PrintQueueActivity) }.onFailure {
+                            Toast.makeText(this@PrintQueueActivity, R.string.queue_start_failed, Toast.LENGTH_LONG).show()
+                        }
+                    }.show()
+            }
+        })
+        if (PrintQueueRuntime.isPaused() && !busy && maintenance != "REQUIRED" &&
+            records.none { it.phase == QueuePhase.WAITING_PAPER }) {
             jobs.addView(TextView(this).apply { text = getString(R.string.queue_paused) })
             jobs.addView(Button(this).apply {
                 text = getString(R.string.queue_resume)
@@ -55,7 +79,6 @@ class PrintQueueActivity : Activity() {
                 }
             })
         }
-        val records = PrintQueueRuntime.snapshot()
         if (records.isEmpty()) jobs.addView(TextView(this).apply { setText(R.string.queue_empty) })
         records.asReversed().forEach { record ->
             jobs.addView(TextView(this).apply {
@@ -65,8 +88,26 @@ class PrintQueueActivity : Activity() {
                     (record.failure?.let { "\n" + getString(R.string.queue_failure, failure(it)) } ?: "")
                 textSize = 16f; setPadding(0, 24, 0, 8); setTextIsSelectable(true)
             })
+            if (record.phase == QueuePhase.WAITING_PAPER) {
+                jobs.addView(TextView(this).apply { setText(R.string.queue_paper_help) })
+                jobs.addView(Button(this).apply {
+                    text = getString(R.string.queue_paper_continue, record.confirmed + 1)
+                    isEnabled = !busy
+                    setOnClickListener {
+                        AlertDialog.Builder(this@PrintQueueActivity)
+                            .setMessage(getString(R.string.queue_paper_confirm, record.confirmed + 1))
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(R.string.queue_paper_continue_action) { _, _ ->
+                                runCatching { PrintQueueService.continuePaper(this@PrintQueueActivity, record.id) }
+                                    .onFailure { Toast.makeText(this@PrintQueueActivity,
+                                        R.string.queue_start_failed, Toast.LENGTH_LONG).show() }
+                            }.show()
+                    }
+                })
+            }
             if (!record.phase.terminal) jobs.addView(Button(this).apply {
-                setText(R.string.queue_cancel)
+                setText(if (record.cancelRequested) R.string.system_cancelling else R.string.queue_cancel)
+                isEnabled = !record.cancelRequested
                 setOnClickListener {
                     runCatching { PrintQueueRuntime.cancel(record.id) }.onFailure {
                         Toast.makeText(this@PrintQueueActivity,R.string.failure_preparation,Toast.LENGTH_LONG).show()
@@ -117,6 +158,10 @@ class PrintQueueActivity : Activity() {
         "CAPT_STATUS_CONFLICT" -> R.string.failure_status_conflict
         "CAPT_STATUS_INVALID" -> R.string.failure_status_invalid
         "PRINTER_STATUS", "PRINTER_ERROR" -> R.string.failure_printer
+        "PAPER_OUT" -> R.string.queue_waiting_paper
+        "PAPER_BOUNDARY_UNKNOWN" -> R.string.queue_paper_boundary_unknown
+        "PRINTER_CLEAR_REQUIRED" -> R.string.queue_clear_required
+        "RESUME_SOURCE_INVALID" -> R.string.queue_resume_source_invalid
         "PROCESS_INTERRUPTED", "SERVICE_INTERRUPTED" -> R.string.failure_interrupted
         "HISTORY_UNREADABLE" -> R.string.failure_history
         else -> R.string.failure_preparation
@@ -127,6 +172,7 @@ class PrintQueueActivity : Activity() {
         QueuePhase.WAITING_PRINTER -> R.string.queue_waiting_printer
         QueuePhase.TRANSMITTING -> R.string.queue_transmitting
         QueuePhase.WAITING_CONFIRMATION -> R.string.queue_waiting_confirmation
+        QueuePhase.WAITING_PAPER -> R.string.queue_waiting_paper
         QueuePhase.COUNTER_CONFIRMED -> R.string.queue_confirmed
         QueuePhase.CANCELLED -> R.string.queue_cancelled
         QueuePhase.ERROR -> R.string.queue_error

@@ -6,7 +6,7 @@ package com.cryonum.captusbprint.core
  */
 object CaptCommandAcks {
     private val commands = setOf(
-        CaptJobProtocol.SET_JOB_INFO2,
+        CaptJobProtocol.SET_JOB_INFO2, CaptJobProtocol.SET_LED_STATUS,
         CaptJobProtocol.GO_OFFLINE, CaptJobProtocol.GO_ONLINE,
         CaptJobProtocol.DISCARD_DATA, CaptJobProtocol.CLEAR_MIS_PRINT,
         CaptJobProtocol.CLEAR_ERROR, CaptJobProtocol.START_PRINT, CaptJobProtocol.RELEASE_UNIT

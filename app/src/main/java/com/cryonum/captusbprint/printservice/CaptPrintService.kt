@@ -19,7 +19,7 @@ class CaptPrintService : PrintService() {
     private val jobs = LinkedHashMap<PrintJobId, Handle>()
     private var connected = false
     private var drainScheduled = false
-    private class Handle(val job: PrintJob, val request: SystemPrintRequest) {
+    private class Handle(val job: PrintJob, val request: SystemPrintRequest?) {
         val generation = PrintQueueRuntime.cancelGeneration()
         val cancelled = AtomicBoolean(false)
         var importing = false
@@ -82,7 +82,11 @@ class CaptPrintService : PrintService() {
         when (record?.phase) {
             QueuePhase.COUNTER_CONFIRMED -> { if (!job.isStarted) job.start(); job.complete() }
             QueuePhase.CANCELLED -> job.cancel()
-            else -> {
+            else -> if (record != null && !record.phase.terminal && PrintQueueRuntime.owns(record.id)) {
+                // Retained paper-out sources stay blocked; only the queue's Continue action resumes them.
+                jobs[job.id] = Handle(job, null).apply { queueId = record.id }
+                updateJobs()
+            } else {
                 if (record != null && !record.phase.terminal) PrintQueueRuntime.cancel(record.id)
                 job.fail(getString(R.string.system_interrupted))
             }
@@ -92,6 +96,7 @@ class CaptPrintService : PrintService() {
     }
 
     private fun block(handle: Handle, reason: Int) {
+        if (handle.job.isQueued) handle.job.start()
         if (handle.job.isStarted) handle.job.block(getString(reason))
         else if (handle.job.isBlocked) handle.job.setStatus(getString(reason))
     }
@@ -99,7 +104,13 @@ class CaptPrintService : PrintService() {
         if (handle.cancelled.get() || handle.importing || handle.queueId != null) return
         val device = CanonUsbAvailability.grantedDevice(this)
         if (device == null) { block(handle, CanonUsbAvailability.reason(this)); return }
-        if (PrintQueueRuntime.isPaused()) { block(handle, R.string.system_queue_paused); return }
+        if (PrintQueueRuntime.isPaused()) {
+            block(handle, when (PrintQueueRuntime.maintenanceState()) {
+                "REQUIRED" -> R.string.queue_clear_required
+                "BUSY" -> R.string.queue_clear_busy
+                else -> R.string.system_queue_paused
+            }); return
+        }
         if (!PrintQueueRuntime.hasRoom()) { block(handle, R.string.system_queue_full); return }
         var descriptor: android.os.ParcelFileDescriptor? = null
         try {
@@ -112,7 +123,7 @@ class CaptPrintService : PrintService() {
             val deviceKey = device.deviceName
             intake.execute {
                 val outcome = runCatching {
-                    PrintQueueRuntime.enqueueSystem(applicationContext, input, handle.request,
+                    PrintQueueRuntime.enqueueSystem(applicationContext, input, requireNotNull(handle.request),
                         deviceKey) { handle.cancelled.get() || handle.generation != PrintQueueRuntime.cancelGeneration() }
                 }
                 main.post {
@@ -182,7 +193,10 @@ class CaptPrintService : PrintService() {
             }
             val id = handle.queueId
             if (id == null) { begin(handle); return@forEach }
-            val record = records[id] ?: return@forEach
+            val record = records[id]
+            if (record == null) {
+                handle.job.cancel(); jobs.remove(handle.job.id); return@forEach
+            }
             if (record.phase.terminal) {
                 when (record.phase) {
                     QueuePhase.COUNTER_CONFIRMED -> {
@@ -199,6 +213,9 @@ class CaptPrintService : PrintService() {
                 }
                 SystemPrintDiagnostics.record(this, "JOB_" + record.phase.name, queueId = id, error = record.failure)
                 jobs.remove(handle.job.id)
+            } else if (record.phase == QueuePhase.WAITING_PAPER) {
+                handle.job.setProgress(record.confirmed.toFloat() / record.sheets)
+                block(handle, R.string.queue_waiting_paper_system)
             } else if (PrintQueueRuntime.isPaused() && record.phase == QueuePhase.QUEUED) {
                 block(handle, R.string.system_queue_paused)
             } else {
@@ -216,8 +233,10 @@ class CaptPrintService : PrintService() {
         if (jobs.values.any { it.queueId != null }) scheduleDrain()
     }
     override fun onRequestCancelPrintJob(printJob: PrintJob) {
-        val handle = jobs[printJob.id]
-        if (handle == null) { reconcile(printJob); return }
+        val handle = jobs[printJob.id] ?: Handle(printJob, null).also {
+            it.queueId = printJob.tag?.removePrefix(QUEUE_TAG)?.toLongOrNull()
+            jobs[printJob.id] = it
+        }
         handle.cancelled.set(true)
         handle.queueId?.let { PrintQueueRuntime.cancel(it) }
         if (!handle.importing && handle.queueId == null) { printJob.cancel(); jobs.remove(printJob.id) }
@@ -231,7 +250,10 @@ class CaptPrintService : PrintService() {
         PrintQueueRuntime.removeListener(listener)
         jobs.values.forEach { handle ->
             handle.cancelled.set(true)
-            handle.queueId?.let { runCatching { PrintQueueRuntime.cancel(it) } }
+            handle.queueId?.let { id ->
+                if (PrintQueueRuntime.snapshot().firstOrNull { it.id == id }?.phase != QueuePhase.WAITING_PAPER)
+                    runCatching { PrintQueueRuntime.cancel(id) }
+            }
         }
         jobs.clear()
         SystemPrintDiagnostics.record(this, "SERVICE_DISCONNECTED")

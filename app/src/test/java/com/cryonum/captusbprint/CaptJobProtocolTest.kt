@@ -56,9 +56,18 @@ class CaptJobProtocolTest {
         assertEquals(0x34, continued[18].toInt() and 255)
         assertEquals(0x12, continued[19].toInt() and 255)
         assertThrows(IllegalArgumentException::class.java) {
-            CaptJobProtocol.jobInfo(0x1234, 4)
+            CaptJobProtocol.jobInfo(0x1234, 5)
         }
         assertArrayEquals(byteArrayOf(2, 0), CaptJobProtocol.pageNumber(2))
+    }
+
+    @Test fun abortUsesTheSameAnonymousReservationWithoutChangingOtherJobFields() {
+        val instant = Instant.parse("2026-10-22T08:00:00Z").toEpochMilli()
+        val started = CaptJobProtocol.jobInfo(0x1234, CaptJobProtocol.START_FLAG, instant, TimeZone.getTimeZone("UTC"))
+        val aborted = CaptJobProtocol.jobInfo(0x1234, CaptJobProtocol.ABORT_FLAG, instant, TimeZone.getTimeZone("UTC"))
+        assertEquals(4, aborted[16].toInt())
+        aborted[16] = started[16]
+        assertArrayEquals(started, aborted)
     }
 
     @Test fun pageNumberRequiresNonZeroSixteenBitIndex() {

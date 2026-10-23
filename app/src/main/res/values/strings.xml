@@ -57,7 +57,7 @@
     <string name="queue_transmitting">Передача принтеру</string>
     <string name="queue_waiting_confirmation">Ожидание подтверждения CAPT</string>
     <string name="queue_confirmed">Счётчики CAPT подтверждены; проверь листы</string>
-    <string name="queue_cancelled">Отменено до печати</string>
+    <string name="queue_cancelled">Отменено; уже принятый лист мог выйти</string>
     <string name="queue_error">Задание остановлено с ошибкой</string>
     <string name="queue_unknown">Исход неизвестен; возможна частичная печать</string>
     <string name="document_print">Добавить документ в очередь печати</string>
@@ -133,5 +133,19 @@
     <string name="system_cancelling">Остановка новых отправок… Уже принятый лист может выйти.</string>
     <string name="system_report">Поделиться JSON системной печати</string>
     <string name="system_pdf_format">Системная печать (PDF)</string>
+    <string name="queue_clear_all">Очистить очередь и принтер</string>
+    <string name="queue_clear_confirm">Остановить активную печать, удалить все задания и очистить буфер принтера? Уже принятый лист может выйти. Без USB очистку принтера подтвердить нельзя.</string>
+    <string name="queue_clear_busy">Останавливаем отправку и проверяем очистку принтера…</string>
+    <string name="queue_clear_required">Очистка принтера не подтверждена. Подключите включённый принтер, выдайте USB-разрешение и нажмите «Очистить очередь и принтер».</string>
+    <string name="queue_clear_verified">Очистка принтера подтверждена. Можно отправлять новое задание.</string>
+    <string name="queue_waiting_paper">Ожидает бумаги; продолжение вручную</string>
+    <string name="queue_waiting_paper_system">Загрузите бумагу. Откройте очередь CAPT USB Print и нажмите «Продолжить».</string>
+    <string name="queue_paper_help">Принтер сообщил об отсутствии бумаги. Загрузите бумагу и нажмите «Продолжить». Приложение проверит готовность и отправит только оставшиеся листы. Автоматического продолжения нет.</string>
+    <string name="queue_paper_continue">Продолжить с листа %1$d</string>
+    <string name="queue_paper_continue_action">Продолжить</string>
+    <string name="queue_paper_confirm">Бумага загружена? Проверить принтер и продолжить с листа %1$d? Нумерация относится к листам задания с учётом диапазона и копий.</string>
+    <string name="queue_paper_not_ready">Принтер ещё не сообщил готовность к продолжению. Проверьте загрузку бумаги и снова нажмите «Продолжить».</string>
+    <string name="queue_paper_boundary_unknown">Не удалось точно определить последний вышедший лист. Проверьте отпечатки; продолжение этого задания запрещено</string>
+    <string name="queue_resume_source_invalid">Сохранённые страницы повреждены или недоступны. Повторно выберите только оставшийся диапазон</string>
 </resources>
 

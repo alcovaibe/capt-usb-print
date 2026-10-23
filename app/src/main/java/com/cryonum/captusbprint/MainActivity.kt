@@ -26,6 +26,7 @@ import androidx.core.content.FileProvider
 import com.cryonum.captusbprint.BuildConfig
 import com.cryonum.captusbprint.core.DiagnosticJson
 import com.cryonum.captusbprint.core.CaptTestPagePreparation
+import com.cryonum.captusbprint.usb.CaptPrinterStateStore
 import com.cryonum.captusbprint.usb.CaptTestPrintEngine
 import com.cryonum.captusbprint.usb.CaptTwoPagePrintEngine
 import com.cryonum.captusbprint.usb.PermissionEvents
@@ -201,7 +202,9 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         scanGeneration += 1
-        worker.shutdownNow()
+        testPrintCancelled.set(true)
+        diagnosticCancelled.set(true)
+        worker.shutdown() // Let an aligned print session acknowledge cancel/release.
         super.onDestroy()
     }
 
@@ -412,9 +415,10 @@ class MainActivity : Activity() {
         testPrintInProgress = true
         testPrintCancelled.set(false)
         status.text = getString(R.string.test_page_started)
+        val printGeneration = CaptPrinterStateStore.generation()
         worker.execute {
             val result = CaptTestPrintEngine.run(applicationContext, row.deviceKey,
-                { testPrintCancelled.get() }) { progress ->
+                { testPrintCancelled.get() || CaptPrinterStateStore.generation() != printGeneration }) { progress ->
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) status.text = progress
                 }
@@ -460,9 +464,10 @@ class MainActivity : Activity() {
         testPrintInProgress = true
         testPrintCancelled.set(false)
         status.text = getString(R.string.two_page_started)
+        val printGeneration = CaptPrinterStateStore.generation()
         worker.execute {
             val result = CaptTwoPagePrintEngine.run(applicationContext, row.deviceKey,
-                { testPrintCancelled.get() }) { message ->
+                { testPrintCancelled.get() || CaptPrinterStateStore.generation() != printGeneration }) { message ->
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) status.text = message
                 }

@@ -26,6 +26,14 @@ data class JobSpecification private constructor(
         const val MAX_OUTPUT_PAGES = 2000
         const val MAX_COPIES = 20
 
+        /** Private prepared-spool metadata only; pages are revalidated before any USB operation. */
+        internal fun restorePrepared(indices: List<Int>, copies: Int, orientation: Orientation,
+                                     rotation: Int, layout: DocumentLayout): JobSpecification {
+            val validated = systemPdf(MAX_SOURCE_PAGES, indices, copies, orientation)
+            require(rotation == 0 || rotation == 90)
+            return JobSpecification(validated.pageIndices, copies, orientation, rotation, Paper.A4, layout)
+        }
+
         /** System PDF already includes the originating application's layout and page selection. */
         fun systemPdf(sourcePageCount: Int, indices: List<Int>, copies: Int,
                       orientation: Orientation): JobSpecification {

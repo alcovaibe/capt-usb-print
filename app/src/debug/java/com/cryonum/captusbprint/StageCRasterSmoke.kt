@@ -37,9 +37,8 @@ class StageCRasterSmoke : Instrumentation() {
                 check(PrintQueueRuntime.snapshot().any {
                     it.phase == QueuePhase.ERROR && it.failure == "PROCESS_INTERRUPTED"
                 }) { "Missing recovered job: ${PrintQueueRuntime.snapshot().map { it.phase.name + ":" + it.failure }}" }
-                check(File(context.noBackupFilesDir,"print-queue").listFiles()?.isEmpty() != false) { "Stale queue files remain" }
-                check(!PrintQueueRuntime.hasWork()) { "Recovery left runnable work" }
-                result.putString("stream", "CAPT_STAGE_C_RECOVERY_SMOKE_PASSED")
+                verifyPausedPaperRecovery()
+                result.putString("stream", "CAPT_STAGE_C_RECOVERY_SMOKE_PASSED\nCAPT_QUEUE_RECOVERY_SMOKE_PASSED")
                 finish(Activity.RESULT_OK,result)
                 return
             }
@@ -106,6 +105,7 @@ class StageCRasterSmoke : Instrumentation() {
                         PrintQueueRuntime.cancel(id)
                         check(!owned.exists())
                         verifyQueueReportExport(id)
+                        verifyMissingUsbDoesNotConsumeSuccessors(uri)
                     }
                 }
             }
@@ -114,6 +114,7 @@ class StageCRasterSmoke : Instrumentation() {
             DocumentInspector.openSession(context,recoveryUri).use { source ->
                 PrintQueueRuntime.enqueue(context,source,JobSpecification.create(1,"1",1),"offline-smoke-no-usb")
             }
+            seedPausedPaperFixtures()
             listOf(png,jpeg,pdf).forEach { it.delete() }
             result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_PASSED\nCAPT_QUEUE_REPORT_BUNDLE_SMOKE_PASSED\nCAPT_DIAGNOSTIC_SESSION_SMOKE_PASSED")
             finish(Activity.RESULT_OK,result)
@@ -121,6 +122,106 @@ class StageCRasterSmoke : Instrumentation() {
             result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_FAILED: ${error.javaClass.simpleName}: ${error.message}")
             finish(Activity.RESULT_CANCELED,result)
         }
+    }
+
+    /** A real pre-USB failure must remain ERROR and retain later queued documents. */
+    private fun verifyMissingUsbDoesNotConsumeSuccessors(uri: android.net.Uri) {
+        val context = targetContext
+        DocumentInspector.openSession(context, uri).use { source ->
+            val plan = JobSpecification.create(1, "1", 1)
+            val first = PrintQueueRuntime.enqueue(context, source, plan, "offline-smoke-no-usb")
+            val second = PrintQueueRuntime.enqueue(context, source, plan, "offline-smoke-no-usb")
+            PrintQueueRuntime.activate(first); PrintQueueRuntime.activate(second)
+            val done = java.util.concurrent.CountDownLatch(1)
+            val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+            com.cryonum.captusbprint.queue.PrintQueueWorker.execute {
+                try { PrintQueueRuntime.drain {} } catch (error: Throwable) { failure.set(error) }
+                finally { done.countDown() }
+            }
+            check(done.await(30, java.util.concurrent.TimeUnit.SECONDS) && failure.get() == null)
+            val records = PrintQueueRuntime.snapshot().associateBy { it.id }
+            check(records.getValue(first).phase == QueuePhase.ERROR)
+            check(records.getValue(first).failure == "PRINTER_DISCONNECTED")
+            check(!records.getValue(first).usbStarted)
+            check(PrintQueueRuntime.isPaused() && records.getValue(second).phase == QueuePhase.QUEUED)
+            check(File(context.noBackupFilesDir, "print-queue/$second/source.bin").isFile)
+            PrintQueueRuntime.cancel(second)
+            PrintQueueRuntime.resumeAfterInspection()
+        }
+    }
+
+    /** Synthetic paper boundaries written only in the debug emulator's private storage. No USB. */
+    private fun seedPausedPaperFixtures() {
+        val context = targetContext
+        val history = File(context.noBackupFilesDir, "print-history.json")
+        val json = JSONObject(history.readText())
+        val items = json.getJSONArray("jobs")
+        repeat(2) { number ->
+            val id = System.currentTimeMillis() + 100_000 + number
+            val directory = File(context.noBackupFilesDir, "print-queue/$id").apply { check(mkdir()) }
+            val page = StoredCaptPage.write(File(directory, "page-0.bin"), produce = { accept ->
+                var y = 0
+                while (y < 7016) {
+                    val lines = minOf(64, 7016 - y)
+                    accept(y, ByteArray(620 * lines)); y += lines
+                }
+            }, encode = { _, _, _, _ -> byteArrayOf(1) }, cancelled = { false }, reserve = {})
+            File(directory, "page-0.bin").copyTo(File(directory, "page-1.bin"))
+            File(directory, "resume.json").writeText(JSONObject()
+                .put("schemaVersion", 1).put("fixture", "synthetic-paper-pause")
+                .put("resumeAllowed", true).put("confirmed", 1).put("copies", 1)
+                .put("pages", org.json.JSONArray(listOf(0, 1))).put("orientation", "PORTRAIT")
+                .put("rotation", 0).put("layout", "APP_FIT")
+                .put("compressedBytes", JSONObject().put("0", page.compressedBytes).put("1", page.compressedBytes))
+                .toString())
+            if (number == 1) java.io.RandomAccessFile(File(directory, "page-1.bin"), "rw").use {
+                it.seek(8); it.write(2) // Valid sizes, corrupt strip CRC: must stop BEFORE maintenance/USB.
+            }
+            items.put(JSONObject().put("id", id).put("format", "PAPER_SMOKE_$number")
+                .put("sheets", 2).put("phase", "WAITING_PAPER").put("confirmed", 1)
+                .put("usbStarted", true).put("failure", "PAPER_OUT"))
+        }
+        json.put("paused", true)
+        val atomic = android.util.AtomicFile(history)
+        val out = atomic.startWrite()
+        try { out.write(json.toString().toByteArray()); atomic.finishWrite(out) }
+        catch (error: Throwable) { atomic.failWrite(out); throw error }
+    }
+
+    private fun verifyPausedPaperRecovery() {
+        val context = targetContext
+        check(PrintQueueRuntime.isPaused() && !PrintQueueRuntime.hasRunnableWork())
+        val valid = PrintQueueRuntime.snapshot().single { it.format == "PAPER_SMOKE_0" }
+        val corrupt = PrintQueueRuntime.snapshot().single { it.format == "PAPER_SMOKE_1" }
+        check(valid.phase == QueuePhase.WAITING_PAPER && valid.confirmed == 1)
+        check(PrintQueueRuntime.owns(valid.id) && PrintQueueRuntime.owns(corrupt.id))
+        PrintQueueRuntime.requestPaperContinuation(valid.id)
+        PrintQueueRuntime.continuePaper(valid.id) // Missing USB: keep waiting, never enqueue/replay the sheet.
+        check(PrintQueueRuntime.snapshot().first { it.id == valid.id }.phase == QueuePhase.WAITING_PAPER)
+        check(PrintQueueRuntime.snapshot().first { it.id == valid.id }.confirmed == 1)
+        check(!PrintQueueRuntime.hasRunnableWork())
+        val maintenance = com.cryonum.captusbprint.usb.CaptPrinterMaintenance.file(context)
+        val previousClear = maintenance.readText()
+        PrintQueueRuntime.requestPaperContinuation(corrupt.id)
+        PrintQueueRuntime.continuePaper(corrupt.id)
+        check(PrintQueueRuntime.snapshot().first { it.id == corrupt.id }.failure == "RESUME_SOURCE_INVALID")
+        check(maintenance.readText() == previousClear) { "Corrupt spool attempted printer maintenance" }
+        PrintQueueRuntime.requestClear()
+        PrintQueueRuntime.clearRequested()
+        check(PrintQueueRuntime.snapshot().isEmpty()) { "Clear left queue records" }
+        check(File(context.noBackupFilesDir, "print-queue").listFiles()?.isEmpty() != false)
+        check(!PrintQueueRuntime.hasWork())
+        check(com.cryonum.captusbprint.usb.CaptPrinterStateStore.requiresClear(context))
+        val report = JSONObject(maintenance.readText())
+        check(!report.getBoolean("cleared") && report.getString("failureClass") == "PRINTER_DISCONNECTED")
+        check(report.getJSONObject("protocolDiagnostics").isNull("reservedJobId"))
+        val bundle = QueueReportBundle.create(context)
+        try {
+            val json = JSONObject(bundle.readText())
+            check(json.getJSONArray("queue").length() == 0)
+            check(!json.getJSONObject("printerMaintenance").getBoolean("cleared"))
+            check(json.getJSONObject("printerReservation").getBoolean("requiresClear"))
+        } finally { bundle.delete() }
     }
 
     /** Real Android settings/JSON/AtomicFile round trip; no physical USB is present. */

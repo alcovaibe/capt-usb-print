@@ -1,208 +1,90 @@
-# Stage C — document intake foundation (no real-document printing yet)
+# Этап C — основа приёма документов: реальная печать документов ещё не включена
 
-Stage B was owner-accepted on 2026-10-22 after build 71 printed two distinct
-A4 pages in one reserved CAPT job. This change begins Stage C without
-altering the hardware-confirmed Stage B USB engines.
+Этап B принят владельцем 22 октября 2026 года после вывода двух разных листов A4 в одном зарезервированном задании CAPT на сборке 71. Это историческое изменение начинает этап C, не меняя аппаратно подтверждённые USB-движки этапа B.
 
-## Initial supported flow
-- Main screen offers **«Выбрать PDF / JPEG / PNG (без печати)»**.
-- Android ACTION_OPEN_DOCUMENT selects a user-granted content URI. The same
-  inspector is exposed as an ACTION_SEND receiver for supported MIME types.
-- A worker thread copies a bounded source (maximum 64 MiB) into an ephemeral
-  private cache file, including for providers without seekable descriptors.
-  Source MIME/filename cannot override checked PDF/JPEG/PNG magic bytes.
-- PDF metadata is read using Android PdfRenderer (requires seekable source).
-  Password-protected or unsupported PDFs return a visible error.
-- Image dimensions are probed without allocating a full-color bitmap.
-  The platform ExifInterface reads image rotation for review. Rotations not
-  yet handled by the limited metadata view are not silently normalized.
-- Invalid, empty, inaccessible, oversized or malformed documents are rejected.
-  Temporary files are deleted on success or failure.
-- No document contents, names or URIs enter exported diagnostic history.
-  No document print commands, Internet permission or automatic sharing are added.
+## Первоначально поддерживаемый путь
 
-## Owner-confirmed on-device intake and next offline plan
+- На главном экране есть **«Выбрать PDF / JPEG / PNG (без печати)»**.
+- Android ACTION_OPEN_DOCUMENT выбирает content URI с разрешением пользователя. Тот же обработчик доступен как получатель ACTION_SEND для поддерживаемых MIME-типов.
+- Рабочий поток копирует источник размером не более 64 МиБ во временный приватный файл кеша, в том числе если провайдер не даёт дескриптор с произвольным доступом. MIME/имя источника не переопределяют проверенные сигнатуры PDF/JPEG/PNG.
+- Метаданные PDF читаются Android PdfRenderer, которому нужен источник с произвольным доступом. Защищённые паролем и неподдерживаемые PDF дают видимую ошибку.
+- Размер изображения определяется без выделения полноразмерного цветного bitmap. Системный ExifInterface читает поворот для проверки. Повороты, ещё не поддержанные ограниченным представлением метаданных, не нормализуются молча.
+- Некорректные, пустые, недоступные, слишком большие и повреждённые документы отклоняются. Временные файлы удаляются при успехе и ошибке.
+- В экспортируемую диагностику не попадают содержимое, имена и URI документов. Команды печати документа, разрешение INTERNET и автоматическая отправка не добавляются.
 
-- On signed build 74, the owner confirmed that the HONOR X9c opened a PDF and displayed
-  its page count and document information. This verifies the local inspector for that
-  PDF only; JPEG, PNG, provider failures and actual rendering remain unverified on hardware.
-- DocumentActivity now shows optional page ranges (empty means all; e.g. `1–3, 5, 8`),
-  1–20 copies and A4 portrait/landscape after successful inspection. An explicit
-  **«Проверить план задания (без печати)»** validates and displays a bounded collated
-  output order using the existing immutable JobSpecification. Overlaps, missing pages,
-  malformed ranges and more than 2000 output sheets are rejected.
-- The metadata-only inspector still closes temporary sources. The preview session
-  retains one validated source only while the document screen is open. The page/copy
-  plan remains a pure calculation and does not enqueue or print that source; no
-  USB, CAPT, Telegram or PrintService commands are issued.
-- Dedicated unit tests cover page selection, page order, copies, orientation,
-  limits and malformed input.
+## Подтверждённый владельцем приём на устройстве и следующий автономный план
 
-## Explicitly NOT completed by this foundation
-The display-only visual preview needs device verification; actual print rasterization, geometry and monochrome conversion,
-PDF/image CAPT printing, applying the offline options to actual print jobs,
-cancellation, source access retention for queued jobs, single shared USB
-queue, system PrintService and real-document acceptance remain to be built.
-The importer and display preview perform *offline actions only*.
+- На подписанной сборке 74 владелец подтвердил открытие PDF на HONOR X9c и показ числа страниц/информации о документе. Это проверяет локальный обработчик только этого PDF; JPEG, PNG, ошибки провайдеров и реальное формирование изображения на оборудовании ещё не проверены.
+- После успешной проверки DocumentActivity показывает необязательные диапазоны (пусто — все; например, `1–3, 5, 8`), 1–20 копий и книжную/альбомную A4. Явная кнопка **«Проверить план задания (без печати)»** проверяет и показывает ограниченный порядок вывода с подборкой через прежний неизменяемый JobSpecification. Пересечения, отсутствующие страницы, неверные диапазоны и более 2000 листов отклоняются.
+- Обработчик только метаданных по-прежнему закрывает временные источники. Сеанс предпросмотра удерживает один проверенный источник только пока открыт экран документа. План страниц/копий остаётся чистым расчётом и не ставит источник в очередь/на печать; команды USB, CAPT, Telegram и PrintService не выполняются.
+- Отдельные модульные тесты покрывают выбор и порядок страниц, копии, ориентацию, ограничения и некорректный ввод.
 
+## Что эта основа явно не завершает
 
-## Offline visual preview (new implementation; owner hardware test pending)
+Экранный предпросмотр требует проверки на устройстве; ещё предстоит реализовать фактический печатный растр, геометрию и монохромное преобразование, печать PDF/изображений через CAPT, применение автономных настроек к реальной печати, отмену, сохранение доступа к исходнику в очереди, одну общую USB-очередь, системный PrintService и приёмку реальных документов. Импорт и экранный предпросмотр выполняют *только автономные действия*.
 
-- After a validated PDF/PNG/JPEG intake, the document screen displays a locally rendered page on a neutral paper-style surface. PDF supports previous/next page navigation; images appear as one page. No print button is added by this change.
-- Retain exactly one validated private file (up to 64 MiB) while the preview screen owns it. Release it when another document replaces it or the screen is destroyed. Do not log source names, content URIs, or page raster data.
-- Render only the requested PDF page using Android PdfRenderer, or sample a PNG/JPEG with BitmapFactory. Bound the displayed bitmap to a 1600-pixel edge and 2.4M pixels; apply EXIF orientation (including mirrored cases) to the sampled image. Work runs on one background executor and stale rendered bitmaps are recycled.
-- The visual preview is display-only. It does **not yet simulate the real 600-dpi print geometry**, apply copies/page ranges to actual output, generate HISCOA document frames, claim USB, or trigger Telegram. Those are subsequent Stage C milestones.
-- Owner acceptance still requires checking an actual PDF with several pages, one JPEG with EXIF rotation, one PNG, page navigation and repeated file changes on HONOR X9c. A green CI alone is insufficient.
+## Автономный визуальный предпросмотр — новая реализация, аппаратная проверка ожидается
 
-## Stage C implementation sequence
-1. Safe local import/format validation and document metadata (this PR).
-2. Immutable JobSpecification and normalized page range/copy plan: offline UI and
-   validation implemented; retained document ownership and the one shared queue pending.
-3. Actual 600dpi A4 preview-to-print geometry and sequential page rasterizer;
-   inspect text, formulas, thin lines, EXIF orientation and greyscale.
-4. Reuse Stage B CAPT engine for document pages without exposing a separate
-   USB claimant. Implement cancellation/uncertain-result states.
-5. Owner prints PDF, JPEG and PNG and checks page order, margins,
-   offline use, interruption and recovery before accepting Stage C.
+- После проверки PDF/PNG/JPEG экран локально формирует страницу на нейтральном фоне бумаги. Для PDF есть предыдущая/следующая страница; изображение — одна страница. Кнопка печати этим изменением не добавляется.
+- Пока экран владеет документом, сохраняется ровно один проверенный приватный файл до 64 МиБ. При замене документа/уничтожении экрана он освобождается. Имена, content URI и растровые данные страниц не журналируются.
+- Через Android PdfRenderer формируется только запрошенная страница PDF, PNG/JPEG уменьшается через BitmapFactory. Экранный bitmap ограничен стороной 1600 пикселей и 2,4 млн пикселей; к уменьшенному изображению применяется EXIF, включая зеркальные варианты. Работа идёт на одном фоновом исполнителе, устаревшие bitmap освобождаются.
+- Предпросмотр служит только для экрана: он **ещё не моделирует настоящую печатную геометрию 600 dpi**, не применяет копии/диапазоны к выводу, не создаёт кадры HISCOA документа, не захватывает USB и не запускает Telegram. Это следующие точки этапа C.
+- Для приёмки владелец должен проверить многостраничный PDF, JPEG с EXIF-поворотом, PNG, навигацию и многократную смену файлов на HONOR X9c. Одного зелёного CI недостаточно.
 
-Do not interpret the green app build as validation of physical document printing.
+## Последовательность реализации этапа C
 
+1. Безопасный локальный импорт, проверка формата и метаданные документа — этот PR.
+2. Неизменяемый JobSpecification и нормализованный план диапазонов/копий: автономный интерфейс и проверки реализованы, длительное владение документом и единая очередь ожидаются.
+3. Настоящая геометрия предпросмотра/печати A4 600 dpi и последовательный растеризатор; проверка текста, формул, тонких линий, EXIF и полутонов.
+4. Повторное использование CAPT этапа B для страниц документа без отдельного конкурирующего владельца USB. Реализация отмены/неопределённого результата.
+5. Владелец печатает PDF, JPEG, PNG и проверяет порядок, поля, автономную работу, прерывание и восстановление до принятия этапа C.
 
-## Stage C shared A4 layout proposal (feature branch, not yet merged or hardware-accepted)
+Зелёную сборку приложения нельзя считать подтверждением физической печати документов.
 
-- Pure `A4PageGeometry.fit` derives layout from the Stage B physically accepted
-  4960 × 7016 portrait A4 / 600-dpi grid. Landscape is a logical 7016 × 4960
-  sheet; mapping/rotation onto the portrait CAPT wire grid is NOT implemented.
-- The current FIT-only layout uses a symmetric provisional 260-pixel software
-  inset (about 11 mm at 600 dpi). This is a conservative layout choice informed
-  by Stage B registration marks, NOT a measured hardware printable boundary.
-  No 100% physical-size or margin-accuracy claim is made.
-- The display bitmap for each PDF page or EXIF-oriented JPEG/PNG is now composed
-  on a white A4 sheet from that same placement, scaled to bounded display size.
-  Portrait/landscape changes re-render the current page. The preview is still
-  display-quality, not a 600-dpi monochrome or CAPT print raster.
-- Pure JVM geometry tests check both logical orientations, bounds, aspect ratio,
-  preview-to-physical placement mapping, pixel budget and rejected invalid input.
-- Next: verify the new layout on HONOR (portrait/landscape PDF, EXIF JPEG, PNG);
-  implement bounded sequential print rasterization, rotation for landscape CAPT,
-  mono conversion and owner-measured printed scale BEFORE enabling document print.
-- Neither Stage B engines nor USB ownership, signed release, sharing or PrintService
-  are changed by this proposal.
+## Предложение общей компоновки A4 этапа C — ветка разработки, ещё не слито и не принято аппаратно
 
-## Stage C: Android 16 insets, explicit content rotation, offline PDF bands (PR pending)
+- Чистая `A4PageGeometry.fit` вычисляет компоновку из физически принятой книжной сетки этапа B 4960 × 7016, A4 / 600 dpi. Альбомный логический лист — 7016 × 4960; отображение/поворот на книжную сетку обмена CAPT ещё не реализованы.
+- Текущая компоновка только FIT использует симметричный предварительный программный отступ 260 пикселей (около 11 мм при 600 dpi). Это осторожный выбор по регистрационным меткам этапа B, а не измеренная аппаратная граница печати. Физический масштаб 100% и точность полей не заявляются.
+- Экранный bitmap каждой PDF-страницы или JPEG/PNG с EXIF размещается на белом A4 по той же схеме с уменьшением до ограниченного размера. Смена книжной/альбомной ориентации заново формирует текущую страницу. Это экранное качество, а не монохромный растр 600 dpi или CAPT.
+- Чистые JVM-тесты геометрии проверяют обе логические ориентации, границы, пропорции, соответствие экранного/физического размещения, бюджет пикселей и отказ некорректного ввода.
+- Далее: проверить компоновку на HONOR (книжный/альбомный PDF, EXIF JPEG, PNG); до включения печати реализовать ограниченное последовательное растрирование, поворот альбомной страницы для CAPT, монохромное преобразование и измерение печатного масштаба владельцем.
+- Движки этапа B, владение USB, подписанный выпуск, экспорт и PrintService этим предложением не меняются.
 
-- The owner inspected signed build 89 and confirmed A4 PDF preview. A portrait PDF
-  on landscape paper is intentionally smaller under FIT; this is not a printer fault.
-  Screenshot exposed scroll content moving underneath status/navigation bars.
-- The ScrollView **viewport** (not its inner scrolling content) now receives
-  system-bar, display-cutout and IME insets; clipToPadding protects scrolled text.
-- Orientation defaults to Auto, resolved from the FIRST document page (not device
-  rotation); portrait/landscape are explicit overrides. Auto does not promise
-  per-page mixed-orientation printing. A separate optional clockwise 90-degree
-  **content** rotation is retained in immutable JobSpecification and reused
-  by both PDF and EXIF-adjusted image previews. A portrait source on landscape
-  paper without content rotation still remains smaller under FIT.
-- Initial offline PDF PRINT-mode preparation streams one page in 64-line ARGB
-  strips at 4960 × 7016 A4/600 dpi. Each strip becomes MSB-first 1bpp with a
-  deterministic absolute-coordinate 4×4 ordered grayscale dither. The full
-  600-dpi ARGB page is never allocated; no full-page band list is retained.
-  The user-triggered current-page verification only counts bounded raster bytes.
-  It makes **no** USB, HISCOA, job, PrintService, Telegram or network call.
-- This new band prototype is deliberately **portrait only**. Landscape wire
-  rotation, JPEG/PNG full-resolution bands, validated HISCOA conversion, unified
-  job queue, physical document printing and interruption recovery are still
-  pending. Passing JVM and CI does NOT prove visual strip seams or printed DPI.
+## Этап C: отступы Android 16, явный поворот содержимого, автономные полосы PDF — PR ожидает проверки
 
+- Владелец проверил подписанную сборку 89 и подтвердил предпросмотр A4 PDF. Книжный PDF на альбомной бумаге намеренно уменьшается по FIT; это не ошибка принтера. Снимок выявил уход прокручиваемого содержимого под панели состояния/навигации.
+- Отступы системных панелей, выреза и клавиатуры получает **видимая область** ScrollView, а не внутреннее прокручиваемое содержимое; clipToPadding защищает прокручиваемый текст.
+- Ориентация по умолчанию «Авто» определяется ПЕРВОЙ страницей документа, а не поворотом устройства; книжная/альбомная выбираются явно. Авто не обещает смешанную ориентацию по страницам. Дополнительный независимый поворот **содержимого** на 90° по часовой стрелке хранится в неизменяемом JobSpecification и применяется к PDF и изображениям после EXIF. Книжный источник на альбомной бумаге без поворота содержимого всё равно уменьшается по FIT.
+- Первая автономная подготовка PDF в режиме PRINT передаёт одну страницу полосами ARGB по 64 строки на сетке A4/600 dpi 4960 × 7016. Каждая полоса превращается в MSB-first 1bpp с детерминированным упорядоченным дизерингом полутонов 4×4 по абсолютным координатам. Полная ARGB-страница 600 dpi не выделяется, полный список полос не хранится. Пользовательская проверка текущей страницы лишь считает ограниченные байты растра, **не вызывая** USB, HISCOA, задания, PrintService, Telegram и сеть.
+- Новый прототип полос намеренно **только книжный**. Поворот для альбомного обмена, полосы JPEG/PNG полного разрешения, проверенное преобразование HISCOA, единая очередь, физическая печать и восстановление прерываний ещё ожидаются. Успех JVM/CI не доказывает отсутствие швов полос и печатный DPI.
 
-## Stage C owner check of signed build 93 (2026-10-22)
+## Проверка подписанной сборки 93 владельцем — 22 октября 2026 года
 
-The owner checked the new signed build on HONOR X9c and explicitly confirmed all
-seven requested outcomes: status bar no longer overlaps text; Android bottom
-navigation does not obscure buttons; automatic A4 orientation selects portrait
-for the tested PDF; landscape toggle works; 90-degree content rotation works;
-PDF page navigation works; offline PDF current-page raster check finishes
-without an error. This is an owner-reported UI/offline acceptance, not a
-measured physical PDF print or evidence for JPEG/PNG print quality. Exact
-raster counts were not provided in that report.
+На HONOR X9c владелец явно подтвердил все семь запрошенных результатов: строка состояния больше не перекрывает текст; нижняя навигация Android не закрывает кнопки; автоматическая A4 выбирает книжную ориентацию проверенного PDF; работает альбомный режим; работает поворот содержимого на 90°; работает навигация PDF; автономная проверка растра текущей PDF-страницы завершается без ошибки. Это приёмка интерфейса/автономной подготовки по сообщению владельца, а не измеренный физический PDF-отпечаток или доказательство качества JPEG/PNG. Точные числа растра в отчёте не приводились.
 
-## Next offline-only milestone: PDF mono bands into HISCOA
+## Следующая исключительно автономная точка: монохромные полосы PDF в HISCOA
 
-- A manually invoked, portrait-only one-page pipeline reuses the Stage B
-  bundled native HISCOA codec, giving it exactly one 64-line (final 40-line)
-  MSB-first 1bpp band at a time. Last-band marker is set only on the final band.
-- Each incoming band must be sequential, correctly sized and within the
-  hardware-tested A4/600dpi grid. Every native output must be nonempty and at
-  most twice its input size plus 64 bytes; additionally cap total compressed
-  output at 12 MiB. Cancel before/between bands without any automatic retry.
-- Only the current raw and compressed bands are transiently held; the resulting
-  summary exposes band count, total raster bytes, total compressed bytes and
-  maximum compressed band length. Neither document contents nor a document hash,
-  source name or URI enter the diagnostic report.
-- **No CAPT framing, USB transfer, native encoder modifications, document
-  printing, queue submission, PrintService or new permission** is added.
-  The owner must validate native compression on HONOR separately. CI/JVM
-  tests use an injected fake codec and cannot prove native compression correctness.
-- After this checkpoint: validate a real PDF band preparation result, inspect
-  print-mode raster content/strip seams and grayscale, then design one shared
-  job-owner queue and a guarded, separately consented first physical PDF sheet.
+- Вручную запускаемый книжный одностраничный путь повторно использует включённый нативный HISCOA этапа B, передавая ровно одну полосу MSB-first 1bpp по 64 строки (последняя — 40). Признак последней полосы выставляется только на последней.
+- Полосы должны быть последовательными, правильного размера и внутри аппаратно проверенной сетки A4/600 dpi. Нативный результат должен быть непустым, не более удвоенного входа плюс 64 байта; весь сжатый результат ограничен 12 МиБ. Отмена до/между полосами — без автоматического повтора.
+- Временно удерживаются только текущие исходная/сжатая полосы; сводка содержит число полос, общий размер растра, сжатых данных и максимальную длину сжатой полосы. Содержимое документа, его хеш, имя источника и URI в диагностику не попадают.
+- **Форматирование CAPT, USB-передача, изменения нативного кодировщика, печать документа, постановка в очередь, PrintService и новые разрешения не добавляются.** Владелец отдельно проверяет нативное сжатие на HONOR. CI/JVM используют подставной кодек и не доказывают правильность настоящего нативного сжатия.
+- Далее: проверить реальные полосы PDF, их печатное содержимое/швы и полутона, затем спроектировать единую очередь владельца задания и отдельно разрешённый защищённый первый физический PDF-лист.
 
+## Этап C — подтверждённый HISCOA владельца и предложение буферизованной CAPT-страницы
 
-## Stage C — confirmed owner HISCOA check and buffered CAPT page proposal
+- Владелец предоставил снимок HONOR X9c с успешным автономным PDF/HISCOA для одной страницы: 110 полос, 4 349 920 байт MSB-first 1bpp, 277 764 сжатых байта, максимальная сжатая полоса 11 244 байта. Экран явно сообщал об отсутствии USB/CAPT-команд. Это доказывает выполнение на устройстве для проверенной страницы, **не** физическое качество, приём принтером или визуальную правильность каждой полосы.
+- Следующий приватный PR полностью готовит одну книжную A4 PDF-страницу автономно и удерживает только её *сжатые* 110 полос HISCOA до 4 МиБ — тот же бюджет, что у аппаратно проверенного этапа B. Массивы источника/кодировщика копируются, чтобы позднее не менять принятую подготовленную страницу; полная ARGB-страница не создаётся и не хранится.
+- Подготовленная страница выдаёт неизменённый дескриптор A4 этапа B и передаёт каждую полосу прежнему формирователю видеокадров CAPT C0A0. Упаковка ограничена одной полосой; кнопка локального предпросмотра моделирует её при **ранее наблюдавшемся** лимите порции 65 280 байт. Это не свежий GetPrinterInfo: будущий физический движок должен получить общее владение USB и снова запросить лимит.
+- Тесты проверяют порядок/полноту, последнюю полосу 40 строк/её маркер, неизменяемость, совместимость дескриптора этапа B, разбиение кадров, отмену, неполные/повторные полосы и отказ при превышении 4 МиБ.
+- Этот PR не включает новые USB/CAPT-команды, задание и PrintService. Буферизованная страница существует лишь во время текущей автономной фоновой операции; байты документа/сжатия, пути и хеши не экспортируются. Единый владелец задания, безопасно прекращающийся при ошибках физический транспорт, подтверждение счётчиками и один физический PDF-тест ещё ожидаются.
 
-- The owner supplied an HONOR X9c screenshot of a successful one-page,
-  offline PDF/HISCOA run: 110 bands, 4,349,920 bytes MSB-first 1bpp,
-  277,764 compressed bytes and a maximum compressed band of 11,244 bytes.
-  The screen explicitly stated no USB/CAPT commands were issued. This proves
-  on-device execution for the tested PDF page, **not** physical print quality,
-  printer reception, or per-band visual correctness.
-- The subsequent private PR prepares one complete portrait A4 PDF page
-  offline and retains only its *compressed* 110 HISCOA bands, capped at
-  4 MiB (same buffered-page budget as owner-tested Stage B). Source/encoder
-  arrays are copied so they cannot later mutate an accepted prepared page;
-  no full ARGB page is constructed or kept.
-- The prepared page exposes the unchanged Stage B A4 descriptor and feeds
-  each compressed strip to the unchanged Stage B CAPT C0A0 video framing
-  routine. Packetization is bounded one band at a time; the local preview
-  button dry-runs framing at the **previously observed** 65,280-byte chunk
-  limit. This is not a live GetPrinterInfo reading: a future real print
-  engine must acquire shared USB ownership and query the limit again.
-- Tests validate order and completion, the 40-row final band/last marker,
-  immutability, Stage B descriptor compatibility, frame splitting,
-  cancellation, incomplete/duplicate bands, and 4-MiB rejection.
-- No new USB/CAPT command, job or PrintService is enabled by this PR.
-  The buffered page exists only during the current offline worker operation;
-  document bytes, compressed bytes, paths and hashes are not exported.
-  A single shared print-job owner, fail-closed physical transport,
-  page-counter confirmation and one physical PDF test remain pending.
+## Приёмка моделируемых кадров CAPT владельцем — HONOR, 22 октября 2026 года
 
+Владелец сфотографировал неизменённый тестовый PDF, страницу 1 из 11, со всеми ожидаемыми итогами: 110 полос HISCOA; 4 349 920 исходных байт 1bpp; 277 764 сжатых байта; максимум 11 244 байта; 110 модельных видеокадров CAPT и 278 204 байта с обрамлением при ранее наблюдавшемся лимите 65 280. Приложение явно сообщало **об отсутствии USB/CAPT-команд**. Это принимает автономную интеграцию PDF → кадры CAPT для конкретной страницы, а не вывод принтера, механические поля, разные PDF-страницы и другие форматы изображений.
 
-## Owner acceptance of dry-run CAPT frames (HONOR, 2026-10-22)
+## Этап C: защищённый движок первого PDF — PR ещё без кнопки печати документа
 
-The owner photographed the unchanged test PDF, page 1 of 11, with all
-expected results: 110 HISCOA bands; 4,349,920 raw 1bpp bytes; 277,764
-compressed bytes; 11,244 largest band; 110 dry-run CAPT video frames and
-278,204 framed bytes at the previously observed 65,280 chunk limit.
-The app explicitly reported **no USB/CAPT commands**. This accepts the
-offline PDF-to-CAPT-frame integration for that specific page, not printer
-output, mechanical margins, mixed PDF pages or other image formats.
-
-## Stage C guarded first-PDF engine (PR, no UI-triggered document print yet)
-
-- Add process-local fail-fast `CaptUsbOwnership` lease for shared non-forced
-  claims: Stage B direct print sessions, future document session, explicit
-  read-only CAPT probes and diagnostic claim scan. A busy device is refused,
-  not queued or silently replayed. This is an in-process guard, not a
-  system-wide lock and does not replace the OS interface claim.
-- Add a separate **unwired** `CaptPdfPrintEngine`, accepting ONLY a fully
-  pre-compressed bounded one-page portrait `PreparedPdfCaptPage`. It follows
-  the proven Stage B guarded A4 job prologue, reads fresh GetPrinterInfo and
-  uses the reported safe transfer chunk, obtains one reservation, checks
-  printer state and a zero post-prologue CAPT page-counter baseline, sends
-  video frames with live buffer backpressure, starts one print, waits for
-  one completed/no outstanding page, ends/releases once. Failures after
-  reservation are reported as uncertain; no automatic retry or recovery.
-- The existing physical Stage B command sequence remains unchanged; only
-  session-level ownership is added. No document print button, PrintService,
-  new permission, automatic print on connect or background job is introduced.
-- Owner must separately consent to and inspect the **first real PDF page**
-  after tests pass and a later PR wires an explicit, confirmable UI action.
+- Добавлена общая процессная блокировка `CaptUsbOwnership` с немедленным отказом при занятости для захвата без принуждения: прямые сеансы этапа B, будущий сеанс документа, ручные запросы CAPT без записи и диагностический захват. Занятое устройство отклоняется, а не ставится на скрытое ожидание/повтор. Блокировка действует внутри процесса, не всей системы, и не заменяет захват интерфейса ОС.
+- Добавлен отдельный **не подключённый к интерфейсу** `CaptPdfPrintEngine`, принимающий ТОЛЬКО заранее полностью сжатую ограниченную книжную одностраничную `PreparedPdfCaptPage`. Он следует проверенной защищённой подготовке A4 этапа B, читает свежий GetPrinterInfo и использует сообщённую безопасную порцию, получает одно резервирование, проверяет состояние и нулевые счётчики после подготовки, отправляет видеокадры с живым контролем буфера, запускает одну печать, ожидает завершённую страницу без незавершённых, один раз завершает/освобождает. Ошибка после резервирования даёт неопределённость без автоматического повтора/восстановления.
+- Физическая последовательность этапа B сохраняется; добавлено только владение на уровне сеанса. Кнопка печати документа, PrintService, новое разрешение, автоматическая печать при подключении и фоновое задание не добавляются.
+- После тестов владелец должен отдельно разрешить и проверить **первую настоящую PDF-страницу**, когда последующий PR подключит явное подтверждаемое действие интерфейса.

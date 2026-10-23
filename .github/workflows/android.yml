@@ -2,7 +2,11 @@ name: CAPT USB Print checks and signed prerelease
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
   workflow_dispatch:
 permissions:
   contents: read
@@ -120,6 +124,7 @@ jobs:
             adb shell am force-stop com.cryonum.captusbprint.debug
             adb shell am instrument -w -e verifyRecovery true com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_STAGE_C_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
+            grep -F 'CAPT_QUEUE_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
 
   signing-availability:
     name: Owner signing configuration

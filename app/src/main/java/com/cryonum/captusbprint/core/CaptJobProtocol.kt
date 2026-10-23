@@ -12,6 +12,7 @@ object CaptJobProtocol {
     const val GET_INPUT_STATUS = 0xA0A1
     const val SET_POWER_DOWN = 0xE0BA
     const val SET_JOB_INFO2 = 0xE1A1
+    const val SET_LED_STATUS = 0xE1A2
     const val GO_OFFLINE = 0xE0A6
     const val GO_ONLINE = 0xE0A5
     const val DISCARD_DATA = 0xE0A4
@@ -24,6 +25,7 @@ object CaptJobProtocol {
     const val START_FLAG = 1
     const val CONTINUE_FLAG = 2
     const val END_FLAG = 6
+    const val ABORT_FLAG = 4
 
     fun reserveRequest(): ByteArray = ByteArray(8)
     fun powerDownSettings(): ByteArray = byteArrayOf(0, 0)
@@ -51,7 +53,7 @@ object CaptJobProtocol {
     fun jobInfo(jobId: Int, flag: Int, nowMillis: Long = System.currentTimeMillis(),
                 timeZone: TimeZone = TimeZone.getDefault()): ByteArray {
         require(jobId in 1..65535)
-        require(flag == START_FLAG || flag == CONTINUE_FLAG || flag == END_FLAG)
+        require(flag == START_FLAG || flag == CONTINUE_FLAG || flag == END_FLAG || flag == ABORT_FLAG)
         val calendar = Calendar.getInstance(timeZone).apply { timeInMillis = nowMillis }
         val data = ByteArray(72)
         data[16] = flag.toByte()

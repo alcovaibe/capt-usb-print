@@ -65,7 +65,8 @@ internal class CanonPrinterDiscovery(private val service: PrintService) : Printe
         if (isDestroyed) return
         val id = service.generatePrinterId(CanonUsbAvailability.LOCAL_ID)
         val ready = CanonUsbAvailability.grantedDevice(service) != null
-        val busy = com.cryonum.captusbprint.queue.PrintQueueRuntime.snapshot().any {
+        val busy = com.cryonum.captusbprint.queue.PrintQueueRuntime.isPaused() ||
+            com.cryonum.captusbprint.queue.PrintQueueRuntime.snapshot().any {
             it.phase != com.cryonum.captusbprint.queue.QueuePhase.QUEUED && !it.phase.terminal
         }
         val capabilities = PrinterCapabilitiesInfo.Builder(id)

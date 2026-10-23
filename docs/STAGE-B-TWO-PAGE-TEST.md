@@ -1,64 +1,29 @@
-# Stage B — two-page hardware experiment: accepted 2026-10-22
+# Этап B — аппаратный эксперимент с двумя страницами: принят 22 октября 2026 года
 
-The owner has now physically confirmed two different A4 sheets in one job:
-the second sheet contains the two additional lower-left bars. Build 71 JSON
-confirmed `oneReservedCaptJob=true`, `printerConfirmedPages=2`,
-`sentPrintDataBytes=46112`, `TWO_PAGES_CONFIRMED_BY_PRINTER` and one
-job end/release after counters completed 1 then 2. Stage B is owner-accepted.
-PDF/image document printing is not included in Stage B.
+Владелец физически подтвердил два разных листа A4 в одном задании: второй содержит две дополнительные полосы внизу слева. JSON сборки 71 подтвердил `oneReservedCaptJob=true`, `printerConfirmedPages=2`, `sentPrintDataBytes=46112`, `TWO_PAGES_CONFIRMED_BY_PRINTER` и одно завершение/освобождение задания после последовательного достижения счётчиками 1 и 2. Этап B принят владельцем. Печать документов PDF/изображений в этап B не входит.
 
-## Hardware facts and protocol source
+## Аппаратные факты и источник протокола
 
-- User-confirmed LBP2900 04A9:2676 on HONOR X9c (Android API 36).
-- Prior signed build 62 printed two independent one-page jobs successfully with
-  separate CAPT counters, but that is NOT yet proof of one two-page job.
-- Upstream ValdikSS/captdriver pinned commit
-  `892f320c019974a5b737e000fcc2c8582264a131`,
-  LBP2900 `lbp2900_page_prologue/page_epilogue`: successive IC_BEGIN_PAGE
-  descriptors, `StartPrint(N)`, one inter-page `SetJobInfo2(flag=2)`, and
-  `SetJobInfo2(flag=6)` + `ReleaseUnit` once at job completion.
+- Подтверждённый пользователем LBP2900 04A9:2676 на HONOR X9c (Android API 36).
+- Предыдущая подписанная сборка 62 успешно напечатала два независимых одностраничных задания с отдельными счётчиками CAPT; сами по себе они не доказывали одно двухстраничное задание.
+- Закреплённый коммит ValdikSS/captdriver `892f320c019974a5b737e000fcc2c8582264a131`, путь LBP2900 `lbp2900_page_prologue/page_epilogue`: последовательные дескрипторы IC_BEGIN_PAGE, `StartPrint(N)`, один межстраничный `SetJobInfo2(flag=2)` и однократные `SetJobInfo2(flag=6)` + `ReleaseUnit` при завершении задания.
 
-## Deliberately conservative implementation
+## Намеренно осторожная реализация
 
-- A *new, explicitly confirmed* UI action, not a second press of the one-page
-  button. The original one-page engine is unchanged.
-- Precompress both 4960x7016 600dpi A4 test rasters before opening USB, max
-  4 MiB compressed per page. The first page retains its verified registration
-  target; the second adds **two separate lower-left bars**.
-- One `CaptUsbSession`, one `ReserveUnit`, one job-start/GoOnline sequence.
-  Capture and check real counters after the prologue; only the physically
-  observed all-zero starting state is accepted for this first two-sheet test.
-- Send first descriptor and HISCOA bands, observing BufLevel before EVERY
-  video frame. Issue `StartPrint(1)` once after `IC_BLACK_END`, or before it
-  only to drain a verified zero-free-slot buffer.
-- Wait for first page's **new** completed/shipped counters, equal settled stage
-  counters and paper-delivery flag clear. Only then send continuation flag 2
-  using the SAME reserved JobID. No speculative page pipelining yet.
-- Send second descriptor and different bands; `StartPrint(2)` is permitted only
-  once page decoding has advanced to the second page of this job. Wait for two
-  newly completed pages and settled stage counters. Send job-end and release
-  exactly once, only after printer counter confirmation.
-- A failed/ambiguous step terminates the attempt without blind replay, automatic
-  reset, or unsafe cleanup commands. Captured trace and last raw reply remain
-  in the local bounded JSON history, exported **only** via the explicit
-  «Поделиться JSON-ответом» button.
+- *Новое, явно подтверждаемое* действие интерфейса, а не повторное нажатие одностраничной кнопки. Исходный одностраничный движок в этом изменении не менялся.
+- Оба тестовых растра A4 4960×7016, 600 dpi сжимаются до открытия USB, не более 4 МиБ на страницу. Первая страница сохраняет проверенную регистрационную мишень, вторая добавляет **две отдельные полосы внизу слева**.
+- Один `CaptUsbSession`, один `ReserveUnit`, одна последовательность начала задания/GoOnline. После подготовки снимаются и проверяются реальные счётчики; для первого двухстраничного теста принимается только физически наблюдавшееся полностью нулевое начальное состояние.
+- Передаются первый дескриптор и полосы HISCOA, BufLevel проверяется перед КАЖДЫМ видеокадром. `StartPrint(1)` отправляется один раз после `IC_BLACK_END` либо до него только для освобождения подтверждённо заполненного буфера с нулём свободных слотов.
+- Ожидаются **новые** счётчики завершённого/выданного первого листа, равенство установившихся счётчиков стадий и снятие флага выдачи бумаги. Лишь затем отправляется флаг продолжения 2 с ТЕМ ЖЕ зарезервированным JobID. Предположительной конвейеризации страниц пока нет.
+- Передаются второй дескриптор и отличающиеся полосы; `StartPrint(2)` разрешён только после перехода декодирования ко второй странице этого задания. Ожидаются две вновь завершённые страницы и согласованные счётчики стадий. Завершение и освобождение отправляются ровно один раз, только после подтверждения счётчиками принтера.
+- Ошибка/неоднозначность останавливает попытку без слепого повтора, автоматического сброса и небезопасных команд очистки. Трасса и последний необработанный ответ остаются в локальной ограниченной истории JSON; экспорт доступен **только** кнопкой «Поделиться JSON-ответом».
 
-## Owner test procedure (only after a signed CI-successful build)
+## Порядок проверки владельцем — только после подписанной сборки с успешным CI
 
-1. Have at least two plain A4 sheets loaded, turn on the Canon LBP2900, and
-   close other apps that may own the USB interface.
-2. Use the separate **«Напечатать 2 разных листа (одно задание, эксперимент)»**
-   action. Read the confirmation dialog and explicitly confirm once. It starts
-   actual printing; it is NOT a JSON-report button.
-3. Watch whether *two* pages emerge. Page 2 has the same top/left target plus
-   two extra horizontal bars lower on the sheet. Photograph them side-by-side
-   to compare position, rotation, missing data and physical sheet order.
-4. Tap **«Поделиться JSON-ответом»** once and supply the entire JSON.
-5. If only one or no sheet emerges, a timeout occurs, or the displayed result
-   is uncertain: **do not press Print again**. Preserve the state and share
-   diagnostics first. No automatic retry is implemented.
+1. Загрузить не менее двух обычных листов A4, включить Canon LBP2900 и закрыть другие приложения, которые могут владеть USB-интерфейсом.
+2. Использовать отдельное действие **«Напечатать 2 разных листа (одно задание, эксперимент)»**. Прочитать диалог и один раз явно подтвердить. Оно запускает настоящую печать, а не формирование JSON-отчёта.
+3. Проверить выход *двух* страниц. На второй — та же верхняя/левая мишень и две дополнительные горизонтальные полосы ниже. Сфотографировать листы рядом для сравнения положения, поворота, потерь данных и физического порядка.
+4. Один раз нажать **«Поделиться JSON-ответом»** и передать JSON целиком.
+5. Если вышел только один лист/ни одного, истёк таймаут или исход неопределён: **не нажимать печать снова**. Сохранить состояние и сначала отправить диагностику. Автоматического повтора нет.
 
-Acceptance was based on the owner's physical observation and JSON evidence
-from 0.1.0-a2.71 on 2026-10-22, not on green CI alone. Numerical positioning
-tolerances were not measured. Subsequent non-test-document rendering remains
-a separate Stage C verification.
+Приёмка основана на физических наблюдениях владельца и JSON сборки 0.1.0-a2.71 от 22 октября 2026 года, а не только на зелёном CI. Численные допуски позиционирования не измерялись. Последующее формирование нетестовых документов относится к отдельной проверке этапа C.

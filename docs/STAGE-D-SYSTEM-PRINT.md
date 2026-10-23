@@ -1,108 +1,45 @@
-# Stage D — Android system printing
+# Этап D — системная печать Android
 
-Base: owner-merged Stage C PR #25, `130c158f8288`; new private PR #26.
-Main CI 123 passed permanent signing and API 36 upgrade. Stage D is implemented
-in the feature branch; its CI and physical HONOR acceptance must be recorded
-separately. No physical Stage D result has been supplied.
+Историческая база: слитый владельцем PR №25 этапа C, `130c158f8288`; новый приватный PR №26. CI 123 в main прошёл постоянную подпись и обновление API 36. Этап D реализован в ветке; его CI и физическая приёмка HONOR фиксируются отдельно. На момент этой записи физического результата этапа D не было.
 
-## Flow and limits
+## Поток выполнения и ограничения
 
-Enable the CAPT USB Print service via the standard Android print-settings screen.
-MainActivity is also the service settings/printer-info destination for USB grants.
-Discovery only enumerates USB: stable local ID `canon-lbp2900-usb`, exactly one
-Canon 04A9:2676, no serial lookup or CAPT probe. Unavailable includes missing,
-multiple or ungranted devices. Availability does not claim the printer has paper
-or is ready to accept a CAPT reservation; the existing runner checks live status.
+Служба CAPT USB Print включается на стандартном экране печати Android. MainActivity также служит экраном настроек службы/сведений принтера для выдачи USB-разрешения. Обнаружение лишь перечисляет USB: постоянный локальный ID `canon-lbp2900-usb`, ровно один Canon 04A9:2676, без запроса серийного номера и CAPT. Отсутствующее, множественное или неразрешённое устройство недоступно. Доступность не означает наличие бумаги или готовность принять резервирование CAPT; живое состояние проверяет прежний движок.
 
-Advertise A4, 600 dpi, monochrome and simplex; provisional 433 mil margins
-correspond to C's 260 px software allowance and are not measured hardware limits.
-Accept Android's A4 mil rounding (8270×11690) and exact-mm rounding (8268×11693).
-Android/app layout handles those margins before delivery. The system raster path
-preserves 600/72 point scale with no second FIT/inset; landscape only rotates
-the logical sheet into the unchanged accepted portrait CAPT grid. Non-A4 page
-dimensions fail during preparation, before any USB job starts.
+Заявляются A4, 600 dpi, монохромная и односторонняя печать. Предварительные поля 433 mil соответствуют программному отступу C 260 px, а не измеренным аппаратным границам. Принимаются округление A4 Android в mil (8270×11690) и округление точных миллиметров (8268×11693). Компоновка Android/исходного приложения применяет поля до передачи. Системный путь сохраняет масштаб 600/72 в пунктах без повторного FIT/отступа; альбомный режим только поворачивает логический лист на прежнюю принятую книжную сетку CAPT. Размеры не-A4 отклоняются при подготовке до начала USB-задания.
 
-PrintService/PrintJob/PrintDocument API access is on the main thread. File/pipe
-reading, PDF inspection, rasterization and USB are off-main. Pipe intake closes
-the descriptor on every path, polls at most 250 ms per wait, times out after
-30 seconds and rejects >64 MiB. Incoming sources and compressed bands share the
-existing 256 MiB queue budget plus 8 MiB headroom. The four-job admission limit
-includes concurrent incoming source reservations. A pending Android job may
-block before intake for USB permission, queue capacity or explicit queue review.
+PrintService/PrintJob/PrintDocument вызываются на главном потоке. Чтение файлов/каналов, проверка PDF, растрирование и USB — вне него. Приём канала закрывает дескриптор на любом пути, ждёт порциями не более 250 мс, имеет таймаут 30 секунд и отклоняет более 64 МиБ. Входящие исходники и сжатые полосы делят прежнюю квоту очереди 256 МиБ с запасом 8 МиБ. Лимит четырёх заданий включает параллельные резервирования входящих исходников. Ожидающее задание Android может блокироваться до приёма из-за разрешения USB, ёмкости очереди или необходимости явного просмотра очереди.
 
-Both entry points use the same DocumentQueue/PrintQueueRuntime and one serial
-PrintQueueWorker. The system-bound service relies on Android's active-job binding,
-without starting a background foreground service. Foreground teardown cancels
-direct jobs only; service disable/disconnect cancels only its own jobs. Cancel-all
-also invalidates incoming pipes and pre-intake Android handles; completion of a
-previously accepted copy cannot reactivate cancelled work.
+Оба входа используют одни DocumentQueue/PrintQueueRuntime и последовательный PrintQueueWorker. Связанная системой служба опирается на привязку Android к активным заданиям, не запуская службу переднего плана из фона. Завершение службы переднего плана отменяет только прямые задания; отключение/разрыв системной службы — только её задания. Общая отмена также делает недействительными входящие каналы и задания Android до приёма; окончание ранее принятого копирования не может вернуть отменённую работу.
 
-## Page selection and copies
+## Выбор страниц и копий
 
-Standard Android PrintSpooler adjusts PrintJob document count/ranges to the
-delivered file and may physically remove unselected pages, then set ALL_PAGES.
-The original page numbers are not necessarily available to a print service.
-The resolver therefore treats consistent declared/PDF counts and ranges as file
-coordinates, never as proof that the file is the entire original document.
-ALL_PAGES prints the delivered PDF once. A reduced file with inconsistent
-original metadata is supported only when its count equals the normalized
-selection count. Ambiguous metadata, invalid/oversized ranges or inconsistent
-ALL_PAGES counts are rejected before USB. Do not guess a mapping for a partial
-cached superset. JSON records the actual request and resulting spool indices.
+Обычный Android PrintSpooler корректирует число страниц/диапазоны PrintJob под переданный файл, может физически удалить невыбранные страницы и выставить ALL_PAGES. Исходные номера не обязательно доступны службе. Поэтому при согласованных объявленных/PDF-числах и диапазонах обработчик трактует их как координаты файла, а не доказательство полного оригинала. ALL_PAGES печатает переданный PDF один раз. Сокращённый файл с несогласованными исходными метаданными поддерживается только при совпадении числа страниц с нормализованным выбранным количеством. Неоднозначность, некорректные/чрезмерные диапазоны и несогласованное число ALL_PAGES отклоняются до USB. Нельзя угадывать сопоставление для частичного кешированного расширенного набора. JSON фиксирует реальный запрос и получившиеся индексы подготовленного файла.
 
-References reviewed:
+Изученные источники:
+
 - [Android PrintDocument](https://developer.android.com/reference/android/printservice/PrintDocument)
-- [Android PrintService lifecycle/thread requirements](https://developer.android.com/reference/android/printservice/PrintService)
-- [Android PrintJob state APIs](https://developer.android.com/reference/android/printservice/PrintJob)
-- [AOSP RemotePrintDocument file-relative page tracking](https://android.googlesource.com/platform/frameworks/base/+/177eda822164aee78245a3d474f3a10aa9f2bd64/packages/PrintSpooler/src/com/android/printspooler/model/RemotePrintDocument.java)
-- [AOSP PrintActivity count/range adjustment and final PDF shredding](https://android.googlesource.com/platform/frameworks/base/+/61209bc/packages/PrintSpooler/src/com/android/printspooler/ui/PrintActivity.java)
+- [Жизненный цикл и требования к потокам Android PrintService](https://developer.android.com/reference/android/printservice/PrintService)
+- [API состояний Android PrintJob](https://developer.android.com/reference/android/printservice/PrintJob)
+- [AOSP RemotePrintDocument: страницы относительно файла](https://android.googlesource.com/platform/frameworks/base/+/177eda822164aee78245a3d474f3a10aa9f2bd64/packages/PrintSpooler/src/com/android/printspooler/model/RemotePrintDocument.java)
+- [AOSP PrintActivity: корректировка числа/диапазона и удаление страниц окончательного PDF](https://android.googlesource.com/platform/frameworks/base/+/61209bc/packages/PrintSpooler/src/com/android/printspooler/ui/PrintActivity.java)
 
-Copies expand once in JobSpecification, collated, reusing prepared page files.
-No copy field is passed into CAPT as another multiplier. C bounds remain:
-1000 source pages, 2000 sheets and 20 copies; unsupported requests fail without
-truncation. The application never sends its direct print path back into itself
-through PrintManager.
+Копии разворачиваются один раз в JobSpecification с подборкой по экземплярам и повторным использованием подготовленных файлов страниц. Поле числа копий не передаётся в CAPT как дополнительный множитель. Пределы C сохранены: 1000 исходных страниц, 2000 листов, 20 копий; неподдерживаемый запрос отклоняется без усечения. Приложение не направляет собственный прямой путь печати обратно себе через PrintManager.
 
-## Outcomes, cancellation and recovery
+## Исходы, отмена и восстановление
 
-Android job starts/blocks while obtaining its source and waiting for prerequisites.
-Queue state and confirmed counters drive system status/progress. Only complete
-printer-counter confirmation maps to completed. A safe pre-print cancellation
-maps to cancelled. Uncertain USB outcomes map to failed with an explicit unknown
-result message, including after cancellation; accepted sheets can still emerge.
-An uncertain/failed USB job pauses later queue work until explicit inspection.
+При получении источника и ожидании условий задание Android запускается/блокируется. Состояние очереди и подтверждённые счётчики определяют системный статус/прогресс. Только полное подтверждение счётчиками означает completed. Безопасная отмена до печати означает cancelled. Неопределённый USB-исход означает failed с явным сообщением о неизвестном результате, включая отмену; принятые листы ещё могут выйти. Неопределённое/неудачное USB-задание приостанавливает следующие до явной проверки.
 
-Tags persist before reading and before activation. On rebind, tagged attempts
-reconcile against durable queue history; their PDFs are not re-read or replayed.
-After interruption, inspect the output and create a new job for the desired
-remaining pages. Android's retry of the old tagged job does not silently reprint.
-Known ReserveUnit 0x8C remains unresolved; no reset, heartbeat or blind retry added.
+Метки сохраняются до чтения и активации. При повторной привязке помеченные попытки согласуются с долговременной историей; PDF не перечитывается и не печатается повторно. После прерывания нужно проверить отпечатки и создать новое задание только на оставшиеся нужные страницы. Повтор Android старого помеченного задания не печатает его молча заново. Известный ReserveUnit 0x8C на этой точке не решён; сброс, периодический сигнал активности и слепой повтор не добавлены.
 
-System routing/request/error history is bounded to 24 private events. A queue
-screen button explicitly exports it; per-job CAPT JSON has its own share button.
-Neither includes labels, document URIs, content/raster/hashes or printer serials.
-If HONOR does not route a job through Android PrintService, absence of a received
-job in this journal plus a second-source result helps distinguish that path.
+История системного маршрута/запросов/ошибок ограничена 24 приватными событиями. Кнопка очереди явно экспортирует её; CAPT JSON каждого задания в исходном интерфейсе имел отдельную кнопку. Имена документов, URI, содержимое/растр/хеши и серийные номера не включаются. Если HONOR не направляет задание в PrintService, отсутствие события приёма в этом журнале и результат второго приложения помогают отличить такой путь.
 
-## Owner hardware check after reviewed CI and a signed release
+## Аппаратная проверка владельцем после просмотренного CI и подписанного релиза
 
-1. Update the signed APK in place; connect one LBP2900, enable it and grant USB
-   access in CAPT USB Print. Open the system-print settings button and enable the
-   CAPT USB Print service.
-2. In HONOR Documents open a known PDF with at least three pages. Use system
-   Print, choose Canon LBP2900, A4 portrait, pages 2–3 and two copies.
-   Expected: four sheets in order 2, 3, 2, 3, retaining source layout.
-3. From a second app with Android system Print, send one known page, one copy.
-   Expected: one sheet and a separate job in the same CAPT queue.
-4. With the printer disconnected, try submitting a new system job if Android
-   permits it, then cancel it in Android's print-job UI. Expected: unavailable
-   or blocked/cancelled without USB traffic. Reconnecting must not replay a
-   cancelled/interrupted job. Do not reproduce a mechanical fault.
-5. Send the system-print JSON and the two per-job JSON reports from the queue
-   screen; state the app names, actual sheet count/order and any clipping/scale
-   issue. If a job fails or has unknown output, stop and send those reports before
-   another attempt.
+1. Обновить подписанный APK поверх, подключить один LBP2900, включить его и выдать доступ к USB в CAPT USB Print. Открыть системные настройки печати и включить службу CAPT USB Print.
+2. В HONOR Documents открыть известный PDF не менее чем с тремя страницами. Системная печать, Canon LBP2900, A4 книжная, страницы 2–3, две копии. Ожидаются четыре листа в порядке 2, 3, 2, 3 с сохранением исходной компоновки.
+3. Из второго приложения с системной печатью Android отправить одну известную страницу в одной копии. Ожидаются один лист и отдельное задание в той же очереди CAPT.
+4. При отключённом принтере попробовать новое системное задание, если Android позволяет, затем отменить в системном интерфейсе. Ожидается недоступное либо заблокированное/отменённое задание без USB-трафика. Переподключение не должно повторять отменённое/прерванное. Механическую неисправность воспроизводить не нужно.
+5. Отправить JSON системной печати и два JSON заданий с экрана очереди; указать приложения, фактическое число/порядок листов, обрезку/масштаб. При ошибке или неопределённом выводе остановиться и отправить отчёты до новой попытки.
 
-CI/emulator checks cannot establish HONOR routing, physical sheet quality or
-MagicOS lifecycle behavior. Do not mark Stage D accepted without the owner's
-result for HONOR Documents and the second source.
+CI/эмулятор не подтверждают маршрут HONOR, качество физических листов и жизненный цикл MagicOS. Этап D нельзя принимать без результата владельца для HONOR Documents и второго приложения.

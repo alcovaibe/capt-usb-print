@@ -27,6 +27,10 @@ class PrintQueueService : Service() {
             if (intent?.action == CANCEL) PrintQueueRuntime.stopServiceJobs()
             PrintQueueWorker.execute {
                     try {
+                        when (intent?.action) {
+                            CLEAR -> PrintQueueRuntime.clearRequested()
+                            CONTINUE -> PrintQueueRuntime.continuePaper(intent.getLongExtra("jobId", -1))
+                        }
                         PrintQueueRuntime.drain { record ->
                             runCatching {
                                 (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(17,
@@ -45,7 +49,12 @@ class PrintQueueService : Service() {
                     }
             }
         } catch (_: Exception) {
-            PrintQueueRuntime.serviceFailure(directOnly = true)
+            expectedStop.set(true)
+            when (intent?.action) {
+                CLEAR -> PrintQueueWorker.execute { runCatching { PrintQueueRuntime.clearRequested() } }
+                CONTINUE -> PrintQueueRuntime.maintenanceStartFailed()
+                else -> PrintQueueRuntime.serviceFailure(directOnly = true)
+            }
             stopSelf(startId)
         }
         return START_NOT_STICKY
@@ -68,14 +77,34 @@ class PrintQueueService : Service() {
     companion object {
         private const val CHANNEL = "capt_usb_jobs"
         private const val CANCEL = "com.cryonum.captusbprint.CANCEL_QUEUE"
-        fun start(context: Context) {
+        private const val CLEAR = "com.cryonum.captusbprint.CLEAR_QUEUE"
+        private const val CONTINUE = "com.cryonum.captusbprint.CONTINUE_PAPER"
+        fun clear(context: Context) {
+            PrintQueueRuntime.requestClear()
+            // Clearing local records works even without a connected/granted printer.
+            // In that case the worker reports printer clear as unconfirmed, without USB.
+            runCatching { start(context, CLEAR) }.onFailure {
+                PrintQueueWorker.execute { runCatching { PrintQueueRuntime.clearRequested() } }
+            }
+        }
+        fun continuePaper(context: Context, id: Long) {
+            // Check the grant BEFORE changing intent; no new permission dialog or replay.
+            com.cryonum.captusbprint.usb.CaptPrinterMaintenance.deviceKey(context)
+            PrintQueueRuntime.requestPaperContinuation(id)
+            runCatching { start(context, CONTINUE, id) }.onFailure {
+                PrintQueueRuntime.maintenanceStartFailed()
+                throw it
+            }
+        }
+        fun start(context: Context) = start(context, null)
+        private fun start(context: Context, action: String?, id: Long = -1) {
             val usb = context.getSystemService(Context.USB_SERVICE) as android.hardware.usb.UsbManager
             val device = usb.deviceList.values.filter {
                 com.cryonum.captusbprint.usb.UsbDeviceProfiles.identify(it.vendorId, it.productId)?.modelName == "Canon LBP2900"
             }.singleOrNull()
             check(device != null && usb.hasPermission(device)) { "A granted Canon USB device is required" }
             // Only callers reached from a visible Activity may start this service.
-            context.startForegroundService(Intent(context, PrintQueueService::class.java))
+            context.startForegroundService(Intent(context, PrintQueueService::class.java).setAction(action).putExtra("jobId", id))
         }
     }
 }

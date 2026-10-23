@@ -66,6 +66,7 @@ object CaptDocumentPreflight {
                 requireNotNull(extended.pageReceived) { "Missing received-page counter" }
                 CaptPageCounterProgress.hasNoOutstandingPage(extended)
             }
+            if (CaptPrinterRecovery.isPaperOut(extended)) throw CaptPaperOut(extended)
             if (extended.engineFlags != 0 || extended.engineCommunicationByte != 0 ||
                 extended.paperAvailabilityByte != 0x80 || (extended.basicStatusByte and 0x80) != 0) {
                 throw CaptPreflightFailure("PRINTER_STATUS",
