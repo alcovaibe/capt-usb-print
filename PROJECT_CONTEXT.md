@@ -1,5 +1,25 @@
 # CAPT USB Print — project context
 
+Latest UI checkpoint (2026-10-23): owner requested a targeted preview/queue cleanup,
+not the proposed broader redesign. Main no longer shows the Stage C heading,
+its introductory paragraph or the paragraph below Android print settings.
+Document intake loses its long introductory paragraph. The preview screen has
+fixed bottom print actions: ordinary queue printing and the restored explicit
+one-sheet portrait PDF pilot (`FirstPdfPrintGate` → `FirstPdfPrintAttempt`).
+The pilot retains the owner's earlier hardware-tested engine and requires exactly
+the visible PDF page, one copy and A4 portrait; it requires an idle queue,
+confirmation and USB permission. It cancels on leaving/destroying the screen;
+no background continuation or automatic retry is introduced. This does not
+establish a fix for system/general document printing or BasicStatus 0x88.
+Queue record descriptions/order/cancellation stay unchanged. Individual and
+system share buttons are replaced with one footer JSON bundle containing queue
+summaries, retained job reports, system routing, latest PDF and USB diagnostics.
+Only existing sanitized reports are read; no document/spool sources. Export is
+manual and off-main, bounded per report/total, with explicit omission reasons
+for unavailable/corrupt/oversized parts. Existing source privacy and signing stay.
+CI must validate final HEAD, including Android-36 export/FileProvider smoke.
+
+
 Updated: 2026-10-23. Latest checkpoint: **bounded document CAPT preflight reconciliation**
 from merged Stage D `main` `57a643dce995` / signed build 133. The owner's HONOR
 system job reached our service, imported and prepared its PDF, then stopped

@@ -12,6 +12,8 @@ import com.cryonum.captusbprint.core.Orientation
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.queue.PrintQueueRuntime
 import com.cryonum.captusbprint.queue.QueuePhase
+import com.cryonum.captusbprint.queue.QueueReportBundle
+import org.json.JSONObject
 import com.cryonum.captusbprint.document.*
 import java.io.File
 
@@ -102,6 +104,7 @@ class StageCRasterSmoke : Instrumentation() {
                         check(owned.isFile) // Preview teardown cannot delete the queue copy.
                         PrintQueueRuntime.cancel(id)
                         check(!owned.exists())
+                        verifyQueueReportExport(id)
                     }
                 }
             }
@@ -111,11 +114,47 @@ class StageCRasterSmoke : Instrumentation() {
                 PrintQueueRuntime.enqueue(context,source,JobSpecification.create(1,"1",1),"offline-smoke-no-usb")
             }
             listOf(png,jpeg,pdf).forEach { it.delete() }
-            result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_PASSED")
+            result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_PASSED\nCAPT_QUEUE_REPORT_BUNDLE_SMOKE_PASSED")
             finish(Activity.RESULT_OK,result)
         } catch (error: Throwable) {
             result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_FAILED: ${error.javaClass.simpleName}: ${error.message}")
             finish(Activity.RESULT_CANCELED,result)
         }
+    }
+
+    /** Real Android JSON/FileProvider checks on this smoke's own cancelled fixture. No USB. */
+    private fun verifyQueueReportExport(id: Long) {
+        val context = targetContext
+        val report = PrintQueueRuntime.reportFile(id)
+        check(!report.exists()) // This never-activated fixture has no real USB evidence to overwrite.
+        report.parentFile!!.mkdirs()
+        fun export() = QueueReportBundle.create(context)
+        try {
+            report.writeText("{\"schemaVersion\":2,\"jobId\":$id,\"phase\":\"CANCELLED\",\"fixture\":\"queue-export-smoke\"}")
+            val bundle = export()
+            val text = bundle.readText()
+            val json = JSONObject(text)
+            check(json.getString("reportType") == "queue_bundle")
+            check(!json.getBoolean("automaticRetry"))
+            check(json.has("systemPrint") && json.has("latestPdfPrint") && json.has("usbDiagnostics"))
+            check(json.getJSONArray("jobs").let { array -> (0 until array.length()).any {
+                array.getJSONObject(it).optLong("jobId") == id
+            } })
+            check(!text.contains("source.bin") && !text.contains("fixture.png"))
+            val uri = FileProvider.getUriForFile(context,"${context.packageName}.reportprovider",bundle)
+            context.contentResolver.openInputStream(uri)!!.use { check(it.read() == '{'.code) }
+            bundle.delete()
+            for ((content, reason) in listOf("{broken-json" to "UNREADABLE_OR_INVALID",
+                "x".repeat(1024 * 1024 + 1) to "SIZE_LIMIT")) {
+                report.writeText(content)
+                val rejected = export()
+                val omissions = JSONObject(rejected.readText()).getJSONArray("omittedReports")
+                check((0 until omissions.length()).any {
+                    val entry = omissions.getJSONObject(it)
+                    entry.optLong("jobId") == id && entry.getString("reason") == reason
+                })
+                rejected.delete()
+            }
+        } finally { report.delete() }
     }
 }

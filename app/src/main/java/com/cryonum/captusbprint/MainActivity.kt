@@ -111,22 +111,19 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(24))
         }
-        content.addView(text(getString(R.string.stage_title)).apply { textSize = 23f })
-        content.addView(text(getString(R.string.no_printing)))
         status = text(getString(R.string.permission_not_requested))
         content.addView(status)
         content.addView(button(getString(R.string.refresh)) {
             recordEvent("RefreshUsb", "requested", "User requested USB rescan")
             refresh()
         })
-        content.addView(button("Выбрать PDF / JPEG / PNG (без печати)") {
+        content.addView(button(getString(R.string.document_pick)) {
             startActivity(Intent(this, DocumentActivity::class.java))
         })
         content.addView(button(getString(R.string.system_settings)) {
             runCatching { startActivity(Intent(android.provider.Settings.ACTION_PRINT_SETTINGS)) }
                 .onFailure { Toast.makeText(this, R.string.system_settings_unavailable, Toast.LENGTH_LONG).show() }
         })
-        content.addView(text(getString(R.string.system_setup_help)))
         content.addView(button(getString(R.string.queue_title)) {
             startActivity(Intent(this, com.cryonum.captusbprint.queue.PrintQueueActivity::class.java))
         })

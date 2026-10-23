@@ -94,3 +94,19 @@ The JSON contains app version/revision, a scan text record plus structured numer
 
 The owner confirmed the first A4/600-dpi sheet, two repeat separate jobs, and two distinct sheets in one reserved CAPT job on signed build 71. CAPT completed counters matched each printed test; this is not proof of real PDF printing. Reports are saved locally and sent only by an explicit Share action. No automatic retry. See Stage B docs and THIRD-PARTY-NOTICES.md.
 
+
+### Preview print actions and one queue report
+
+Document print actions stay visible below the scrolling preview/settings screen.
+The ordinary action submits to the shared queue. The separate experimental PDF
+button restores the earlier one-sheet portrait path: select only the visible
+page, one copy and A4 portrait, with no unfinished queue jobs. It asks for explicit
+confirmation, uses the existing USB ownership/attempt lock and durable report,
+and cancels when leaving the screen. It is not an automatic fallback or repair
+for failed general/system jobs. Its last report is included in the queue export.
+
+Queue descriptions and newest-first ordering remain intact. One bottom button
+exports a single JSON with queue summaries and retained job/system/PDF/USB reports.
+It uses a temporary scoped FileProvider file, no document/spool data, per-part
+limits and an 8 MiB bundle ceiling. Missing, invalid or size-limited reports are
+listed under `omittedReports`; older reports already pruned are not fabricated.

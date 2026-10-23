@@ -61,6 +61,13 @@
     <string name="queue_error">Задание остановлено с ошибкой</string>
     <string name="queue_unknown">Исход неизвестен; возможна частичная печать</string>
     <string name="document_print">Добавить документ в очередь печати</string>
+    <string name="document_test_print">Тестовая печать PDF — один лист</string>
+    <string name="document_test_action">Напечатать один лист</string>
+    <string name="document_test_confirm">Напечатать текущую PDF-страницу %1$d прежним экспериментальным способом? Книжный A4, одна копия. Будут отправлены реальные команды принтеру. При выходе с экрана запрашивается отмена; принятый лист может выйти. Автоматического повтора нет.</string>
+    <string name="document_test_preparing">Подготовка одной PDF-страницы перед тестовой печатью…</string>
+    <string name="document_test_queue_busy">Сначала заверши или отмени ожидающие задания очереди. Тестовая PDF-печать запускается отдельно.</string>
+    <string name="document_test_failed">Тестовая попытка прервана. Проверь принтер и последний JSON перед повтором.</string>
+    <string name="queue_share_reports">Поделиться общим JSON-отчётом печати</string>
     <string name="document_print_confirm">Напечатать %1$d листов A4, копий: %2$d, исходные страницы: %3$s?
 Ориентация: %4$s. Поворот содержимого: %5$d°. Каждое задание отправляется один раз.</string>
     <string name="document_print_action">Добавить и напечатать</string>

@@ -11,14 +11,13 @@ import com.cryonum.captusbprint.document.PreparedPdfCaptPage
 import java.util.Locale
 
 /**
- * Future guarded, one-page portrait PDF engine for observed Canon LBP2900.
+ * Guarded, one-page portrait PDF pilot for observed Canon LBP2900.
  * References ValdikSS/captdriver commit 892f320c019974a5b737e000fcc2c8582264a131
  * lbp3000_job_prologue / lbp2900_page_prologue / page_epilogue.
  *
- * Not yet reachable from the UI; fail closed on ambiguous replies and NEVER replay a job
+ * Explicit preview-only experimental action; fail closed on ambiguous replies and NEVER replay a job
  * or run error-recovery commands after an uncertain transfer.
  */
-/** No UI caller until a separately accepted, explicit first-PDF print flow exists. */
 internal object CaptPdfPrintEngine {
     private const val WAIT_READY_MS = 15_000L
     private const val WAIT_PAGE_MS = 90_000L
