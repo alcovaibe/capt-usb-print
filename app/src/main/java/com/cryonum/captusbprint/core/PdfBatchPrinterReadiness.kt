@@ -19,7 +19,7 @@ object PdfBatchPrinterReadiness {
         require(statusByte in 0..255)
         if ((statusByte and blockingBits) == 0) return null
         val hex = String.format(Locale.ROOT, "%02X", statusByte)
-        return "GetBasicStatus=0x$hex: принтер сообщает занятость или ошибку. " +
+        return "GetBasicStatus=0x$hex: готовность по ответу CAPT не подтверждена. " +
             "ReserveUnit не отправлялся. Проверь состояние принтера; автоматического сброса нет."
     }
 }

@@ -1,5 +1,21 @@
 # CAPT USB Print — project context
 
+Latest protocol checkpoint (2026-10-23): follow-up from the owner's investigation,
+starting at main 75e7c5176ca0c157a5ba5bd5d5d3b14a78b94123. Control-command ACKs
+are now checked separately from status/Reserve replies in all print engines;
+negative END/Release cannot claim released success and confirmed pages survive.
+A private bounded protocolDiagnostics log retains session/build/owner/phase,
+USB requested/actual counts, raw/partial control replies and CAPT lifecycle.
+Raw OUT payloads/document data are excluded; existing manual JSON export only.
+Diagnostic resampling is independent of UNKNOWN so captured secondary 88/8A
+cannot suppress post-Input pairs. Short Basic response semantics are explicitly
+unverified; the pre-reservation 0x88 stop remains. No new Basic probes, resets,
+flushes, automatic replay or speculative teardown. Accepted engines retain their
+command order/raster, with ACK checks and passive evidence added. Hardware
+printing is NOT newly accepted; see docs/CAPT-PROTOCOL-FOLLOWUP.md. Final-HEAD
+build/lint/unit and API-36 PR CI remain required; merge stays owner-controlled.
+
+
 Latest UI checkpoint (2026-10-23): owner requested a targeted preview/queue cleanup,
 not the proposed broader redesign. Main no longer shows the Stage C heading,
 its introductory paragraph or the paragraph below Android print settings.

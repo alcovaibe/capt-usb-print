@@ -1,6 +1,9 @@
 package com.cryonum.captusbprint.usb
 
 import android.content.Context
+import com.cryonum.captusbprint.core.CaptProtocolTrace
+import com.cryonum.captusbprint.core.CaptCommandAckFailure
+import com.cryonum.captusbprint.core.CaptReplyReadFailure
 import android.os.SystemClock
 import com.cryonum.captusbprint.core.CaptBasicStatusParser
 import com.cryonum.captusbprint.core.CaptExtendedStatus
@@ -23,7 +26,8 @@ data class CaptTestPrintResult(
     val printerConfirmedPages: Int?,
     val lastStatusFrameHex: String?,
     val trace: List<String>,
-    val failureCode: String? = null
+    val failureCode: String? = null,
+    val protocolDiagnostics: Map<String, Any?> = emptyMap()
 )
 
 /**
@@ -46,6 +50,7 @@ object CaptTestPrintEngine {
         progress: (String) -> Unit = {}
     ): CaptTestPrintResult {
         var stage = "PREPARING"
+        val protocol = CaptProtocolTrace(phase = { stage }, now = { SystemClock.elapsedRealtime() })
         var bytesSent = 0L
         var shaHex: String? = null
         var lastFrame: String? = null
@@ -89,11 +94,12 @@ object CaptTestPrintEngine {
             note("HISCOA ready; bands=${bands.size}; totalCompressedBytes=$total")
             stage = "PREFLIGHT"
 
-            CaptUsbSession.open(context, deviceKey, cancelled).use { session ->
+            CaptUsbSession.open(context, deviceKey, cancelled, protocol, "TEST_ONE_PAGE").use { session ->
                 fun query(command: Int, data: ByteArray = byteArrayOf()): ByteArray {
                     guard()
                     val reply = session.query(command, data)
                     lastFrame = hex(reply)
+                    protocol.reply(command, reply, data)
                     return reply
                 }
                 fun state(): CaptExtendedStatus =
@@ -145,6 +151,7 @@ object CaptTestPrintEngine {
                 sideEffectsStarted = true
                 val jobId = CaptJobProtocol.parseReservedJob(
                     query(CaptJobProtocol.RESERVE_UNIT, CaptJobProtocol.reserveRequest()))
+                protocol.reserved(jobId)
                 note("CAPT unit reserved; JobID present")
                 query(CaptJobProtocol.SET_POWER_DOWN, CaptJobProtocol.powerDownSettings())
                 query(CaptJobProtocol.SET_JOB_INFO2,
@@ -223,6 +230,7 @@ object CaptTestPrintEngine {
                     CaptPageCounterProgress.nextPageCompleted(initialCounters, it)
                 }
                 pages = confirmed.pageCompleted
+                protocol.pagesConfirmed(1)
                 stage = "FINALIZING"
                 query(CaptJobProtocol.SET_JOB_INFO2,
                     CaptJobProtocol.jobInfo(jobId, CaptJobProtocol.END_FLAG))
@@ -232,7 +240,7 @@ object CaptTestPrintEngine {
             }
             return CaptTestPrintResult("printer_counter_confirmed",
                 "Принтер подтвердил завершение страницы счётчиками CAPT. Проверь реальный лист.",
-                stage, bytesSent, shaHex, pages, lastFrame, trace)
+                stage, bytesSent, shaHex, pages, lastFrame, trace, protocolDiagnostics = protocol.snapshot())
         } catch (error: Throwable) {
             // JNI linkage/initialization failure must also become a JSON
             // diagnostic, not crash the Activity's serial USB worker.
@@ -242,7 +250,11 @@ object CaptTestPrintEngine {
             return CaptTestPrintResult(outcome,
                 if (uncertain) "Печать не подтверждена; исход неизвестен. Повтор автоматически запрещён."
                 else "Задание не отправлено: ${error.message ?: error.javaClass.simpleName}",
-                stage, bytesSent, shaHex, pages, lastFrame, trace)
+                stage, bytesSent, shaHex, pages, lastFrame, trace, failureCode = when (error) {
+                    is CaptCommandAckFailure -> "CAPT_COMMAND_REJECTED"
+                    is CaptReplyReadFailure -> "CAPT_TRANSPORT_INVALID"
+                    else -> null
+                }, protocolDiagnostics = protocol.snapshot())
         }
     }
 }

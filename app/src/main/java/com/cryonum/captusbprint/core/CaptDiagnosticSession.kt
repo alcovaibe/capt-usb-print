@@ -63,7 +63,7 @@ class CaptDiagnosticSession(
                     else skipped(CaptDiagnosticCommand.GetInputStatus, sample,
                         stopped ?: if (b == null || e == null) "STATUS_UNAVAILABLE" else "NOT_REQUESTED_BY_PRINTER")
                     if (stopped != null || basic == null || extended == null ||
-                        assessment !in setOf("STATUS_CONFLICT", "BUSY", "INPUT_STATUS_PENDING") ||
+                        !needsAnotherSample(b, e, inputNeeded) ||
                         sample == MAX_SAMPLES) break
                     if (!canContinue()) break
                     pause(250L)
@@ -170,6 +170,8 @@ class CaptDiagnosticSession(
         val communication = number(e, "engineCommunicationByte") ?: return "UNKNOWN"
         val paper = number(e, "paperAvailabilityByte") ?: return "UNKNOWN"
         val auxiliary = number(e, "auxiliaryByte") ?: return "UNKNOWN"
+        val form = b?.get("responseForm")
+        if (form == "SHORT_UNVERIFIED" || form == "PARTIAL_UNVERIFIED") return "UNKNOWN"
         // Preserve unsupported values without assigning them a hardware-error meaning.
         if ((basic or extended) and 0x20 != 0 || engine and 0x610e.inv() != 0 ||
             communication and 0x80 != 0 || auxiliary and 0x79 != 0 ||
@@ -187,6 +189,22 @@ class CaptDiagnosticSession(
         if (counters.any { it == null }) return "UNKNOWN"
         if (counters.distinct().size != 1 || number(e, "pageReceived")?.let { it != counters[0] } == true) return "BUSY"
         return "NO_KNOWN_BLOCKERS"
+    }
+
+    // Sampling depends on observed pending/transient conditions, not on whether
+    // all bits have known meanings. UNKNOWN must not suppress input resampling.
+    private fun needsAnotherSample(b: Map<String, Any?>?, e: Map<String, Any?>?, inputNeeded: Boolean): Boolean {
+        if (inputNeeded) return true
+        val basic = number(b, "statusByte") ?: return false
+        val extended = number(e, "basicStatusByte") ?: return false
+        if ((basic or extended) and 0x0c != 0 || (number(e, "auxiliaryByte") ?: 0) and 6 != 0) return true
+        val basicBlocked = PdfBatchPrinterReadiness.rejection(basic) != null || basic and 0x10 != 0
+        val extendedBlocked = extended and 0x9e != 0 || (number(e, "engineFlags") ?: 0) != 0 ||
+            (number(e, "engineCommunicationByte") ?: 0) != 0 || number(e, "paperAvailabilityByte") != 0x80
+        if (basicBlocked != extendedBlocked) return true
+        val counters = listOf("pageDecoding", "pagePrinting", "pageOut", "pageCompleted", "pageReceived")
+            .mapNotNull { number(e, it) }
+        return counters.distinct().size > 1
     }
 
     private fun number(map: Map<String, Any?>?, key: String) = (map?.get(key) as? Number)?.toInt()

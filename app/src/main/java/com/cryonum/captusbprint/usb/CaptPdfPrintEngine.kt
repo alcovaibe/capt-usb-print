@@ -1,6 +1,9 @@
 package com.cryonum.captusbprint.usb
 
 import android.content.Context
+import com.cryonum.captusbprint.core.CaptProtocolTrace
+import com.cryonum.captusbprint.core.CaptCommandAckFailure
+import com.cryonum.captusbprint.core.CaptReplyReadFailure
 import android.os.SystemClock
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
@@ -30,6 +33,7 @@ internal object CaptPdfPrintEngine {
         progress: (String) -> Unit = {}
     ): CaptTestPrintResult {
         var stage = "PREPARED_PDF_PAGE"
+        val protocol = CaptProtocolTrace(phase = { stage }, now = { SystemClock.elapsedRealtime() })
         var bytesSent = 0L
         var lastFrame: String? = null
         var pages: Int? = null
@@ -53,11 +57,12 @@ internal object CaptPdfPrintEngine {
             note("Prepared A4 portrait PDF: 110 strips; no document data or hash logged")
             stage = "PREFLIGHT"
 
-            CaptUsbSession.open(context, deviceKey, cancelled).use { session ->
+            CaptUsbSession.open(context, deviceKey, cancelled, protocol, "PDF_ONE_PAGE").use { session ->
                 fun query(command: Int, data: ByteArray = byteArrayOf()): ByteArray {
                     guard()
                     val reply = session.query(command, data)
                     lastFrame = hex(reply)
+                    protocol.reply(command, reply, data)
                     return reply
                 }
                 fun state(): CaptExtendedStatus =
@@ -109,6 +114,7 @@ internal object CaptPdfPrintEngine {
                 sideEffectsStarted = true
                 val jobId = CaptJobProtocol.parseReservedJob(
                     query(CaptJobProtocol.RESERVE_UNIT, CaptJobProtocol.reserveRequest()))
+                protocol.reserved(jobId)
                 note("CAPT unit reserved; JobID present")
                 query(CaptJobProtocol.SET_POWER_DOWN, CaptJobProtocol.powerDownSettings())
                 query(CaptJobProtocol.SET_JOB_INFO2,
@@ -191,6 +197,7 @@ internal object CaptPdfPrintEngine {
                         CaptPageCounterProgress.hasNoOutstandingPage(it) && it.pageCompleted == 1
                 }
                 pages = confirmed.pageCompleted
+                protocol.pagesConfirmed(1)
                 stage = "FINALIZING"
                 query(CaptJobProtocol.SET_JOB_INFO2,
                     CaptJobProtocol.jobInfo(jobId, CaptJobProtocol.END_FLAG))
@@ -200,7 +207,7 @@ internal object CaptPdfPrintEngine {
             }
             return CaptTestPrintResult("printer_counter_confirmed",
                 "CAPT подтвердил одну страницу PDF. Проверь физический лист и точность полей.",
-                stage, bytesSent, null, pages, lastFrame, trace)
+                stage, bytesSent, null, pages, lastFrame, trace, protocolDiagnostics = protocol.snapshot())
         } catch (error: Throwable) {
             // JNI linkage/initialization failure must also become a JSON
             // diagnostic, not crash the Activity's serial USB worker.
@@ -210,7 +217,11 @@ internal object CaptPdfPrintEngine {
             return CaptTestPrintResult(outcome,
                 if (uncertain) "Печать PDF не подтверждена; исход неизвестен. Не запускайте повтор автоматически."
                 else "PDF не отправлен: ${error.message ?: error.javaClass.simpleName}",
-                stage, bytesSent, null, pages, lastFrame, trace)
+                stage, bytesSent, null, pages, lastFrame, trace, failureCode = when (error) {
+                    is CaptCommandAckFailure -> "CAPT_COMMAND_REJECTED"
+                    is CaptReplyReadFailure -> "CAPT_TRANSPORT_INVALID"
+                    else -> null
+                }, protocolDiagnostics = protocol.snapshot())
         }
     }
 }

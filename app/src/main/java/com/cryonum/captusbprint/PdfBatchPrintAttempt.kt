@@ -66,7 +66,7 @@ internal object PdfBatchPrintAttempt {
                             "sentPrintDataBytes" to it.sentPrintDataBytes,
                             "printerConfirmedPages" to it.printerConfirmedPages,
                             "lastStatusFrameHex" to it.lastStatusFrameHex,
-                            "trace" to it.trace
+                            "protocolDiagnostics" to it.protocolDiagnostics, "trace" to it.trace
                         )
                     },
                     "failureClass" to failure,
