@@ -25,8 +25,9 @@ import com.cryonum.captusbprint.queue.PrintQueueService
 import com.cryonum.captusbprint.usb.UsbDeviceProfiles
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
-/** UI owns a preview source; only the foreground queue owns printing sources/jobs. */
+/** Normal documents use the foreground queue; the explicit one-sheet PDF pilot is cancellable. */
 class DocumentActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var message: TextView
@@ -38,6 +39,11 @@ class DocumentActivity : Activity() {
     private lateinit var preview: DocumentPreviewPanel
     private lateinit var print: Button
     private lateinit var pick: Button
+    private lateinit var printActions: LinearLayout
+    private lateinit var testPrint: Button
+    private lateinit var cancelTestPrint: Button
+    private val testCancelled = AtomicBoolean(false)
+    private var testRunning = false
     private var session: DocumentSession? = null
     private var bitmap: Bitmap? = null
     private var sourceUri: Uri? = null
@@ -56,7 +62,6 @@ class DocumentActivity : Activity() {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,24,24,24) }
         fun label(res: Int) { layout.addView(TextView(this).apply { setText(res); textSize = 16f }) }
         label(R.string.document_title)
-        label(R.string.document_description)
         pick = Button(this).apply {
             setText(R.string.document_pick)
             setOnClickListener {
@@ -105,19 +110,40 @@ class DocumentActivity : Activity() {
         status = TextView(this).apply { setTextIsSelectable(true) }
         layout.addView(status)
         print = Button(this).apply { setText(R.string.document_print); setOnClickListener { confirmPrint() } }
-        layout.addView(print)
+        testPrint = Button(this).apply {
+            setText(R.string.document_test_print)
+            setOnClickListener { confirmTestPrint() }
+        }
+        cancelTestPrint = Button(this).apply {
+            setText(R.string.cancel_test_page)
+            setOnClickListener {
+                testCancelled.set(true)
+                status.setText(R.string.test_page_cancel_requested)
+            }
+        }
         layout.addView(Button(this).apply {
             setText(R.string.document_report)
             setOnClickListener { sharePdfReport() }
         })
         val scroll = ScrollView(this).apply { addView(layout) }
-        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
+        printActions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 0, 24, 16)
+            addView(print); addView(testPrint); addView(cancelTestPrint)
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(printActions)
+        }
+        updatePrintActions()
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or
                 WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom); insets
         }
-        setContentView(scroll)
-        ViewCompat.requestApplyInsets(scroll)
+        setContentView(root)
+        ViewCompat.requestApplyInsets(root)
         val restored = savedInstanceState?.getString("uri")?.let { Uri.parse(it) }
         val shared = if (intent?.action == Intent.ACTION_SEND) {
             if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
@@ -126,7 +152,11 @@ class DocumentActivity : Activity() {
         (restored ?: shared ?: intent?.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri)?.let { inspect(it) }
     }
     override fun onStart() { super.onStart(); visible = true }
-    override fun onStop() { visible = false; super.onStop() }
+    override fun onStop() {
+        visible = false
+        if (testRunning) testCancelled.set(true)
+        super.onStop()
+    }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 101 && resultCode == RESULT_OK) data?.data?.let {
@@ -141,6 +171,7 @@ class DocumentActivity : Activity() {
         ++previewGeneration
         previewReady = false
         val old = session; session = null
+        updatePrintActions()
         preview.clearImage(); bitmap?.recycle(); bitmap = null
         preview.setLoading(); message.setText(R.string.document_loading)
         worker.execute {
@@ -183,6 +214,7 @@ class DocumentActivity : Activity() {
         val orientation = selectedOrientation()
         val degrees = if (rotation.isChecked) 90 else 0
         previewReady = false; preview.setLoading()
+        updatePrintActions()
         worker.execute {
             val result = runCatching { source.renderPrintPreview(page, orientation, degrees) {
                 request != generation || render != previewGeneration } }
@@ -196,12 +228,75 @@ class DocumentActivity : Activity() {
                     preview.showDocument(); preview.showBitmap(next, page, source.overview.pageCount)
                     status.setText(R.string.document_preview_ready)
                 }, { preview.showError(getString(R.string.document_open_failed)) })
+                updatePrintActions()
             }
         }
     }
     private fun plan(source: DocumentSession) = JobSpecification.create(source.overview.pageCount,
         pageRange.text.toString(), copies.text.toString().trim().toInt(), selectedOrientation(),
         contentRotationDegrees = if (rotation.isChecked) 90 else 0)
+
+    private fun updatePrintActions() {
+        printActions.visibility = if (session != null) View.VISIBLE else View.GONE
+        print.isEnabled = previewReady && !copying
+        testPrint.visibility = if (session?.overview?.format == DocumentFormat.PDF) View.VISIBLE else View.GONE
+        testPrint.isEnabled = previewReady && !copying
+        cancelTestPrint.visibility = if (testRunning) View.VISIBLE else View.GONE
+    }
+
+    /** Restore the previously owner-tested one-sheet pilot, without changing either CAPT engine. */
+    private fun confirmTestPrint() {
+        val source = session ?: return
+        if (copying || !previewReady) { status.setText(R.string.document_plan_invalid); return }
+        val frozen = runCatching { plan(source) }.getOrElse {
+            status.setText(R.string.document_plan_invalid); return
+        }
+        FirstPdfPrintGate.rejection(source.overview.format, frozen, displayedPage)?.let {
+            status.text = it; return
+        }
+        if (PrintQueueRuntime.hasWork()) { status.setText(R.string.document_test_queue_busy); return }
+        val usb = getSystemService(USB_SERVICE) as UsbManager
+        val device = usb.deviceList.values.filter {
+            UsbDeviceProfiles.identify(it.vendorId, it.productId)?.modelName == "Canon LBP2900"
+        }.singleOrNull()
+        if (device == null || !usb.hasPermission(device)) { status.setText(R.string.document_no_printer); return }
+        val request = generation
+        val page = displayedPage
+        AlertDialog.Builder(this).setTitle(R.string.document_test_print)
+            .setMessage(getString(R.string.document_test_confirm, page + 1))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.document_test_action) { _, _ ->
+                if (source !== session || request != generation || page != displayedPage ||
+                    !visible || !previewReady || copying || PrintQueueRuntime.hasWork() ||
+                    runCatching { plan(source) }.getOrNull() != frozen) return@setPositiveButton
+                copying = true; testRunning = true; testCancelled.set(false)
+                pick.isEnabled = false; pageRange.isEnabled = false; copies.isEnabled = false
+                rotation.isEnabled = false
+                for (i in 0 until orientation.childCount) orientation.getChildAt(i).isEnabled = false
+                updatePrintActions()
+                status.setText(R.string.document_test_preparing)
+                worker.execute {
+                    val result = runCatching {
+                        FirstPdfPrintAttempt.execute(applicationContext, source, page,
+                            frozen.contentRotationDegrees, device.deviceName,
+                            cancelled = { testCancelled.get() || request != generation }) { stage ->
+                            runOnUiThread {
+                                if (!isDestroyed && !isFinishing && request == generation) status.text = stage
+                            }
+                        }
+                    }
+                    runOnUiThread {
+                        if (isDestroyed || isFinishing) return@runOnUiThread
+                        copying = false; testRunning = false
+                        pick.isEnabled = true; pageRange.isEnabled = true; copies.isEnabled = true
+                        rotation.isEnabled = true
+                        for (i in 0 until orientation.childCount) orientation.getChildAt(i).isEnabled = true
+                        updatePrintActions()
+                        status.text = result.getOrElse { getString(R.string.document_test_failed) }
+                    }
+                }
+            }.show()
+    }
 
     private fun confirmPrint() {
         val source = session ?: return
@@ -229,7 +324,8 @@ class DocumentActivity : Activity() {
                     != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                     requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 201)
                 }
-                copying = true; pick.isEnabled = false; print.isEnabled = false
+                copying = true; pick.isEnabled = false
+                updatePrintActions()
                 status.setText(R.string.document_enqueuing)
                 getPreferences(MODE_PRIVATE).edit().putInt("copies", frozen.copies)
                     .putInt("orientation", findViewById<RadioButton>(orientation.checkedRadioButtonId)?.tag as? Int ?: 0)
@@ -238,6 +334,7 @@ class DocumentActivity : Activity() {
                     val result = runCatching { PrintQueueRuntime.enqueue(applicationContext, source, frozen, device.deviceName) }
                     runOnUiThread {
                         copying = false
+                        updatePrintActions()
                         if (isDestroyed || isFinishing || !visible) {
                             result.getOrNull()?.let { runCatching { PrintQueueRuntime.cancel(it) } }; return@runOnUiThread
                         }
@@ -283,6 +380,7 @@ class DocumentActivity : Activity() {
         outState.putBoolean("rotation", rotation.isChecked)
     }
     override fun onDestroy() {
+        testCancelled.set(true)
         ++generation; ++previewGeneration
         preview.clearImage(); bitmap?.recycle(); bitmap = null
         val source = session; session = null

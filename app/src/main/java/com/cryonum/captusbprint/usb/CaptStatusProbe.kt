@@ -21,19 +21,8 @@ import com.cryonum.captusbprint.engine.LinkSelection
 import com.cryonum.captusbprint.engine.UsbLinkSelector
 import java.util.Locale
 
-data class CaptStatusProbeResult(
-    val summary: String,
-    val reportLine: String,
-    /** Full bounded device response, including its four-byte CAPT header. */
-    val rawFrameHex: String,
-    val decoded: Map<String, Any?>
-)
-
-class CaptStatusProbeException(
-    message: String,
-    /** Preserved even if the bounded reply was rejected by its field parser. */
-    val rawFrameHex: String? = null
-) : Exception(message)
+typealias CaptStatusProbeResult = com.cryonum.captusbprint.core.CaptDiagnosticReply
+typealias CaptStatusProbeException = com.cryonum.captusbprint.core.CaptDiagnosticException
 
 /**
  * One user-triggered, read-only CAPT GetBasicStatus query.
@@ -65,12 +54,14 @@ object CaptStatusProbe {
         deviceKey: String,
         commandToSend: Int
     ): CaptStatusProbeResult = CaptUsbOwnership.withExclusive {
-        queryExclusive(context, deviceKey, commandToSend)
+        withSession(context, deviceKey) { query -> query(commandToSend) }
     }
 
-    private fun queryExclusive(
-        context: Context, deviceKey: String, commandToSend: Int
-    ): CaptStatusProbeResult {
+    internal fun <T> withSession(
+        context: Context, deviceKey: String,
+        describe: (Map<String, Any?>) -> Unit = {},
+        action: ((Int) -> CaptStatusProbeResult) -> T
+    ): T {
         val manager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
             ?: throw CaptStatusProbeException("USB Manager недоступен.")
         val device = manager.deviceList.values.singleOrNull { it.deviceName == deviceKey }
@@ -132,37 +123,58 @@ object CaptStatusProbe {
             }
             claimed = true
 
-            val request = CaptFrame.encode(commandToSend)
-            val written = try {
-                connection.bulkTransfer(outEndpoint, request, request.size, USB_TIMEOUT_MS)
-            } catch (_: Exception) {
-                throw CaptStatusProbeException(
-                    "Ошибка отправки read-only CAPT запроса 0x${hexCommand(commandToSend)}; повтор не выполнялся."
-                )
-            }
-            if (written != request.size) {
-                throw CaptStatusProbeException(
-                    "CAPT запрос 0x${hexCommand(commandToSend)} передан не полностью; автоматический повтор отключён."
-                )
-            }
-
-            val response = readResponseFrame(connection, inEndpoint, commandToSend)
-            return try {
-                when (commandToSend) {
-                    GET_BASIC_STATUS -> basicResult(response)
-                    GET_EXTENDED_STATUS -> extendedResult(response)
-                    GET_INPUT_STATUS -> inputStatusResult(response)
-                    GET_PRINTER_INFO -> printerInfoResult(response)
-                    else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
-                }
-            } catch (error: CaptStatusProbeException) {
-                // A structurally valid frame may still fail field validation.
-                // Keep the actual bytes in the exported error event for independent review.
-                throw CaptStatusProbeException(error.message ?: "Ошибка CAPT", frameHex(response))
-            }
+            describe(linkedMapOf(
+                "vendorId" to device.vendorId, "productId" to device.productId,
+                "permissionGranted" to true, "profile" to profile.modelName,
+                "interfaceId" to iface.id, "alternateSetting" to iface.alternateSetting,
+                "interfaceClass" to iface.interfaceClass, "interfaceSubclass" to iface.interfaceSubclass,
+                "interfaceProtocol" to iface.interfaceProtocol, "claimForced" to false,
+                "input" to endpointDetails(inEndpoint), "output" to endpointDetails(outEndpoint),
+                "usbTimeoutMs" to USB_TIMEOUT_MS, "maxResponseBytes" to MAX_STATUS_FRAME_BYTES))
+            return action { command -> exchange(connection, inEndpoint, outEndpoint, command) }
         } finally {
             if (claimed) runCatching { connection.releaseInterface(iface) }
             runCatching { connection.close() }
+        }
+    }
+
+    private fun endpointDetails(endpoint: UsbEndpoint): Map<String, Any?> = linkedMapOf(
+        "address" to endpoint.address, "direction" to endpoint.direction,
+        "type" to endpoint.type, "maxPacketSize" to endpoint.maxPacketSize,
+        "interval" to endpoint.interval)
+
+    private fun exchange(connection: UsbDeviceConnection, inEndpoint: UsbEndpoint,
+        outEndpoint: UsbEndpoint, commandToSend: Int): CaptStatusProbeResult {
+        val request = CaptFrame.encode(commandToSend)
+        val written = try {
+            connection.bulkTransfer(outEndpoint, request, request.size, USB_TIMEOUT_MS)
+        } catch (_: Exception) {
+            throw CaptStatusProbeException(
+                "Ошибка отправки read-only CAPT запроса 0x${hexCommand(commandToSend)}; повтор не выполнялся.",
+                    stage = "write", transport = mapOf("requestedBytes" to request.size)
+            )
+        }
+        if (written != request.size) {
+            throw CaptStatusProbeException(
+                "CAPT запрос 0x${hexCommand(commandToSend)} передан не полностью; автоматический повтор отключён.",
+                    stage = "write", transport = mapOf("requestedBytes" to request.size, "writtenBytes" to written)
+            )
+        }
+
+        val response = readResponseFrame(connection, inEndpoint, commandToSend)
+        return try {
+            when (commandToSend) {
+                GET_BASIC_STATUS -> basicResult(response)
+                GET_EXTENDED_STATUS -> extendedResult(response)
+                GET_INPUT_STATUS -> inputStatusResult(response)
+                GET_PRINTER_INFO -> printerInfoResult(response)
+                else -> throw CaptStatusProbeException("Неизвестная диагностическая команда CAPT.")
+            }
+        } catch (error: CaptStatusProbeException) {
+            // A structurally valid frame may still fail field validation.
+            // Keep the actual bytes in the exported error event for independent review.
+            throw CaptStatusProbeException(error.message ?: "Ошибка CAPT", frameHex(response),
+                stage = "decode", connectionUsable = true, transport = mapOf("receivedBytes" to response.size))
         }
     }
 
@@ -329,6 +341,12 @@ object CaptStatusProbe {
             "engineCommunicationByte" to status.engineCommunicationByte,
             "paperAvailabilityByte" to status.paperAvailabilityByte,
             "engineFlags" to status.engineFlags,
+            "statusFlags" to CaptStatusFlagDecoder.basic(status.basicStatusByte),
+            "secondaryFlags" to CaptStatusFlagDecoder.secondary(status.secondaryByte),
+            "auxiliaryFlags" to CaptStatusFlagDecoder.auxiliary(status.auxiliaryByte),
+            "engineCommunicationFlags" to CaptStatusFlagDecoder.engineCommunication(status.engineCommunicationByte),
+            "engineFlagNames" to CaptStatusFlagDecoder.engine(status.engineFlags),
+            "paperAvailability" to CaptStatusFlagDecoder.paper(status.paperAvailabilityByte),
             "pageDecoding" to status.pageDecoding,
             "pagePrinting" to status.pagePrinting,
             "pageOut" to status.pageOut,
@@ -361,74 +379,44 @@ object CaptStatusProbe {
         // CAPT's documented exchange reads the 6-byte command/length header first,
         // then reads only the remaining bytes declared by that header.
         val frame = ByteArray(MAX_STATUS_FRAME_BYTES)
+        var received = 0
+        var expectedLength: Int? = null
+        fun fail(message: String, stage: String, extra: Map<String, Any?> = emptyMap()): Nothing {
+            throw CaptStatusProbeException(message, frameHex(frame.copyOf(received.coerceIn(0, frame.size))),
+                stage = stage, transport = linkedMapOf<String, Any?>(
+                    "receivedBytes" to received, "expectedBytes" to expectedLength,
+                    "expectedCommand" to expectedCommand, "timeoutMs" to USB_TIMEOUT_MS
+                ).apply { putAll(extra) })
+        }
         val firstCount = try {
             connection.bulkTransfer(endpoint, frame, 0, CAPT_HEADER_BYTES, USB_TIMEOUT_MS)
-        } catch (_: Exception) {
-            throw CaptStatusProbeException("Ошибка чтения заголовка ответа CAPT.")
-        }
-        if (firstCount != CAPT_HEADER_BYTES) {
-            throw CaptStatusProbeException(
-                "Заголовок CAPT получен не полностью; receivedBytes=$firstCount; " +
-                    headerDetails(frame, firstCount)
-            )
-        }
-        val command = (frame[0].toInt() and 0xff) or
-            ((frame[1].toInt() and 0xff) shl 8)
-        if (command != expectedCommand) {
-            throw CaptStatusProbeException(
-                "Неожиданный CAPT command ID; expected=${hexCommand(expectedCommand)}; " +
-                    "receivedCommand=${hexCommand(command)}; " +
-                    headerDetails(frame, firstCount)
-            )
-        }
-
-        // GetBasicStatus replies can be as short as 6 total bytes (4-byte header
-        // plus two status bytes). Do not discard this valid protocol shape.
-        val expectedLength = try {
+        } catch (_: Exception) { fail("Ошибка чтения заголовка ответа CAPT.", "read_header") }
+        received = firstCount.coerceIn(0, CAPT_HEADER_BYTES)
+        if (firstCount != CAPT_HEADER_BYTES) fail(
+            "Заголовок CAPT получен не полностью; " + headerDetails(frame, received),
+            "read_header", mapOf("transferReturnCode" to firstCount))
+        val command = (frame[0].toInt() and 0xff) or ((frame[1].toInt() and 0xff) shl 8)
+        if (command != expectedCommand) fail(
+            "Неожиданный CAPT command ID; receivedCommand=${hexCommand(command)}; " + headerDetails(frame, received),
+            "validate_command", mapOf("receivedCommand" to command))
+        val length = try {
             CaptFrame.preferredReplyLength(frame, MAX_STATUS_FRAME_BYTES)
         } catch (_: IllegalArgumentException) {
-            throw CaptStatusProbeException(
-                "Длина ответа CAPT не распознана или превышает лимит; " +
-                    headerDetails(frame, firstCount)
-            )
+            fail("Длина ответа CAPT не распознана или превышает лимит; " + headerDetails(frame, received), "validate_length")
         }
-        var received = firstCount
+        expectedLength = length
         val deadline = SystemClock.elapsedRealtime() + USB_TIMEOUT_MS
-
         while (true) {
-            if (received == expectedLength) {
-                return frame.copyOf(received)
-            }
-            if (received > expectedLength) {
-                throw CaptStatusProbeException(
-                    "Фактическая длина ответа CAPT не совпала с заголовком; " +
-                        "receivedBytes=$received; " + headerDetails(frame, received)
-                )
-            }
+            if (received == length) return frame.copyOf(received)
+            if (received > length) fail("Фактическая длина ответа CAPT не совпала с заголовком.", "validate_length")
             val remaining = (deadline - SystemClock.elapsedRealtime()).toInt()
-            if (remaining <= 0) {
-                throw CaptStatusProbeException(
-                    "Истёк тайм-аут чтения ответа CAPT; receivedBytes=$received; " +
-                        headerDetails(frame, received)
-                )
-            }
-            val requested = minOf(expectedLength - received, frame.size - received)
+            if (remaining <= 0) fail("Истёк тайм-аут чтения ответа CAPT.", "read_payload")
+            val requested = minOf(length - received, frame.size - received)
             val count = try {
-                connection.bulkTransfer(
-                    endpoint, frame, received, requested, minOf(1000, remaining)
-                )
-            } catch (_: Exception) {
-                throw CaptStatusProbeException(
-                    "Ошибка чтения продолжения ответа CAPT; receivedBytes=$received; " +
-                        headerDetails(frame, received)
-                )
-            }
-            if (count <= 0 || count > requested) {
-                throw CaptStatusProbeException(
-                    "Ответ CAPT получен не полностью; chunkBytes=$count; " +
-                        "receivedBytes=$received; " + headerDetails(frame, received)
-                )
-            }
+                connection.bulkTransfer(endpoint, frame, received, requested, minOf(1000, remaining))
+            } catch (_: Exception) { fail("Ошибка чтения продолжения ответа CAPT.", "read_payload") }
+            if (count <= 0 || count > requested) fail("Ответ CAPT получен не полностью.", "read_payload",
+                mapOf("requestedBytes" to requested, "transferReturnCode" to count))
             received += count
         }
     }

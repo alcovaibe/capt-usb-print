@@ -10,8 +10,13 @@ assert "permissionSharePending" not in main
 assert 'recordEvent("PrintTestPage"' in main
 assert 'recordEvent("CancelTestPage", "requested"' in main
 assert 'recordEvent("PrepareTestPage"' in main
+assert 'R.string.printer_diagnostics' in main and 'PrinterDiagnostics.run(' in main
+for old_button in ("probe_capt_status", "probe_capt_extended_status", "probe_capt_input_status", "probe_capt_printer_info"):
+    assert f'R.string.{old_button}' not in main
+session = Path("app/src/main/java/com/cryonum/captusbprint/core/CaptDiagnosticSession.kt").read_text()
 for query in ("GetBasicStatus", "GetExtendedStatus", "GetInputStatus", "GetPrinterInfo"):
-    assert query in main
+    assert query in session
+assert 'recordEvent("PrinterDiagnostics"' in main
 start_of_share = main.index("    private fun shareReport() {")
 prefix = main[:start_of_share]
 assert "Intent.ACTION_SEND" not in prefix, "Implicit JSON send before explicit sharing"
@@ -52,14 +57,16 @@ assert 'START_NOT_STICKY' in Path("app/src/main/java/com/cryonum/captusbprint/qu
 print("Queue durable-marker and no-automatic-replay guards passed.")
 
 queue_screen = Path("app/src/main/java/com/cryonum/captusbprint/queue/PrintQueueActivity.kt").read_text()
-assert queue_screen.count("shareJobReport(") == 2
-assert "setOnClickListener { shareJobReport(record.id) }" in queue_screen
-assert "Intent.ACTION_SEND" not in queue_screen[:queue_screen.index("    private fun shareJobReport(")]
-print("Per-job queue report sharing is explicit-only.")
+assert queue_screen.count("shareAllReports()") == 2
+assert "setOnClickListener { shareAllReports() }" in queue_screen
+assert "shareJobReport(" not in queue_screen and "shareSystemReport()" not in queue_screen
+assert "Intent.ACTION_SEND" not in queue_screen[:queue_screen.index("    private fun shareAllReports()")]
+bundle = Path("app/src/main/java/com/cryonum/captusbprint/queue/QueueReportBundle.kt").read_text()
+assert "Intent.ACTION_SEND" not in bundle and "Intent.createChooser(" not in bundle
+assert "source.bin" not in bundle and "spool" not in bundle.split("internal object")[1]
+print("One footer export is explicit-only; bundle does not read document/spool sources.")
 
 # System routing/intake never opens sharing or sends its source through PrintManager.
-assert queue_screen.count("shareSystemReport()") == 2
-assert "setOnClickListener { shareSystemReport() }" in queue_screen
 for path in Path("app/src/main/java/com/cryonum/captusbprint/printservice").glob("*.kt"):
     source = path.read_text()
     assert "Intent.ACTION_SEND" not in source and "Intent.createChooser(" not in source

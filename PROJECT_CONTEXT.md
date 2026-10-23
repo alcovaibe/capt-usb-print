@@ -1,5 +1,25 @@
 # CAPT USB Print — project context
 
+Latest UI checkpoint (2026-10-23): owner requested a targeted preview/queue cleanup,
+not the proposed broader redesign. Main no longer shows the Stage C heading,
+its introductory paragraph or the paragraph below Android print settings.
+Document intake loses its long introductory paragraph. The preview screen has
+fixed bottom print actions: ordinary queue printing and the restored explicit
+one-sheet portrait PDF pilot (`FirstPdfPrintGate` → `FirstPdfPrintAttempt`).
+The pilot retains the owner's earlier hardware-tested engine and requires exactly
+the visible PDF page, one copy and A4 portrait; it requires an idle queue,
+confirmation and USB permission. It cancels on leaving/destroying the screen;
+no background continuation or automatic retry is introduced. This does not
+establish a fix for system/general document printing or BasicStatus 0x88.
+Queue record descriptions/order/cancellation stay unchanged. Individual and
+system share buttons are replaced with one footer JSON bundle containing queue
+summaries, retained job reports, system routing, latest PDF and USB diagnostics.
+Only existing sanitized reports are read; no document/spool sources. Export is
+manual and off-main, bounded per report/total, with explicit omission reasons
+for unavailable/corrupt/oversized parts. Existing source privacy and signing stay.
+CI must validate final HEAD, including Android-36 export/FileProvider smoke.
+
+
 Updated: 2026-10-23. Latest checkpoint: **bounded document CAPT preflight reconciliation**
 from merged Stage D `main` `57a643dce995` / signed build 133. The owner's HONOR
 system job reached our service, imported and prepared its PDF, then stopped
@@ -397,3 +417,8 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - GitHub connector has no repository-visibility mutation, so browser Settings was used. The automatic approval reviewer rejected the click opening Change visibility, requiring confirmation immediately before public exposure and mentioning email matches. No visibility change happened; do not bypass that rejection through another route. The email matches are upstream author notices, not signing credentials. The owner needs to confirm public exposure of code/history/PRs/APKs/Actions logs; then use the same reviewed browser Settings action and verify metadata is public.
 - Prepared README/status/release-note wording for public availability and corrected the Stage D release description. Only text/messages changed: accepted Stage B and all Android printing/signing logic remain unchanged. Local `git diff --check` and Python syntax compilation passed. Main remains `130c158f8288`; PR #26 stays unmerged. CI on the new PR HEAD is expected to remain account-blocked until visibility/account availability is resolved.
 - **Later verified state:** repository metadata returned `visibility=public`, and reloading browser Settings explicitly showed “This repository is currently public.” This change occurred independently of the rejected agent click; no attempt was made to bypass the automatic rejection. Owner-requested public visibility is now achieved, so no further visibility mutation/confirmation is needed. CI 131 (`39915018580`) on `8f8c1a388c3a` entered `in_progress`, demonstrating resumed Actions allocation. This documentation-only successor records that observed state; check its exact HEAD CI before merging. Main and installed signing identity are unchanged; Stage D hardware acceptance remains open.
+
+
+## PR 28: unified diagnostics (merge still requires owner permission)
+
+The device card's four CAPT diagnostic buttons are replaced by one «Диагностика принтера». A bounded read-only session retains paired status samples and conditional InputStatus, PrinterInfo, full bounded/partial replies, per-step timing/errors/skips, Android/USB/queue/service-setting context and conservative conflict/unknown assessment. One session occupies one history event; legacy events remain readable. Tests cover persistent 0x88 conflicts, conditional input/resampling, incomplete framing, decode-only failures, cancellation, time/sample bounds, whole-session retention and Android JSON/AtomicFile migration/merge. This is diagnostic consolidation, not a demonstrated fix of document printing or a readiness bypass. No merge or release is authorized.
