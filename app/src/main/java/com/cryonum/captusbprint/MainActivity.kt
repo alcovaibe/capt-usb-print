@@ -31,8 +31,6 @@ import com.cryonum.captusbprint.core.CaptTestPagePreparation
 import com.cryonum.captusbprint.usb.CaptTestPrintEngine
 import com.cryonum.captusbprint.usb.CaptTwoPagePrintEngine
 import com.cryonum.captusbprint.usb.PermissionEvents
-import com.cryonum.captusbprint.usb.CaptStatusProbe
-import com.cryonum.captusbprint.usb.CaptStatusProbeException
 import com.cryonum.captusbprint.usb.UsbDiagnostic
 import com.cryonum.captusbprint.usb.UsbRow
 import com.cryonum.captusbprint.usb.UsbSnapshot
@@ -58,6 +56,7 @@ class MainActivity : Activity() {
     private val diagnosticEvents = mutableListOf<Map<String, Any?>>()
     private var permissionRequestPending = false
     private var captProbeInProgress = false
+    private val diagnosticCancelled = AtomicBoolean(false)
     private var rasterPreparationInProgress = false
     private var testPrintInProgress = false
     private val testPrintCancelled = AtomicBoolean(false)
@@ -206,6 +205,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        diagnosticCancelled.set(true)
         monitoring = false
         monitor.removeCallbacks(pollUsb)
         PermissionEvents.listener = null
@@ -286,18 +286,9 @@ class MainActivity : Activity() {
                     requestUsbAccess(row)
                 })
             } else if (row.profile?.protocolFamily == "CAPT") {
-                card.addView(button(getString(R.string.probe_capt_status)) {
-                    probeCaptStatus(row)
-                })
-                card.addView(button(getString(R.string.probe_capt_extended_status)) {
-                    probeCaptExtendedStatus(row)
-                })
-                card.addView(button(getString(R.string.probe_capt_input_status)) {
-                    probeCaptInputStatus(row)
-                })
-                card.addView(button(getString(R.string.probe_capt_printer_info)) {
-                    probeCaptPrinterInfo(row)
-                })
+                card.addView(button(getString(R.string.printer_diagnostics)) {
+                    diagnosePrinter(row)
+                }.apply { isEnabled = !captProbeInProgress && !testPrintInProgress })
                 card.addView(button(getString(R.string.prepare_test_page)) {
                     prepareTestPageOffline()
                 })
@@ -360,69 +351,32 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun probeCaptStatus(row: UsbRow) = runCaptProbe(row, "GetBasicStatus") {
-        CaptStatusProbe.query(applicationContext, row.deviceKey)
-    }
-
-    private fun probeCaptExtendedStatus(row: UsbRow) = runCaptProbe(row, "GetExtendedStatus") {
-        CaptStatusProbe.queryExtended(applicationContext, row.deviceKey)
-    }
-
-    private fun probeCaptInputStatus(row: UsbRow) = runCaptProbe(row, "GetInputStatus") {
-        CaptStatusProbe.queryInputStatus(applicationContext, row.deviceKey)
-    }
-
-    private fun probeCaptPrinterInfo(row: UsbRow) = runCaptProbe(row, "GetPrinterInfo") {
-        CaptStatusProbe.queryPrinterInfo(applicationContext, row.deviceKey)
-    }
-
-    private fun runCaptProbe(
-        row: UsbRow,
-        commandName: String,
-        query: () -> com.cryonum.captusbprint.usb.CaptStatusProbeResult
-    ) {
+    private fun diagnosePrinter(row: UsbRow) {
         if (captProbeInProgress || testPrintInProgress || rasterPreparationInProgress) return
         captProbeInProgress = true
-        status.text = getString(R.string.probe_capt_running, commandName)
+        diagnosticCancelled.set(false)
+        status.text = getString(R.string.printer_diagnostics_running)
+        // Render the same device card with its single diagnostic action disabled.
+        lastSnapshot?.let { render(it) }
+        status.text = getString(R.string.printer_diagnostics_running)
         worker.execute {
-            val result = runCatching { query() }
+            val result = PrinterDiagnostics.run(applicationContext, row,
+                { diagnosticCancelled.get() || Thread.currentThread().isInterrupted }) { command ->
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed && !diagnosticCancelled.get())
+                        status.text = getString(R.string.probe_capt_running, command)
+                }
+            }
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
                 captProbeInProgress = false
-                val line = result.fold(
-                    { it.reportLine },
-                    { error ->
-                        val reason = if (error is CaptStatusProbeException) {
-                            error.message ?: getString(R.string.probe_capt_unknown_error)
-                        } else {
-                            "USB error (" + error.javaClass.simpleName + ")"
-                        }
-                        "CAPT $commandName: failed; reason=$reason; no print/page data sent."
-                    }
-                )
-                currentReport += "\n" + line + "\n"
+                // Persist even when the user leaves or Android recreates this Activity.
+                val saved = recordEvent("PrinterDiagnostics", result.outcome, result.summary,
+                    decoded = result.report, reportLine = result.summary)
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                lastSnapshot?.let { render(it) }
+                val message = if (saved) result.summary else getString(R.string.printer_diagnostics_save_failed)
+                currentReport += "\n" + message + "\n"
                 reportView.text = currentReport
-                result.fold(
-                    { response ->
-                        recordEvent(commandName, "success", response.summary,
-                            response.rawFrameHex, response.decoded, response.reportLine)
-                    },
-                    { error ->
-                        recordEvent(commandName, "failed", error.message ?: error.javaClass.simpleName,
-                            (error as? CaptStatusProbeException)?.rawFrameHex, emptyMap(), line)
-                    }
-                )
-                val message = result.fold(
-                    { it.summary },
-                    { error ->
-                        val reason = if (error is CaptStatusProbeException) {
-                            error.message ?: getString(R.string.probe_capt_unknown_error)
-                        } else {
-                            "USB error (" + error.javaClass.simpleName + ")"
-                        }
-                        getString(R.string.probe_capt_failed, reason)
-                    }
-                )
                 status.text = message
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
             }
@@ -572,8 +526,9 @@ class MainActivity : Activity() {
         rawFrameHex: String? = null,
         decoded: Map<String, Any?> = emptyMap(),
         reportLine: String? = null
-    ) {
+    ): Boolean {
         diagnosticEvents.add(linkedMapOf(
+            "eventId" to java.util.UUID.randomUUID().toString(),
             "timeUtc" to utcNow(),
             "action" to action,
             "outcome" to outcome,
@@ -588,7 +543,7 @@ class MainActivity : Activity() {
             } else null
         ))
         if (diagnosticEvents.size > 64) diagnosticEvents.removeAt(0)
-        saveDiagnosticSnapshot()
+        return saveDiagnosticSnapshot()
     }
 
     private fun jsonReport(): String {
@@ -622,6 +577,9 @@ class MainActivity : Activity() {
                 "permissionEventInSession" to PermissionEvents.outcome
             ),
             "commands" to diagnosticEvents.toList(),
+            "historyPolicy" to mapOf("maxEvents" to com.cryonum.captusbprint.core.DiagnosticEventRetention.MAX_EVENTS,
+                "maxEventBytesTotal" to com.cryonum.captusbprint.core.DiagnosticEventRetention.MAX_EVENTS_BYTES,
+                "wholeSessionEviction" to true),
             "note" to "USB scans are read-only. PrintTestPage is an explicitly initiated physical print attempt; printedPages counts only pages confirmed for that event by CAPT counters, not visually verified sheets. No document raster or serial number is included. Events are saved as private JSON; only the share button exports them."
         )
         return DiagnosticJson.stringify(report) + "\n"
@@ -631,8 +589,13 @@ class MainActivity : Activity() {
         DiagnosticHistory(File(filesDir, "capt-diagnostic-latest.json"))
     }
 
-    private fun saveDiagnosticSnapshot() {
-        diagnosticHistory.save(jsonReport())
+    private fun saveDiagnosticSnapshot(): Boolean {
+        val saved = diagnosticHistory.save(jsonReport())
+        if (saved) {
+            diagnosticEvents.clear()
+            diagnosticEvents.addAll(diagnosticHistory.loadEvents())
+        }
+        return saved
     }
 
     private fun restoreDiagnosticEvents() {

@@ -116,6 +116,7 @@ jobs:
             grep -F 'CAPT_STAGE_D_SYSTEM_SMOKE_PASSED' /tmp/capt-system-smoke.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-raster-smoke.txt
             grep -F 'CAPT_STAGE_C_RASTER_SMOKE_PASSED' /tmp/capt-raster-smoke.txt
+            grep -F 'CAPT_DIAGNOSTIC_SESSION_SMOKE_PASSED' /tmp/capt-raster-smoke.txt
             adb shell am force-stop com.cryonum.captusbprint.debug
             adb shell am instrument -w -e verifyRecovery true com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_STAGE_C_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt

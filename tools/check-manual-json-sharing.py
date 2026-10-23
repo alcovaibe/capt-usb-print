@@ -10,8 +10,13 @@ assert "permissionSharePending" not in main
 assert 'recordEvent("PrintTestPage"' in main
 assert 'recordEvent("CancelTestPage", "requested"' in main
 assert 'recordEvent("PrepareTestPage"' in main
+assert 'R.string.printer_diagnostics' in main and 'PrinterDiagnostics.run(' in main
+for old_button in ("probe_capt_status", "probe_capt_extended_status", "probe_capt_input_status", "probe_capt_printer_info"):
+    assert f'R.string.{old_button}' not in main
+session = Path("app/src/main/java/com/cryonum/captusbprint/core/CaptDiagnosticSession.kt").read_text()
 for query in ("GetBasicStatus", "GetExtendedStatus", "GetInputStatus", "GetPrinterInfo"):
-    assert query in main
+    assert query in session
+assert 'recordEvent("PrinterDiagnostics"' in main
 start_of_share = main.index("    private fun shareReport() {")
 prefix = main[:start_of_share]
 assert "Intent.ACTION_SEND" not in prefix, "Implicit JSON send before explicit sharing"
