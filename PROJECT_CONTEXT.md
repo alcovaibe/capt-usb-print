@@ -5,7 +5,9 @@ Latest startup correction (2026-10-23), baseline main 34af4653324d / signed buil
 SetPowerDown ACK validator aborted on `BA E0 06 00 80 00` before any page data.
 This is a software regression, not proof of a hardware fault. Document jobs
 separately stop on the unverified short Basic `88` despite Extended `31/88`.
-All four engines now share the pinned LBP2900 Extended/Input startup policy,
+All four engines now share the working Android LBP2900 Extended/Input policy,
+following upstream phase order while explicitly differing from its Basic-first
+cached status helper and power-setting payload (see the investigation),
 with bounded input/busy/counter checks. SetPowerDown is recorded separately and
 followed by an Extended-state check before JobInfo START. Mandatory job/control
 ACKs and separate Reserve Error/JobID parsing remain. No resets, flushes,

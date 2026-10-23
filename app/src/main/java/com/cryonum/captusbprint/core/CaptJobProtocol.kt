@@ -34,7 +34,7 @@ object CaptJobProtocol {
     fun parseReservedJob(frame: ByteArray): Int {
         val payload = CaptFrame.parseReply(RESERVE_UNIT, frame)
         require(payload.size >= 4) { "ReserveUnit reply has no JobID" }
-        require((payload[0].toInt() and 0x80) == 0) {
+        require((payload[0].toInt() and 0xff) == 0) {
             "ReserveUnit signaled an error; no automatic recovery"
         }
         val jobId = u8(payload[2]) or (u8(payload[3]) shl 8)

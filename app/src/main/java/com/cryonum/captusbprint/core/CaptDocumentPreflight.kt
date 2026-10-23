@@ -4,10 +4,12 @@ import java.util.Locale
 
 /** LBP2900 job admission, shared by documents, the PDF pilot and both tests.
  *
- * The pinned lbp3000_job_prologue uses ExtendedStatus/InputStatus at startup;
- * LBP2900 get_status is capt_get_xstatus. The owner's six-byte Basic reply has
- * no verified status contract and is retained by diagnostics, not interpreted
- * as an additional job-admission veto. No value is rewritten or whitelisted.
+ * The previously working Android paths use ExtendedStatus/InputStatus. The
+ * pinned prologue settles input before reservation but does NOT impose our
+ * old Basic 0x8e admission mask. Its capt_get_xstatus helper is Basic-first,
+ * with conditional Extended refresh; we deliberately use fresh Extended here
+ * rather than assume the owner's six-byte Basic reply has that full contract.
+ * No value is rewritten or whitelisted; diagnostics retain the Basic reply.
  */
 object CaptDocumentPreflight {
     private const val POLL_BUDGET_MS = 5_000L
@@ -22,9 +24,10 @@ object CaptDocumentPreflight {
         note: (String) -> Unit
     ): CaptExtendedStatus = awaitExtended(query, guard, now, pause, note, "Preflight")
 
-    /** SetPowerDown is power configuration, not print acceptance. Upstream checks
-     * status after it and waits for NOTREADY to clear before SetJobInfo2(START).
-     * The reservation is already owned here; do not require a FREE flag.
+    /** Upstream checks status/NOTREADY after SetPowerDown before JobInfo START.
+     * This Android policy uses fresh Extended/Input, as in awaitReady, instead
+     * of upstream's Basic-first cached helper. The configuration response is
+     * not print acceptance; a reservation can already have cleared FREE.
      */
     fun afterPowerDown(
         query: (Int) -> ByteArray,

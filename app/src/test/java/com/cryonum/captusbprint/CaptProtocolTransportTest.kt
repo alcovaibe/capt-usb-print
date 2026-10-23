@@ -122,6 +122,15 @@ class CaptProtocolTransportTest {
         }
     }
 
+    @Test fun reserveRequiresAZeroErrorByteEvenIfTheReplyContainsAJobId() {
+        assertEquals(42, P.parseReservedJob(hex("A0 A2 08 00 00 7F 2A 00")))
+        for (error in listOf(1, 4, 0x80, 0x87, 0x8c)) {
+            val frame = hex("A0 A2 08 00 00 00 2A 00").also { it[4] = error.toByte() }
+            val failure = assertThrows(IllegalArgumentException::class.java) { P.parseReservedJob(frame) }
+            assertTrue(failure.message!!.contains("ReserveUnit signaled an error"))
+        }
+    }
+
     @Test fun capturedPowerDownReplyIsPreservedWithoutClaimingPrintAcceptance() {
         val trace = CaptProtocolTrace()
         trace.reserved(1)
