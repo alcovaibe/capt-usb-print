@@ -1,498 +1,342 @@
-# CAPT USB Print — project context
+# CAPT USB Print — контекст проекта
 
-Current queue/cancel/paper recovery work (2026-10-23), based on main
-`69d10642874d0d6bdd411d4dc0d73b8fc526aa1d`, signed build 147:
+Текущая работа с очередью, отменой и восстановлением после бумаги (23 октября 2026 года), база main `69d10642874d0d6bdd411d4dc0d73b8fc526aa1d`, подписанная сборка 147:
 
-- **Physical acceptance reported by owner:** 11-page HONOR Documents job,
-  screenshot, selected document page and a test sheet printed. Supplied queue
-  JSON confirms the system job's 11 counter checkpoints and two single-sheet
-  image jobs, all with acknowledged END/Release. Inter-page delays of 1–30 s
-  are owner-observed; performance is not changed by this work.
-- Separate cancelled test (JobID=4) sent 23,044 print bytes and StartPrint(1),
-  then user cancellation at 15:51:46 stopped polling without END/Release.
-  Owner says that physical sheet did print. After reconnect, three image jobs
-  and another test got ReserveUnit `8C` with no valid JobID and no raster.
-  Owner confirms power off/on restored printing. This supports retained job
-  state as a hypothesis; it does not establish the complete meaning of `8C`
-  or make short GetBasicStatus `88` the same failure.
-- New implementation: all test/PDF/document paths share aligned soft-cancel
-  cleanup for the **current live known JobID**, ACK checks, and a durable
-  reservation ledger. Explicit clear deletes queue records and separately
-  verifies printer clearing with the pinned error-clear order and one fresh
-  Reserve/Release probe, with no raster/job START. Never reuse stored JobIDs.
-- Recognized, unaccepted paper-out sheets pause with private prepared pages.
-  Continue is manual, validates the spool, clears/checks reported readiness,
-  and starts a new segment at the next confirmed physical output position,
-  preserving ranges/collated copies. Unknown boundaries/partial writes never
-  get a Continue action. A paused released segment survives process restart;
-  queued/in-flight interrupted attempts still never auto-resume.
-- See [PRINT-QUEUE-RECOVERY.md](docs/PRINT-QUEUE-RECOVERY.md). New cancel/clear/
-  paper commands are source-based and fixture-tested, **not yet hardware
-  accepted** on this LBP2900. In particular upstream ABORT flag=4 is itself
-  described as unconfirmed in the protocol notes. Final-head CI must pass
-  before review; no merge or signed release is authorized by this work.
+- **Физическая приёмка по сообщению владельца:** напечатаны 11 страниц из HONOR Documents, снимок экрана, выбранная страница документа и тестовый лист. Предоставленный JSON очереди подтверждает 11 контрольных точек системного задания и два одностраничных задания изображений, все с подтверждёнными END/Release. Владелец наблюдал межстраничные задержки 1–30 с; эта работа не меняет производительность.
+- Отдельный отменённый тест (JobID=4) передал 23 044 печатных байта и StartPrint(1), затем отмена в 15:51:46 остановила опрос без END/Release. По словам владельца лист физически вышел. После переподключения три задания изображений и ещё один тест получили ReserveUnit `8C` без корректного JobID и растра. Владелец подтвердил восстановление печати после выключения/включения питания. Это поддерживает гипотезу сохранённого состояния задания, но не устанавливает полный смысл `8C` и не делает короткий GetBasicStatus `88` тем же отказом.
+- Новая реализация: все тестовые/PDF/документные пути используют общую мягкую отмену на границах полного обмена для **известного JobID текущего живого сеанса**, проверки ACK и долговременный журнал резервирования. Явная очистка удаляет записи очереди и отдельно проверяет принтер закреплённым порядком очистки ошибки и одной новой пробой Reserve/Release без растра/START задания. Сохранённые JobID не использовать повторно.
+- Распознанное отсутствие бумаги на ещё не принятом листе приостанавливает задание с сохранением приватных подготовленных страниц. Продолжение вручную проверяет файлы, очищает/проверяет сообщённую готовность и запускает новый сегмент со следующей подтверждённой физической позиции, сохраняя диапазоны/копии с подборкой. При неизвестной границе/частичной записи продолжение не предлагается. Приостановленный освобождённый сегмент переживает перезапуск; ожидавшие/выполнявшиеся прерванные попытки автоматически не возобновляются.
+- См. [PRINT-QUEUE-RECOVERY.md](docs/PRINT-QUEUE-RECOVERY.md). Новые команды отмены/очистки/бумаги основаны на источниках и проверены моделями, **ещё не приняты аппаратно** на этом LBP2900. В частности, сам исходный флаг ABORT=4 в заметках протокола отмечен неподтверждённым. Перед просмотром нужен успешный CI последней ревизии; эта работа не разрешает слияние или подписанный выпуск.
 
-The checkpoint above supersedes old claims below that build-147 system
-printing is unverified or that cancellation must always leave a job open.
+Эта контрольная точка заменяет старые утверждения ниже о неподтверждённой системной печати сборки 147 и о том, что отмена всегда должна оставлять задание открытым.
 
+Документация Markdown ведётся на русском. CI имеет исключение `**/*.md` для `push` в main и `pull_request`; запуск вручную сохранён. Фильтр PR оценивает весь набор изменений PR, поэтому смешанный PR с кодом продолжает проверяться и после дополнительного коммита только с документацией. Подробности — в README.
 
-Historical PR-30 startup correction (2026-10-23), baseline main 34af4653324d / signed build
-144: fresh hardware proves ReserveUnit returned JobID=1, then PR 29's new
-SetPowerDown ACK validator aborted on `BA E0 06 00 80 00` before any page data.
-This is a software regression, not proof of a hardware fault. Document jobs
-separately stop on the unverified short Basic `88` despite Extended `31/88`.
-All four engines now share the working Android LBP2900 Extended/Input policy,
-following upstream phase order while explicitly differing from its Basic-first
-cached status helper and power-setting payload (see the investigation),
-with bounded input/busy/counter checks. SetPowerDown is recorded separately and
-followed by an Extended-state check before JobInfo START. Mandatory job/control
-ACKs and separate Reserve Error/JobID parsing remain. No resets, flushes,
-automatic release/retry/replay or fabricated readiness/JobID. Basic diagnostics
-remain UNKNOWN for the short form; setup phase/messages distinguish zero page
-data from later uncertain printing. See docs/LBP2900-STARTUP-CONTRACT.md for
-Canon service documentation, primary protocol sources, captured-byte evidence,
-ranked hypotheses and test limits. Physical document/system printing remains
-unverified; API-36 CI and owner-controlled merge/release are still required.
+Историческое исправление запуска PR №30 (23 октября 2026 года), база main 34af4653324d / подписанная сборка 144: свежие аппаратные данные показывают, что ReserveUnit вернул JobID=1, после чего новая проверка ACK SetPowerDown из PR №29 остановила запуск на `BA E0 06 00 80 00` до данных страницы. Это программная регрессия, а не доказательство аппаратной неисправности. Документы отдельно останавливались по непроверенному короткому Basic `88`, несмотря на Extended `31/88`. Все четыре движка получили общую работающую политику Android LBP2900 Extended/Input с порядком фаз исходного драйвера, но явными отличиями от его кеширующего помощника Basic-first и нагрузки настройки питания (см. расследование), с ограниченными проверками ввода/занятости/счётчиков. SetPowerDown записывается отдельно и сопровождается проверкой Extended до JobInfo START. Обязательные ACK задания/управления и отдельный разбор Reserve Error/JobID сохранены. Сбросы, очистки канала, автоматическое освобождение/повтор и выдуманные готовность/JobID не добавлялись. Для короткой формы диагностика Basic остаётся UNKNOWN; фаза/сообщения настройки отличают ноль данных страницы от последующей неопределённой печати. Документация Canon, первичные протокольные источники, полученные байты, ранжированные гипотезы и пределы тестов — в docs/LBP2900-STARTUP-CONTRACT.md. На этой исторической точке физическая документная/системная печать ещё не была проверена; требовались CI API 36 и управляемые владельцем слияние/выпуск.
 
-Historical checkpoints follow; the paragraph above supersedes earlier claims
-that SetPowerDown must have a zero Error byte or the Basic gate must remain.
+Далее сохранена история. Предыдущий абзац заменяет ранние требования обязательного нуля Error SetPowerDown и сохранения барьера Basic.
 
+Историческая протокольная точка PR №29 (23 октября 2026 года): продолжение расследования владельца от main 75e7c5176ca0c157a5ba5bd5d5d3b14a78b94123. ACK управляющих команд во всех движках проверяются отдельно от состояния/Reserve; отрицательные END/Release не объявляются успешным освобождением, подтверждённые страницы сохраняются. Приватный ограниченный protocolDiagnostics удерживает сеанс/сборку/владельца/фазу, запрошенные/фактические объёмы USB, необработанные/частичные управляющие ответы и жизненный цикл CAPT. OUT-нагрузки/документы исключены, экспорт только прежний ручной JSON. Повторные диагностические выборки независимы от UNKNOWN, поэтому вторичные 88/8A не подавляют пары после Input. Семантика короткого Basic явно не проверена; остановка 0x88 до резервирования сохранена. Новые Basic, сбросы, очистки канала, автоматический повтор и предположительное завершение не добавлены. Порядок команд/растр принятых движков сохранён с добавлением ACK и пассивных свидетельств. Новая аппаратная приёмка печати не заявлялась; см. docs/CAPT-PROTOCOL-FOLLOWUP.md. Сборка/lint/модульные тесты и CI API 36 конечного HEAD обязательны; слияние контролирует владелец.
 
-Historical PR-29 protocol checkpoint (2026-10-23): follow-up from the owner's investigation,
-starting at main 75e7c5176ca0c157a5ba5bd5d5d3b14a78b94123. Control-command ACKs
-are now checked separately from status/Reserve replies in all print engines;
-negative END/Release cannot claim released success and confirmed pages survive.
-A private bounded protocolDiagnostics log retains session/build/owner/phase,
-USB requested/actual counts, raw/partial control replies and CAPT lifecycle.
-Raw OUT payloads/document data are excluded; existing manual JSON export only.
-Diagnostic resampling is independent of UNKNOWN so captured secondary 88/8A
-cannot suppress post-Input pairs. Short Basic response semantics are explicitly
-unverified; the pre-reservation 0x88 stop remains. No new Basic probes, resets,
-flushes, automatic replay or speculative teardown. Accepted engines retain their
-command order/raster, with ACK checks and passive evidence added. Hardware
-printing is NOT newly accepted; see docs/CAPT-PROTOCOL-FOLLOWUP.md. Final-HEAD
-build/lint/unit and API-36 PR CI remain required; merge stays owner-controlled.
+Последняя контрольная точка интерфейса (23 октября 2026 года): владелец запросил адресную уборку предпросмотра/очереди, а не предложенный широкий редизайн. На главном экране убраны заголовок этапа C, вступление и абзац под системными настройками печати. У приёма документа убран длинный вводный абзац. В предпросмотре закреплены нижние кнопки обычной очереди и восстановленного явного одностраничного книжного PDF-пилота (`FirstPdfPrintGate` → `FirstPdfPrintAttempt`). Пилот сохраняет ранее аппаратно проверенный движок владельца и требует ровно видимую страницу PDF, одну копию, A4 книжную, свободную очередь, подтверждение и USB-разрешение. При уходе/уничтожении экрана он отменяется, фоновое продолжение/автоповтор не добавляются. Это не доказывает исправление общей/системной печати или BasicStatus 0x88. Описания/порядок/отмена записей очереди не меняются. Отдельные и системная кнопки отправки заменены одним нижним сборником JSON: сводки очереди, сохранённые отчёты заданий, системный маршрут, последний PDF и USB-диагностика. Читаются только готовые очищенные отчёты, не документы/подготовленные исходники. Экспорт ручной, вне главного потока, с ограничениями частей/суммы и явными причинами отсутствия/повреждения/превышения размера. Приватность и подпись сохранены. CI должен проверить конечный HEAD, включая экспорт/FileProvider на Android 36.
 
+Обновлено 23 октября 2026 года. Историческая точка: **ограниченное согласование CAPT перед печатью документов**, база слитого этапа D main `57a643dce995` / подписанная сборка 133. Системное задание HONOR дошло до службы, импортировало/подготовило PDF и остановилось до ReserveUnit с точным Basic `A0 E0 06 00 88 00`, ноль печатных байт. Последующее 11-страничное задание остановилось там же. Владелец помнит выключение/включение, но это не инструментальное доказательство состояния после него. Системный маршрут/приём физически наблюдались; системная печать и приёмка D оставались открытыми. Необработанные отчёты владельца не добавлялись в коммиты.
 
-Latest UI checkpoint (2026-10-23): owner requested a targeted preview/queue cleanup,
-not the proposed broader redesign. Main no longer shows the Stage C heading,
-its introductory paragraph or the paragraph below Android print settings.
-Document intake loses its long introductory paragraph. The preview screen has
-fixed bottom print actions: ordinary queue printing and the restored explicit
-one-sheet portrait PDF pilot (`FirstPdfPrintGate` → `FirstPdfPrintAttempt`).
-The pilot retains the owner's earlier hardware-tested engine and requires exactly
-the visible PDF page, one copy and A4 portrait; it requires an idle queue,
-confirmation and USB permission. It cancels on leaving/destroying the screen;
-no background continuation or automatic retry is introduced. This does not
-establish a fix for system/general document printing or BasicStatus 0x88.
-Queue record descriptions/order/cancellation stay unchanged. Individual and
-system share buttons are replaced with one footer JSON bundle containing queue
-summaries, retained job reports, system routing, latest PDF and USB diagnostics.
-Only existing sanitized reports are read; no document/spool sources. Export is
-manual and off-main, bounded per report/total, with explicit omission reasons
-for unavailable/corrupt/oversized parts. Existing source privacy and signing stay.
-CI must validate final HEAD, including Android-36 export/FileProvider smoke.
+Ветка добавляла ограниченное согласование Basic/Extended/Input и парную необработанную трассу, сохраняя остановку `0x88`. Постоянное противоречие давало `CAPT_STATUS_CONFLICT`, некорректный ответ — `CAPT_STATUS_INVALID`. Повторялись только чтения состояния: бюджет опроса 5 секунд сверх ограниченной задержки USB, максимум 21 выборка. Повтор Reserve, сброс, восстановление и повтор задания не добавлялись. Аудит, пределы и последующая одностраничная проверка после подписанной сборки — в `docs/CAPT-PREFLIGHT-STATUS.md`. Локальные проверки ручного экспорта и пробелов прошли; Gradle не загрузился из-за недоступной сети, результаты сборки/lint/тестов/эмулятора должны поступить из CI PR. Это не проверенное исправление ReserveUnit `0x8C` или постоянного `0x88`.
 
+Историческая точка до аппаратных отчётов сборки 133: **этап D Android PrintService**, после слитого владельцем PR №25 этапа C (слияние main `130c158f8288db17110ef9bfe433140302917f68`). CI 123 прошёл, включая постоянную подпись и обновление поверх API 36. Приёмка C оставалась условной по указанию владельца, без новых физических свидетельств. Фактические данные: этапы A/B и два отдельных PDF-листа сборки 105. Код D реализован в PR №26; CI конечного HEAD — условие просмотра. Владелец явно разрешил публичность репозитория 23 октября 2026 года ради бесплатных стандартных исполнителей GitHub; это заменяет прежнее требование приватности. Материалы подписи и документы/диагностика приложения приватны. Маршрут/печать HONOR тогда не подтверждены. История сохранена; следующая контрольная точка находится в конце.
 
-Updated: 2026-10-23. Latest checkpoint: **bounded document CAPT preflight reconciliation**
-from merged Stage D `main` `57a643dce995` / signed build 133. The owner's HONOR
-system job reached our service, imported and prepared its PDF, then stopped
-before ReserveUnit with the exact basic reply `A0 E0 06 00 88 00`, zero print
-bytes. A subsequent 11-page system job stopped at the same gate. The owner
-recalls a power cycle but this is not instrumented proof of post-cycle state.
-System routing/intake is now physically observed; physical system printing and
-Stage D acceptance remain open. Raw owner reports are not committed.
+## Область работы и подтверждённые факты
 
-This branch adds bounded Basic/Extended/Input status reconciliation and paired
-raw preflight trace, preserving the `0x88` stop. Persistent contradictory replies
-become `CAPT_STATUS_CONFLICT`; malformed replies become `CAPT_STATUS_INVALID`.
-Only status reads are repeated, with a 5-second polling budget (in addition to
-bounded USB query latency) and 21-sample cap. No reservation retry, reset,
-recovery or replay is introduced. See `docs/CAPT-PREFLIGHT-STATUS.md` for audit,
-limits and the single-sheet follow-up after a signed build. Local manual-only
-sharing guards and whitespace checks passed. Gradle could not download locally
-(network unreachable); build/lint/unit/emulator results must come from PR CI.
-This is not a verified repair for ReserveUnit `0x8C` or sustained `0x88`.
+- Исходный проект перенесён из приватного `alcovaibe/PulseAI` в отдельный приватный `alcovaibe/capt-usb-print`. Оригинал должен оставаться без изменений. Прежний сетевой/чатовый/сервисный код PulseAI исключён из нового приложения.
+- Владелец сообщает HONOR X9c с Android 16 / MagicOS 10, Canon LBP2900, прямой кабель USB-C ↔ USB-B и успешную физическую тестовую страницу PrintHand. Последний подписанный отчёт подтверждает VID/PID 04A9:2676, выданное USB-разрешение, интерфейс 0/alt 0 класс 7/подкласс 1/протокол 2, OUT BULK 0x0001 и IN BULK 0x0082, однозначный канал, успешный захват без принуждения и корректный GetInputStatus.
+- Нет подписки, зависимости от PrintHand, облака, разрешения INTERNET и команд прошивки/сервисного обслуживания принтера. Публичные репозиторий/Releases разрешены владельцем с 23 октября 2026 года; это не аппаратная приёмка и не заявление о всеобщем стабильном выпуске.
+- USB-диагностика A остаётся без записи; физические тесты B — один лист, повторные задания и два разных листа в одном — приняты на сборке 71. Один PDF-лист C подтверждён владельцем на сборке 105; многостраничный PDF, изображения и эксплуатационная устойчивость на этой исторической точке не проверены. D/E не приняты.
 
-Historical checkpoint before the build-133 hardware reports: Current work: **Stage D Android PrintService**, from owner-merged Stage C PR #25 (`main` merge `130c158f8288db17110ef9bfe433140302917f68`). Main CI 123 passed, including permanent signing and API 36 in-place upgrade. C acceptance remains conditional by owner instruction, not new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. D code is implemented in PR #26; final-HEAD CI is the review gate there. The owner explicitly authorized public visibility of this repository on 2026-10-23 to use free standard GitHub-hosted runners; this supersedes earlier private-repository-only instructions. Signing credentials and app document/diagnostic data remain private. HONOR system routing/printing remains unconfirmed. Historical notes are retained; latest checkpoint is at the end.
+## Исследование исходного проекта — исторический аудит A; HISCOA позднее включён в B
 
-## Scope and confirmed facts
-- Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
-- Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, and a successful physical PrintHand test page. Latest signed app report confirms VID/PID 04A9:2676, granted USB permission, interface 0/alt 0 class 7/subclass 1/protocol 2, OUT BULK 0x0001, IN BULK 0x0082, unique link selection, successful non-forced claim, and a valid GetInputStatus response.
-- No subscription, PrintHand dependence, cloud, INTERNET permission or printer firmware/service commands. Public repository/Releases visibility is owner-authorized as of 2026-10-23; this is not hardware acceptance or a general stable-release claim.
-- Stage A USB diagnostics remain read-only; Stage B physical single-sheet, repeat-job and two-different-sheets-in-one-job tests were accepted on build 71. Stage C single-sheet PDF output is owner-confirmed on build 105; multi-sheet PDF, image printing and production stability remain unverified. D/E have not been accepted.
+- Кандидат: `ValdikSS/captdriver`, ветка `val`, `892f320c019974a5b737e000fcc2c8582264a131`; README ориентирован на LBP2900/3000/6000 и заявляет улучшения многостраничности, потоков и состояний; известны остановки после замятия/картриджа/крышки. `src/prn_lbp2900.c` управляет заданием/страницей для модели; `capt-command.c` — кадрами; `capt-status.c` — состоянием; `generic-ops.c` — потоком; `hiscoa-compress.c` — сжатием растра; `rastertocapt.c` зависит от растра CUPS и Linux/POSIX. Одинаковую семантику команд других поколений принтеров не предполагать.
+- Альтернативы: `mounaiban/captdriver`, master `62719249ac34633338be54bc74beddd0e7003d38`, и пассивно сопровождаемый `agalakhov/captdriver`, master `175f8ff4464591feb67728c7752ac752c7b48d43`.
+- `ValdikSS/COPYING` указывает GNU GPL версии 3, заголовки исходников — GPLv3 или позднее. При переносе кода сохранять уведомления об авторе/лицензии, совместимую GPL лицензию проекта и обязательства предоставления исходников до распространения APK.
+- Требование CUPS в README ValdikSS относится к USB-модулю Linux; Android-транспорт самостоятельно координирует доступ и таймауты USB. Исходники изучены, но **на этапе A код GPL из исходного проекта не копировался**.
 
-## Upstream research (historical Stage A audit; HISCOA subsequently imported for Stage B)
-- Candidate: \`ValdikSS/captdriver\` branch \`val\` at \`892f320c019974a5b737e000fcc2c8582264a131\`; README focuses LBP2900/3000/6000, claims multi-page, streaming and state-handling improvements; known aborts after paper jams/cartridge/door conditions. \`src/prn_lbp2900.c\` contains model-specific job/page control; \`capt-command.c\` framing; \`capt-status.c\` status decoding; \`generic-ops.c\` flow control; \`hiscoa-compress.c\` raster compression; \`rastertocapt.c\` includes CUPS raster dependency and Linux/POSIX calls. Do NOT assume other printer generations share command semantics.
-- Alternatives: \`mounaiban/captdriver\` master \`62719249ac34633338be54bc74beddd0e7003d38\`, and passively maintained \`agalakhov/captdriver\` master \`175f8ff4464591feb67728c7752ac752c7b48d43\`.
-- \`ValdikSS/COPYING\` states GNU GPL version 3; source headers say GPLv3 or later. If any source is ported, preserve author/license notices, include GPL-compatible project licensing and source distribution obligations before shipping APK.
-- CUPS requirement in ValdikSS README concerns Linux USB backend; Android transport must instead handle its own coordination and USB timeouts. Upstream source was audited but **no upstream GPL code has been copied into stage A**.
+## Минимальная архитектура и планы
 
-## Minimal architecture / planned
-Kotlin Android App. Stage A: Activity → single-thread executor → UsbScanner → Android UsbManager; explicit internal permission receiver; share-only-on-user-action report. Scanner enumerates all USB devices, checks a unique BULK IN/OUT interface before short claim probe, does not send data. Later: file URI/PdfRenderer → page specification and bounded raster bands → isolated CAPT/HISCOA adapter (possibly NDK after audit) → single-owner USB transport → shared serial job queue → Activity and PrintService clients. Fake transport strictly for tests only. PrintService is implemented in the Stage D feature branch and is under verification.
+Приложение Kotlin Android. Этап A: Activity → однопоточный исполнитель → UsbScanner → Android UsbManager; явный внутренний получатель разрешения; отправка отчёта только пользователем. Поиск перечисляет все USB, перед короткой пробой захвата выбирает единственный BULK IN/OUT, не отправляет данные. Далее: URI файла/PdfRenderer → описание страниц и ограниченные полосы растра → изолированный адаптер CAPT/HISCOA (возможно NDK после аудита) → USB-транспорт с одним владельцем → общая последовательная очередь → клиенты Activity/PrintService. Подставной транспорт только для тестов. PrintService реализован в ветке этапа D и проходит проверку.
 
-## Toolchain
-JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with built-in Kotlin (minimum 2.2.10); compileSdk 36, targetSdk 36, minSdk 29 (deliberate development floor, not claim of wider support). No Compose/NDK/CMake needed for read-only diagnostic proof. Inherited Gradle distribution SHA is retained. Runtime no INTERNET; CI requires network to install SDK and dependencies.
+## Инструменты сборки
 
-## Known limitations and verification status
-- No local Android SDK/network is available in the execution container, so no local APK build is claimed. Historical setup/resource-linking failures were fixed. Latest main run 39728843497 passed assembleDebug, lintDebug, unit tests and the merged APK permission audit; its signed-release job also passed Android 16 emulator install/in-place-upgrade verification.
-- CI success: run [39650348245](https://github.com/alcovaibe/capt-usb-print/actions/runs/39650348245), source commit `e624dc09b1ffefe25e2709f13359430bcb8f2de2`. `assembleDebug`, `lintDebug`, `testDebugUnitTest`, merged APK permission checks and private artifact upload passed. Artifact: `capt-usb-print-a1-debug`, ID `12370645206` (7-day retention). No Android device/emulator or printer was available to this run.
-- Android platform APIs require physical phone verification for USB enumeration, OS/ABI/page size, request/deny/grant, detach, endpoint selection, raw descriptor read and claim probe.
-- VID/PID, interface/endpoints and permission/claim are now confirmed. GetBasicStatus (6-byte reply) and GetInputStatus (22-byte reply) have been observed; GetInputStatus payload is opaque. GetPrinterInfo Blk/Buf values, a usable GetExtendedStatus counter response, a page transfer trace, physical print, and HONOR system PrintService remain unverified.
-- Debug signature is ephemeral, not a stable update signature; no keystore committed. No automatic retry/printing after reconnect.
+JDK 21 для сборки (AGP 9.2 требует минимум 17); Gradle 9.4.1; AGP 9.2.1 со встроенным Kotlin (минимум 2.2.10); compileSdk 36, targetSdk 36, minSdk 29 — намеренная нижняя граница разработки, не заявление о широкой поддержке. Для доказательства диагностики без записи Compose/NDK/CMake не требуются. Унаследованный SHA дистрибутива Gradle сохранён. Во время работы INTERNET отсутствует; CI требует сеть для SDK/зависимостей.
 
-## Confirmed / unknown / how to check
+## Известные ограничения и статус проверок
 
-| Item | State | Method |
+- В контейнере выполнения нет локального Android SDK/сети, локальная сборка APK не заявляется. Старые ошибки настройки/связывания ресурсов исправлены. Последний тогда запуск main 39728843497 прошёл assembleDebug, lintDebug, модульные тесты и аудит разрешений итогового APK; подписанный выпуск также прошёл установку/обновление поверх в эмуляторе Android 16.
+- Успешный CI: [39650348245](https://github.com/alcovaibe/capt-usb-print/actions/runs/39650348245), исходный коммит `e624dc09b1ffefe25e2709f13359430bcb8f2de2`. `assembleDebug`, `lintDebug`, `testDebugUnitTest`, разрешения итогового APK и загрузка приватного артефакта прошли. Артефакт: `capt-usb-print-a1-debug`, ID `12370645206`, хранение 7 дней. В этом запуске не было Android-устройства/эмулятора и принтера.
+- API Android требуют физической проверки телефона: обнаружение USB, ОС/ABI/страница памяти, запрос/отказ/разрешение, отключение, выбор конечных точек, чтение исходного дескриптора и проба захвата.
+- VID/PID, интерфейс/конечные точки и разрешение/захват подтверждены. Наблюдались `GetBasicStatus` (6 байт) и GetInputStatus (22 байта); нагрузка Input непрозрачна. Blk/Buf GetPrinterInfo, пригодные счётчики `GetExtendedStatus`, трасса страницы, физическая печать и системный PrintService HONOR на этой точке ещё не проверены.
+- Отладочная подпись временная и не обеспечивает стабильное обновление; хранилище ключей не добавлено в Git. Автоповтора/печати после подключения нет.
+
+## Подтверждено / неизвестно / как проверить
+
+| Пункт | Состояние | Метод |
 | --- | --- | --- |
-| USB enumeration / permission | Confirmed: one device 04A9:2676; permission granted | Owner's signed-build report, 2026-10-22 |
-| Repository privacy | Confirmed private via GitHub metadata | Recheck on new commit |
-| Device API/build/ABI/page size | API 36, build BRP-N21 10.0.0.172(C636E6R4P1), ABI includes arm64-v8a, page size 4096 bytes | Owner's report, 2026-10-22 |
-| USB interface/endpoints/claim | Interface 0/alt 0 class 7/subclass 1/protocol 2; OUT 0x0001 and IN 0x0082 BULK; claim succeeds | Owner's report, 2026-10-22 |
-| CAPT responses | GetBasicStatus valid (6 bytes); GetInputStatus valid (22 bytes total, payload opaque) | Owner's reports, 2026-10-22 |
-| GetPrinterInfo transfer parameters | Not yet queried on hardware | New guarded read-only probe in this feature branch |
-| Physical page print | Not implemented / not verified | Stage B, after status and transfer-parameter review |
-| PDF / Android PrintService / HONOR Documents | Not implemented | Stages C/D |
+| Обнаружение USB / разрешение | Подтверждено: одно 04A9:2676; разрешение выдано | Отчёт подписанной сборки владельца, 22 октября 2026 года |
+| Приватность репозитория | На этой исторической точке подтверждена метаданными GitHub | Перепроверять при новом коммите |
+| API/сборка/ABI/страница устройства | API 36, BRP-N21 10.0.0.172(C636E6R4P1), ABI включает arm64-v8a, страница 4096 байт | Отчёт владельца, 22 октября 2026 года |
+| Интерфейс/конечные точки/захват USB | Интерфейс 0/alt 0 класс 7/подкласс 1/протокол 2; OUT 0x0001 и IN 0x0082 BULK; захват успешен | Отчёт владельца, 22 октября 2026 года |
+| Ответы CAPT | GetBasicStatus корректен (6 байт); GetInputStatus корректен (22 байта целиком, нагрузка не интерпретируется) | Отчёты владельца, 22 октября 2026 года |
+| Параметры передачи GetPrinterInfo | Ещё не запрашивались на оборудовании | Новая защищённая проба без записи в этой ветке |
+| Физический лист | Не реализован / не проверен | Этап B после изучения состояния/параметров передачи |
+| PDF / Android PrintService / HONOR Documents | Не реализованы | Этапы C/D |
 
-## Private prereleases
-- Owner authorized test builds in Releases of this private repository only; no public repository, Play Store, or other distribution channel.
-- Current workflow: pull requests run build/lint/unit tests and the merged-manifest permission audit. Only trusted pushes to main or manual main workflow dispatch can access the ANDROID_SIGNING secret and run the signed-release job.
-- Signed release build 33 was published on 2026-10-22: tag v0.1.0-a2-signed.build.33, package com.cryonum.captusbprint, version 0.1.0-a2.33, versionCode 1033. APK asset: CAPT-USB-Print-0.1.0-a2-build-33.apk.
-- Run 39728843497 passed Android build/lint/unit tests, APK permission audit, signing-certificate/version checks, Android 16 emulator install/in-place-upgrade verification, and the release publish step.
-- The feature PR must not be merged automatically: merging to main triggers a new private signed release. Review its PR CI first and merge only when the next signed test build is wanted.
-## Next actions
-1. Run PR CI for the read-only GetPrinterInfo probe and extended page-counter parser; do not merge if build, lint, tests or permission audit fail.
-2. After the feature is merged and its signed private build is available, run GetPrinterInfo once and inspect the actual Blk/Buf values.
-3. Continue the LBP2900-specific upstream audit. Do not enable job initialization, error-clearing recovery, page descriptors, HISCOA data, or StartPrint until the required command sequence and response handling have tests and explicit readiness gates.
+## Приватные предварительные релизы
 
-## Owner-controlled signed updates (2026-10-21)
-- Owner requested permanent upgradeable APKs as in private VK Music Export. A separate CAPT USB Print key was generated; its public certificate SHA-256 fingerprint is 6bb4ec99e2ce17383383a918c4d8b942b2a19ba06660e18ee1e1e606d84fdc5e. The private keystore/password remain outside Git.
-- ANDROID_SIGNING is now configured. Main run 39728843497 successfully restored the owner-controlled key, verified the signed APK and prior release, passed the Android 16 emulator in-place upgrade check, and published the private signed build 33. Keep two separate encrypted backups of the signing ZIP; losing the key prevents compatible future upgrades.
-- Release package remains `com.cryonum.captusbprint`. Debug remains `com.cryonum.captusbprint.debug` (different package, therefore no misleading update path). Signed versionCode = 1000 + GitHub run number, tagged `v0.1.0-a2-signed.build.<run>`.
-- On every signed release, verify APK signature with the public pinned certificate, non-debuggable package, increasing version code, prior APK signature and Android 16 emulator in-place `adb install -r` (no uninstall). No PrintService or CAPT printing yet.
-- Layout correction following owner screenshot: show USB device cards and concise permission states by default; full technical report collapsible. Share always includes the full anonymized report. First owner phone confirmation required.
-- Existing old A1 debug releases kept for history; they are not part of the signed update chain. We did not modify VK Music Export.
+- Владелец разрешил тестовые сборки только в Releases этого тогда приватного репозитория; публичный репозиторий, Play Store и другие каналы не разрешались.
+- Текущий на этой точке процесс: PR запускают сборку/lint/модульные тесты и аудит разрешений итогового манифеста. Только доверенные отправки в main или ручной запуск workflow в main получают секрет ANDROID_SIGNING и выполняют подписанный релиз.
+- Подписанная сборка 33 опубликована 22 октября 2026 года: тег v0.1.0-a2-signed.build.33, пакет com.cryonum.captusbprint, версия 0.1.0-a2.33, versionCode 1033. APK: CAPT-USB-Print-0.1.0-a2-build-33.apk.
+- Запуск 39728843497 прошёл сборку/lint/модульные тесты Android, аудит разрешений, проверку сертификата/версии APK, установку/обновление поверх в эмуляторе Android 16 и публикацию релиза.
+- Ветку нельзя сливать автоматически: слияние в main запускает новый приватный подписанный релиз. Сначала проверить CI PR, затем сливать, только если нужен следующий подписанный тестовый выпуск.
 
+## Следующие действия
 
-## Continuation after first diagnostic screenshot (physical USB test still pending)
-**The screenshot from diagnostic APK 0.1.0-a1.4 displays the following values; it was not a controlled printer-connection test:**
-- Device model `HONOR BRP-NX1`; Android API 36, MagicOS build string `BRP-N21 10.0.0.172(C636E6R4P1)` (as shown in screenshot); ABIs `arm64-v8a, armeabi-v7a, armeabi`; memory page size exactly **4096 bytes**; USB Host feature `true`.
-- Screenshot says **Connected USB device count: 0**; no printer descriptor, no VID:PID, no endpoints, no permission request. Owner clarified the USB connection was not deliberately checked during this step; it is unknown whether the printer was physically connected when the screenshot was captured. This is not evidence of a failed cable, printer, or USB discovery. Previously the owner reported a PrintHand test page worked, but that does not verify this app's current discovery.
-- UI issue: system status bar overlapped activity heading on Android 16; root window now accounts for system-bar/display-cutout insets; long report is collapsed by default (share still exports full report).
-- Device attach is an Activity intent, **not** a broadcast (see https://developer.android.com/reference/android/hardware/usb/UsbManager). The prior dynamic ATTACHED receiver was unreliable; now only foreground list-key observation at 2.5-second intervals (no repeated probe when unchanged), plus a DETACHED broadcast.
-- Redacted count-only `UsbObservation` ring holds 16 changes and exports with each snapshot; zero-device guidance expressly says OS enumeration is a prerequisite for USB permission.
-- Isolated, **unwired** Stage B foundations: pure `UsbLinkSelector` (only unambiguous BULK IN/OUT pair), bounded `BoundedBulkWriter` (partial transfers, timeout and cancellation => uncertain; never blindly resends a whole packet), `JobState` (unknown after interrupted transfer, no automatic restarts, never labels write completion printed), `PagePlan` (bounded ranges, copies, overlapping range rejection). JVM unit tests test deterministic synthetic cases; synthetic outcomes are NOT real CAPT proof.
-- Deliberately no print buttons, no new USB transfers or firmware/service commands while Stage A physical enumeration unverified. No new unsigned APK in private Releases; owner-controlled `ANDROID_SIGNING` secret still required before first release-signature build. Prior A1 remains historically available, not a compatible update.
-- Next hardware step: after owner installs a **signed** build (once secret is configured), leave printer powered and direct cable attached; reopen diagnostics and refresh/reconnect once if zero devices; share full report. Actual VID/PID endpoints and permission/claim must precede CAPT adapter wiring.
+1. Выполнить CI PR для GetPrinterInfo без записи и парсера счётчиков Extended; при ошибке сборки, lint, тестов или разрешений не сливать.
+2. После слияния и появления подписанной приватной сборки один раз выполнить GetPrinterInfo и изучить реальные Blk/Buf.
+3. Продолжить аудит исходников именно для LBP2900. Не включать инициализацию, восстановление очисткой ошибок, дескрипторы, HISCOA и StartPrint до тестов последовательности/ответов и явных проверок готовности.
 
-## Testing addendum
-- App unit tests: new Stage B pure-function tests covering unique/ambiguous endpoint matching, partial transfer and interrupted outcome, legal job state transitions and invalid page ranges/copies. Added USB event count-ring tests. These are compile/logic tests only; Android hardware printer printing remains **not tested**.
-- Check latest GitHub Actions job and signed release independently; never infer release from source commit.
+## Подписанные обновления под управлением владельца — 21 октября 2026 года
 
-## Additional isolated protocol layer (parallel change merged)
-- In parallel with the USB enumeration/engine work above, `core/CaptFrame`, `core/BulkIo`, `core/JobSpecification`, `core/JobLedger` and `StageBCoreTest` were added as bounded, pure Kotlin stage B prep. These are NOT wired to the UI, and their synthetic tests are not real printer proofs. The existing `engine/*` and `UsbObservation` work was retained in the merge; no concurrent work discarded.
-- `docs/STAGE-B-FOUNDATION.md` describes the protocol upstream, hardware gate and limitations.
+- Владелец запросил постоянные обновляемые APK по образцу приватного VK Music Export. Создан отдельный ключ CAPT USB Print; SHA-256 открытого сертификата: 6bb4ec99e2ce17383383a918c4d8b942b2a19ba06660e18ee1e1e606d84fdc5e. Приватное хранилище/пароль вне Git.
+- ANDROID_SIGNING настроен. Запуск main 39728843497 восстановил ключ владельца, проверил подписанный APK/предыдущий выпуск, прошёл обновление поверх Android 16 и опубликовал приватную сборку 33. Нужны две отдельные зашифрованные копии ZIP подписи; потеря ключа исключает будущие совместимые обновления.
+- Релизный пакет — `com.cryonum.captusbprint`, отладочный — `com.cryonum.captusbprint.debug`: разные пакеты не создают ложного пути обновления. Подписанный versionCode = 1000 + номер запуска GitHub, тег `v0.1.0-a2-signed.build.<run>`.
+- Каждый подписанный релиз проверяет подпись по закреплённому открытому сертификату, неотладочный пакет, увеличение версии, подпись предыдущего APK и обновление поверх в Android 16 через `adb install -r` без удаления приложения. PrintService и печати CAPT на этой точке ещё нет.
+- Исправление компоновки по снимку владельца: по умолчанию карточки USB и краткие разрешения; полный технический отчёт сворачивается. Отправка всегда включает полный обезличенный отчёт. Нужно первое подтверждение на телефоне владельца.
+- Старые A1 debug сохранены в истории и не входят в цепочку подписанных обновлений. VK Music Export не менялся.
 
-## Verified source checkpoint
-- Merge commit `5f433818e560fe1a1918e0f59217273c23e92414` passed run [39662757271](https://github.com/alcovaibe/capt-usb-print/actions/runs/39662757271): assembleDebug, lintDebug, testDebugUnitTest, Python syntax and merged APK permissions check succeeded, internal diagnostic artifact uploaded.
-- Signing availability job succeeded but the permanent-key signed release job skipped because owner's `ANDROID_SIGNING` secret is not yet installed. No new Releases published.
-- Later code changes, if any, require their own CI check. The only first-phone report still shows USB Host=true but 0 enumerated devices; no actual LBP2900 traffic or printed output was claimed.
+## Продолжение после первого диагностического снимка — физическая проверка USB ещё ожидается
 
+**На снимке диагностического APK 0.1.0-a1.4 показаны следующие значения; это не контролируемая проверка подключения принтера:**
 
-## Verified integration checkpoint (build #10, 2026-10-21)
-- Private `main` source `b8f99f81c4e23135a3c9f47e70bb768c830a4a3c` passed [GitHub Actions run #10](https://github.com/alcovaibe/capt-usb-print/actions/runs/39663011497): debug APK assembly, lint, JVM tests (both foundation suites), Python release script syntax and merged manifest permission audit. Signed-release job correctly **skipped** because owner has not added `ANDROID_SIGNING`. Old A1 debug prerelease is retained as history.
-- Read-only USB probe now reuses tested `UsbLinkSelector` instead of a separate permissive candidate check. Ambiguous/truncated descriptor lists skip interface claim. No new CAPT transport or real print implemented.
-- Zero-result USB writes immediately return uncertain, never silently repeat. Pure range parser accepts the typographic `1–3` example in the original technical specification.
-- Parallel source-only CAPT frame, I/O and job model changes were merged separately and are covered by StageBCoreTest. The components have deliberately not been attached to the live device. Before wiring, consolidate any overlapping prototype models; do not claim real printing from passing mocked tests.
+- Модель `HONOR BRP-NX1`; Android API 36, MagicOS `BRP-N21 10.0.0.172(C636E6R4P1)` по снимку; ABI `arm64-v8a, armeabi-v7a, armeabi`; страница памяти ровно **4096 байт**; USB Host `true`.
+- Снимок показывает **число подключённых USB-устройств: 0**; нет дескриптора принтера, VID:PID, конечных точек и запроса разрешения. Владелец уточнил, что USB специально не проверялся; неизвестно, был ли кабель физически подключён при снимке. Это не свидетельство неисправности кабеля/принтера/обнаружения USB. Ранее работала страница PrintHand по сообщению владельца, но она не проверяет текущее обнаружение этого приложения.
+- Проблема интерфейса: системная строка состояния перекрывала заголовок Activity на Android 16; корневое окно теперь учитывает отступы панелей/выреза, длинный отчёт свёрнут по умолчанию, но экспорт полон.
+- Подключение устройства — намерение Activity, **не** широковещательное событие (см. https://developer.android.com/reference/android/hardware/usb/UsbManager). Старый динамический получатель ATTACHED был ненадёжен; теперь используются наблюдение ключей списка каждые 2,5 секунды на видимом экране без повторной пробы неизменного списка и широковещательный DETACHED.
+- Очищенное кольцо `UsbObservation` хранит только числовые сведения о 16 изменениях и экспортируется с каждым снимком; сообщение о нуле устройств прямо объясняет необходимость обнаружения ОС до запроса USB-разрешения.
+- Изолированные **неподключённые** основы B: чистый `UsbLinkSelector` (только однозначная BULK IN/OUT), ограниченный `BoundedBulkWriter` (частичные передачи, таймаут/отмена → неопределённость; пакет целиком слепо не повторяется), `JobState` (неизвестно после прерванной передачи, без автоперезапуска, запись не объявляется отпечатком), `PagePlan` (ограниченные диапазоны/копии, отказ пересечений). JVM проверяет детерминированные синтетические случаи, а не реальный CAPT.
+- Пока физическое обнаружение A не проверено, намеренно нет кнопок печати, новых передач USB и команд прошивки/сервиса. Нового неподписанного APK в приватных Releases нет; перед первой релизной подписью нужен секрет владельца ANDROID_SIGNING. Старый A1 остаётся историей, не совместимым обновлением.
+- Следующая аппаратная проверка: после установки **подписанной** сборки, когда секрет настроен, оставить принтер включённым и прямой кабель подключённым; открыть диагностику, при нуле устройств один раз обновить/переподключить и отправить полный отчёт. Реальные VID/PID, конечные точки и разрешение/захват должны предшествовать подключению CAPT-адаптера.
 
+## Дополнение о тестах
 
-## Launcher icon (2026-10-22)
-- Replaced the manifest launcher reference with `@mipmap/ic_launcher` and `@mipmap/ic_launcher_round`.
-- Added adaptive and round adaptive launcher icons matching the structure in `alcovaibe/Bluetooth-disabler`: solid white background, printer line-art foreground, and monochrome foreground for themed Android icons. The foreground is a scalable VectorDrawable based on the approved printer graphic.
-- Added layer-list fallback resources. The old `ic_app.xml` remains unused; the manifest now resolves the new adaptive icon.
-- This is an icon/resource change only; it does not imply USB hardware validation or printing support.
+- Модульные тесты приложения: новые чистые проверки B для однозначного/неоднозначного выбора конечных точек, частичной передачи/прерванного исхода, допустимых переходов задания и неверных диапазонов/копий; также тесты кольца событий USB. Это проверки компиляции/логики; аппаратная печать Android **не проверялась**.
+- Последнее задание GitHub Actions и подписанный релиз проверять независимо; выпуск нельзя выводить из коммита исходников.
 
+## Дополнительный изолированный протокольный слой — параллельное изменение слито
 
-## Owner signing secret validation checkpoint (2026-10-22)
-- Owner reports that repository Actions secret `ANDROID_SIGNING` has now been added.
-- The previous run #13 started before this confirmation; its signed-release job was skipped, so it does not validate the new secret.
-- The next push to `main` will test the JSON schema, PKCS12 restoration, release signature, monotonically increasing versionCode and Android 16 install/upgrade. A release is published only if each release-gate step succeeds. Never echo or fetch secret contents.
+- Параллельно с обнаружением USB/движком добавлены `core/CaptFrame`, `core/BulkIo`, `core/JobSpecification`, `core/JobLedger`, `StageBCoreTest` — ограниченная чистая подготовка B на Kotlin. Они не подключены к интерфейсу, синтетические тесты не доказывают принтер. Работа `engine/*` и `UsbObservation` сохранена при слиянии; параллельные изменения не потеряны.
+- `docs/STAGE-B-FOUNDATION.md` описывает исходный протокол, аппаратные условия и ограничения.
 
+## Проверенная контрольная точка исходников
 
-## Hardware checkpoint: USB enumeration succeeded (2026-10-22)
-- Owner provided a screenshot from the signed A2 build on HONOR X9c with one enumerated USB device: **VID:PID 04A9:2676**, and the system USB permission state says **granted**.
-- Cross-check against public USB device records identifies 04A9:2676 as **Canon LBP2900**. The exact VID:PID match is good model evidence; it does not prove interface compatibility or that CAPT exchanges work.
-- The screenshot does not show the detailed technical report. Interface classes, alternate settings, endpoint addresses/types, descriptor header, interface-claim result and any printer response are not yet recorded in the project evidence.
-- Next code step: label the known device from the exact VID:PID table; keep unknown IDs unnamed. Then inspect the full anonymized report and implement an explicitly user-triggered, read-only CAPT status query only if the selected interface is unambiguous and claim succeeds. No print/page commands until status parsing is validated.
+- Коммит слияния `5f433818e560fe1a1918e0f59217273c23e92414` прошёл [39662757271](https://github.com/alcovaibe/capt-usb-print/actions/runs/39662757271): assembleDebug, lintDebug, testDebugUnitTest, синтаксис Python и разрешения итогового APK; внутренний диагностический артефакт загружен.
+- Проверка доступности подписи прошла, но релиз с постоянным ключом пропущен: секрет владельца ANDROID_SIGNING ещё не установлен. Новых Releases нет.
+- Последующие изменения кода требуют своего CI. Единственный первый отчёт телефона всё ещё показывает USB Host=true и 0 устройств; реальный обмен LBP2900/отпечаток не заявлялись.
 
+## Проверенная интеграция — сборка №10, 21 октября 2026 года
 
-## Read-only CAPT status probe (source checkpoint, 2026-10-22)
-- Added a button for the exact known profile Canon LBP2900 (VID:PID 04A9:2676) only after Android USB permission is granted.
-- The button sends only CAPT GetBasicStatus (command 0xE0A0), and only after a unique BULK IN/OUT pair, alternate setting 0, successful non-forced interface claim, and exact VID:PID match. The automatic scanner itself still sends no CAPT commands.
-- The response reader is bounded to 1024 bytes and finite timeouts. It validates command ID and either LE or BCD frame length against the actual received length. Partial request writes are not retried; interface is released and connection closed in finally.
-- The UI/report records only the basic status bytes and whether a valid response arrived. It does not send a page, print payload, or any job/service command.
-- This source-level probe is not yet validated on the physical printer. Next step after CI: install the latest signed private release, press the new status button once, and share the report. A valid response is required before developing the first page path.
+- Исходники приватной main `b8f99f81c4e23135a3c9f47e70bb768c830a4a3c` прошли [запуск GitHub Actions №10](https://github.com/alcovaibe/capt-usb-print/actions/runs/39663011497): debug APK, lint, JVM (оба набора основ), синтаксис релизных Python-скриптов, аудит итогового манифеста. Подписанный выпуск правильно **пропущен** без ANDROID_SIGNING. Старый A1 debug сохранён как история.
+- Проба USB без записи использует проверенный UsbLinkSelector вместо отдельного мягкого выбора кандидата. При неоднозначных/усечённых дескрипторах захват пропускается. Новый транспорт CAPT/реальная печать не реализованы.
+- Нулевой результат записи USB немедленно даёт неопределённость без скрытого повтора. Чистый парсер диапазонов принимает типографское `1–3` из исходного ТЗ.
+- Параллельные изменения формата CAPT, ввода-вывода и модели задания слиты отдельно и покрыты StageBCoreTest. Компоненты намеренно не подключены к живому устройству. До подключения объединить пересекающиеся прототипы моделей; успешные подставные тесты не объявлять печатью.
 
+## Значок приложения — 22 октября 2026 года
 
-## Hardware result and CAPT reply-length correction (2026-10-22)
-- On signed build 19 (versionCode 1019, revision `abc703f9c404`), HONOR X9c enumerated Canon LBP2900 (VID:PID 04A9:2676), USB permission was granted, the unique BULK IN/OUT interface was claimed successfully, but the manually triggered GetBasicStatus query failed during response-length validation. No print/page data was sent.
-- Source review identified an overly strict condition: the live probe discarded every candidate total frame length below 10 bytes, while the upstream CAPT framing implementation accepts a 6-byte total response (4-byte header plus two basic-status bytes). The basic-status parser also incorrectly required the optional buffer-level bytes.
-- Corrective change: read the 6-byte CAPT framing/status prefix first, accept a bounded 6-byte minimal reply, and parse buffer-level bytes only when the reply contains them. For other invalid headers, the anonymized report now records only the first four framing bytes and derived LE/BCD lengths/candidates; it does not record status payload bytes or document data.
-- Next hardware gate: install the new signed build, run the read-only status query once, and inspect the result. No print/page commands or print path have been enabled.
+- Ссылки значка манифеста заменены на `@mipmap/ic_launcher` и `@mipmap/ic_launcher_round`.
+- Адаптивный и круглый адаптивный значки повторяют структуру `alcovaibe/Bluetooth-disabler`: сплошной белый фон, контурный принтер и монохромный слой для тематических значков Android. Передний слой — масштабируемый VectorDrawable по одобренному изображению принтера.
+- Добавлены запасные ресурсы layer-list. Старый `ic_app.xml` не используется; манифест ссылается на новый адаптивный значок.
+- Меняются только значок/ресурсы; это не проверка USB и не поддержка печати.
 
+## Проверка секрета подписи владельца — 22 октября 2026 года
 
-## Verified GetBasicStatus and extended diagnostic implementation (2026-10-22)
-- The owner tested signed build 20 (`0.1.0-a2.20`, versionCode 1020, revision `bc301f8f8d3a`) on HONOR X9c with the physical Canon LBP2900. The report confirms VID:PID `04A9:2676`, USB permission, interface class 7/subclass 1/protocol 2, OUT BULK `0x0001`, IN BULK `0x0082`, successful interface claim, and a valid 6-byte `GetBasicStatus` reply.
-- The actual status bytes were `0x88` and `0x00`. Upstream public CAPT status definitions identify the first byte as `ERROR_BIT` (`0x80`) plus `IM_DATA_BUSY` (`0x08`); this does not uniquely identify a physical fault. The second byte does not request extended/input status.
-- Feature branch `feat/extended-capt-status` adds a manually invoked **Проверить расширенное состояние CAPT (без печати)** button alongside the basic-status check. It sends only read-only `GetExtendedStatus` (`0xA0A8`) after exact VID:PID, current Android USB permission, unique BULK IN/OUT selection, alternate setting 0, and non-forced interface claim checks.
-- The bounded extended parser extracts the basic/secondary status bytes, buffer level, auxiliary engine state, engine communication flags, paper availability and engine flags. The report records raw hex values and known bit names; it does not send page/job data, clear errors, reset the printer or enable printing.
-- Unit tests now cover the status flag decoder and the extended response parser. CI on the pull request must pass before merge. Physical `GetExtendedStatus` response and actual page printing remain unverified.
-- The USB permission event line is explicitly session-local; the screen status now uses the current per-device permission state to avoid showing a stale “not requested” event when Android permission is already granted.
+- По сообщению владельца секрет Actions ANDROID_SIGNING добавлен.
+- Запуск №13 начался до этого подтверждения; подписанный релиз пропущен и новый секрет не проверяет.
+- Следующая отправка в main проверит схему JSON, восстановление PKCS12, релизную подпись, монотонный versionCode и установку/обновление Android 16. Публикация только при успехе каждого обязательного шага. Содержимое секрета не выводить и не запрашивать.
 
+## Аппаратная контрольная точка: USB обнаружен — 22 октября 2026 года
 
-## Latest hardware report and Stage B handoff (2026-10-22)
-- Owner tested signed build 0.1.0-a2.33 (versionCode 1033, revision 3c5b6ff8a9f5) on HONOR X9c with the physical Canon LBP2900.
-- Reported phone facts: model HONOR BRP-NX1; API 36; build BRP-N21 10.0.0.172(C636E6R4P1); ABIs arm64-v8a,armeabi-v7a,armeabi; measured page size 4096 bytes; USB Host=true.
-- USB facts: exactly one device VID:PID 04A9:2676, known profile Canon LBP2900; USB permission=true; interface 0/alternate setting 0 class 7/subclass 1/protocol 2; OUT BULK 0x0001, IN BULK 0x0082; unique link selection; open success; claim(interfaceId=0,force=false)=true; release and close completed.
-- Observed response: GetInputStatus valid, total frame 22 bytes, payload 18 bytes: 00 10 C0 00 00 00 00 00 96 00 FD 00 00 00 00 00 00 00. The payload is retained as opaque diagnostic data; do not infer paper/readiness semantics from these bytes.
-- The scan itself sent no CAPT command. The manual GetInputStatus probe sent no document/page data. No physical print has been attempted by CAPT USB Print.
-- Upstream anchor remains ValdikSS/captdriver commit 892f320c019974a5b737e000fcc2c8582264a131. In that source, the LBP2900 registration uses lbp3000_job_prologue, while its page and job epilogues are shared with the LBP2900 profile. Initialization includes state-changing operations; do not port it as a blind command list.
-- The new feature branch adds a manual read-only GetPrinterInfo probe and optional Start/Printing/Shipped/Printed fields from GetExtendedStatus. It does not send any page/job command. Next hardware gate is to review the actual Blk/Buf reply before wiring transfer sizing.
+- Владелец предоставил снимок подписанной A2 на HONOR X9c с одним устройством **VID:PID 04A9:2676** и системным состоянием USB-разрешения **выдано**.
+- Открытые USB-справочники определяют 04A9:2676 как **Canon LBP2900**. Точное совпадение — сильное свидетельство модели, не доказательство совместимости интерфейса/обмена CAPT.
+- Подробного технического отчёта на снимке нет. Классы, альтернативные настройки, адреса/типы конечных точек, заголовок дескриптора, захват интерфейса и ответ принтера ещё не зафиксированы.
+- Далее: подписать известное устройство по точной таблице VID:PID, неизвестные ID не называть. Затем изучить полный обезличенный отчёт и реализовать явно пользовательский запрос CAPT без записи только при однозначном интерфейсе и успешном захвате. До проверки состояния не отправлять команды страницы/печати.
 
+## Запрос состояния CAPT без записи — исходники, 22 октября 2026 года
 
-## Stage B physical report and implementation (2026-10-22)
-- User's signed build 41 JSON: GetPrinterInfo exact 56-byte reply, Blk 65520, Buf 64, cap 65280; GetExtendedStatus exact 56-byte reply, Bas=0x31 (offline plus unverified 0x20), secondary=0x88 unknown, free slots=15, Pap=0x80, EngineFlags=0 and page counters=0. Android USB permission/unique endpoints confirmed. Original JSON is in the ChatGPT conversation, not committed to the repo.
-- Feature PR adds vendor GPLv3-or-later HISCOA compression source and JNI through pinned NDK/CMake, with a 600dpi 4960x7016 A4 registration-pattern raster and 64-line bands; one user-triggered real print prototype now exists, but no physical printed sheet has been observed.
-- New code uses bounded single-owner Android USB session, explicit ReserveUnit/job sequence (LBP2900 registered to LBP3000 job prologue upstream), page descriptor/video bands, StartPrint, completion-counter validation and ReleaseUnit only after confirmation. Failure/interrupt state is explicitly unknown and never auto-retried.
-- Fixed an identified diagnostic framing risk: a 56-byte LE length can look like a 38-byte BCD length; new shared preferredReplyLength avoids prematurely accepting the shorter BCD candidate on partial USB reads.
-- Upstream sources are preserved with GPL headers. A single compiler-only local change initializes HISCOA best_cmd to zero for -Wmaybe-uninitialized, documented in THIRD-PARTY-NOTICES.md. The entire combined APK is subject to applicable GPLv3 source and redistribution obligations.
-- Do not claim B complete until owner confirms physical A4 print, orientation and two follow-up jobs. No PDF/PrintService.
+- Кнопка добавлена только точному профилю Canon LBP2900 VID:PID 04A9:2676 после разрешения Android USB.
+- Она отправляет только CAPT GetBasicStatus 0xE0A0 при единственной BULK IN/OUT, alt 0, успешном захвате без принуждения и точном VID:PID. Автоматический поиск сам CAPT не отправляет.
+- Ответ ограничен 1024 байтами и конечными таймаутами. Код команды и длина LE/BCD проверяются по реально полученному объёму. Частичная запись запроса не повторяется; finally освобождает интерфейс и закрывает соединение.
+- Интерфейс/отчёт сохраняют только байты Basic и факт корректного ответа. Страница, печатная нагрузка и команды задания/сервиса не отправляются.
+- Проба ещё не проверена на физическом принтере. После CI установить последний подписанный приватный выпуск, один раз нажать проверку состояния, отправить отчёт. До разработки первой страницы нужен корректный ответ.
 
+## Аппаратный результат и исправление длины ответа CAPT — 22 октября 2026 года
 
-## Stage C shared A4 geometry feature branch (2026-10-22; awaiting PR CI)
+- На подписанной сборке 19 (versionCode 1019, ревизия `abc703f9c404`) HONOR X9c обнаружил Canon LBP2900 04A9:2676, получил разрешение и единственный BULK-интерфейс, но ручной GetBasicStatus остановился на проверке длины. Печатных/страничных данных не было.
+- Аудит выявил слишком строгий запрет: живая проба отбрасывала любую длину меньше 10 байт, хотя исходный CAPT допускает 6 (4 заголовка и 2 состояния). Парсер Basic ошибочно требовал необязательные байты буфера.
+- Исправление: сначала читать шестибайтное начало CAPT/состояния, допускать ограниченный минимум 6 и читать BufLevel только при его наличии. Для других неверных заголовков обезличенный отчёт записывает первые четыре байта обрамления и вычисленные LE/BCD-кандидаты, не байты состояния/документа.
+- Следующая аппаратная проверка: новая подписанная сборка, однократный запрос без записи и разбор результата. Печатный путь/команды не включены.
 
-- Starting main SHA: `630492b337a9c1202c1d0bf981c85dfec2f64c42`.
-  Private branch: `feat/stage-c-shared-a4-preview-geometry`; do not merge
-  automatically because main publishes a permanent-key private test release.
-- The Stage B owner-accepted CAPT page grid is 4960 × 7016 at 600 dpi.
-  Added pure `document/A4PageGeometry` fit layout and a scaled preview
-  mapping. Landscape is logical only; the physical CAPT adapter still sends its
-  proven portrait descriptor, and no landscape document print is enabled.
-- The 260 px (~11 mm) software FIT inset is provisional, based on the safe
-  registration-mark region, NOT verified as the device's mechanical margin.
-- PDF and EXIF-oriented PNG/JPEG display previews are composed onto white A4
-  sheets with this shared geometry. Switching the document orientation
-  re-renders the current page. No USB/CAPT document commands were added.
-- New pure unit tests validate paper dimensions, fit/aspect, boundaries,
-  logical orientations, scaled coordinates and memory/pixel limits.
-- Required next checks: PR CI, phone preview confirmation, then a bounded
-  sequential print rasterizer/landscape rotation/HISCOA adapter and a real
-  document physical print. Stage C acceptance remains open.
+## Подтверждённый GetBasicStatus и расширенная диагностика — 22 октября 2026 года
 
-## Stage C follow-up: post-build-89 preview corrections + PDF band foundation (2026-10-22)
+- Владелец проверил подписанную 20 (`0.1.0-a2.20`, versionCode 1020, ревизия `bc301f8f8d3a`) на HONOR X9c и физическом Canon LBP2900. Подтверждены `04A9:2676`, разрешение, класс 7/подкласс 1/протокол 2, OUT BULK `0x0001`, IN BULK `0x0082`, захват и корректный шестибайтный GetBasicStatus.
+- Реальные байты — `0x88` и `0x00`. Открытые определения CAPT трактуют первый как `ERROR_BIT` (`0x80`) плюс `IM_DATA_BUSY` (`0x08`), что не указывает однозначную физическую неисправность. Второй не запрашивает Extended/Input.
+- Ветка `feat/extended-capt-status` добавляет ручное **«Проверить расширенное состояние CAPT (без печати)»** рядом с Basic. Только GetExtendedStatus (`0xA0A8`) без записи после точного VID:PID, действующего разрешения Android, единственного BULK IN/OUT, alt 0 и захвата без принуждения.
+- Ограниченный парсер выделяет Basic/вторичные байты, буфер, вспомогательное состояние, флаги связи движка, доступность бумаги и флаги движка. Отчёт сохраняет HEX и известные имена битов; страницы/задания, очистка ошибок, сброс и печать не выполняются.
+- Модульные тесты покрывают декодер флагов и парсер Extended. До слияния обязателен успешный CI. Физические GetExtendedStatus и печать страницы ещё не проверены.
+- Строка события USB-разрешения явно относится только к сеансу. Экран использует действующее разрешение конкретного устройства, не показывая старое «не запрашивалось», если Android уже выдал доступ.
 
-- Owner screenshot: 11-page portrait PDF renders; landscape FIT correctly shrinks
-  unrotated portrait content, but the scrolling Activity content overlapped
-  Android status/navigation overlays. No new physical document print occurred.
-- Feature branch `feat/stage-c-insets-rotation-pdf-bands` based on main
-  `0c73567fc4b713cb48d11d2c27af87ba231036ae`.
-- Apply system bars/display cutout/IME insets to root ScrollView viewport,
-  clip scrolling content, leave the Stage B test-print engine unchanged.
-- Auto orientation is FIRST-page based only; keep manual choices and a separate
-  90-degree content rotation in JobSpecification. Preview PDF / EXIF-adjusted
-  images use the same fit coordinates. Explicit software inset remains
-  provisional (260 px), not a confirmed mechanical margin.
-- Offline portrait-PDF PRINT-mode renderer emits bounded 64-row strips and
-  converts each to MSB-first 1bpp ordered-dither data. Explicit button verifies
-  one PDF page without USB/HISCOA/PrintService; does not retain full 600-dpi page.
-- Remaining: PR CI, actual HONOR screenshot/insets and rotating-preview test,
-  offline PDF band test on device, image-band decoding, physical landscape
-  adapter and common USB queue, then owner-checked physical PDF print.
-- Do not merge/publish without owner action; a main push triggers signed release.
+## Последний аппаратный отчёт и переход к этапу B — 22 октября 2026 года
 
+- Подписанная 0.1.0-a2.33 (versionCode 1033, ревизия 3c5b6ff8a9f5) проверена на HONOR X9c и физическом Canon LBP2900.
+- Телефон: HONOR BRP-NX1; API 36; BRP-N21 10.0.0.172(C636E6R4P1); ABI arm64-v8a,armeabi-v7a,armeabi; измеренная страница 4096 байт; USB Host=true.
+- USB: ровно одно VID:PID 04A9:2676, известный Canon LBP2900; permission=true; интерфейс 0/alt 0 класс 7/подкласс 1/протокол 2; OUT BULK 0x0001, IN BULK 0x0082; однозначный канал; открытие успешно; claim(interfaceId=0,force=false)=true; освобождение/закрытие завершены.
+- GetInputStatus корректен: кадр 22, нагрузка 18 байт — 00 10 C0 00 00 00 00 00 96 00 FD 00 00 00 00 00 00 00. Нагрузка сохраняется как непрозрачная диагностика; семантику бумаги/готовности из неё не выводить.
+- Сам поиск CAPT не отправлял. Ручной GetInputStatus не отправлял документ/страницу. CAPT USB Print ещё не предпринимал физическую печать.
+- Опорный коммит ValdikSS/captdriver 892f320c019974a5b737e000fcc2c8582264a131 сохранён. LBP2900 использует lbp3000_job_prologue, завершающие процедуры страниц/заданий общие с профилем LBP2900. Инициализация меняет состояние и не переносится слепым списком команд.
+- Новая ветка добавляет ручной GetPrinterInfo без записи и необязательные Start/Printing/Shipped/Printed из Extended. Команды страницы/задания не отправляются. До выбора размеров передачи нужно изучить реальный Blk/Buf.
 
-## Owner acceptance of signed build 93 and offline PDF-HISCOA branch (2026-10-22)
+## Аппаратный отчёт и реализация этапа B — 22 октября 2026 года
 
-- Current base main merge SHA: `0d6b536aad317a52c3b3a1753ca8c8187ede2d93`.
-  Private signed release build 93 and its trusted main Actions passed.
-- Owner explicitly confirmed all seven HONOR checks: status bar and bottom nav
-  no longer overlap, A4 Auto portrait, landscape switching, 90-degree content
-  rotation, PDF page navigation, and error-free offline PDF raster check.
-  No numeric raster result was supplied, no physical PDF sheet printed.
-- Feature branch `feat/stage-c-offline-pdf-hiscoa` adds a pure, injectable
-  bounded one-page band consumer, feeds each validated 1bpp band directly to
-  the same native HiscoaNative.encodeBand as Stage B, verifies last marker,
-  lengths, order, cancellation and total budget, then discards compressed data.
-- Document UI explicitly says **PDF-растр и HISCOA (без печати)**; only counts
-  and byte sizes appear, not raw content, filenames, URI or document hashes.
-- The hardware-tested Stage B USB engines, JNI source, signed workflow and
-  AndroidManifest are untouched. No PDF document print is claimed. Native
-  device confirmation for one real PDF page is the next owner checkpoint;
-  thereafter shared job queue and first guarded print can be developed.
+- JSON подписанной сборки 41: GetPrinterInfo ровно 56 байт, Blk 65520, Buf 64, предел 65280; GetExtendedStatus ровно 56, Bas=0x31 (офлайн и непроверенный 0x20), вторичный=0x88 неизвестен, свободных слотов=15, Pap=0x80, EngineFlags=0, счётчики=0. Разрешение Android/единственные конечные точки подтверждены. Оригинал JSON в разговоре ChatGPT, не в репозитории.
+- PR добавляет код сжатия HISCOA под GPLv3-or-later и JNI через закреплённые NDK/CMake, тестовый регистрационный растр A4 4960×7016 600 dpi и полосы 64 строки; пользовательский прототип настоящей печати есть, физического листа ещё не наблюдалось.
+- Новый код использует ограниченный сеанс Android USB с одним владельцем, явные ReserveUnit/задание (LBP2900 зарегистрирован на подготовку LBP3000), дескриптор/видеополосы, StartPrint, подтверждение счётчиков и ReleaseUnit только после него. Ошибка/прерывание явно неизвестны, автоповтора нет.
+- Исправлен риск формата: LE-длина 56 похожа на BCD 38; общий preferredReplyLength не принимает короткого кандидата преждевременно при частичных чтениях.
+- Исходники сохранены с GPL-заголовками. Единственное локальное исправление компилятора задаёт HISCOA best_cmd=0 для -Wmaybe-uninitialized; описано в THIRD-PARTY-NOTICES.md. Весь объединённый APK подчиняется применимым требованиям GPLv3 к исходникам/распространению.
+- Этап B нельзя завершать до подтверждения владельцем физического A4, ориентации и двух последующих заданий. PDF/PrintService отсутствуют.
 
+## Ветка общей геометрии A4 для этапа C — 22 октября 2026 года; ожидается CI PR
 
-## Owner-confirmed offline PDF/HISCOA and prepared-page branch (2026-10-22)
+- Исходный SHA main: `630492b337a9c1202c1d0bf981c85dfec2f64c42`. Закрытая ветка: `feat/stage-c-shared-a4-preview-geometry`. Автоматически сливать её нельзя: main публикует закрытый тестовый релиз с постоянным ключом.
+- Владелец принял сетку страницы CAPT этапа B: 4960 × 7016 при 600 dpi. Добавлены чистый расчёт вписывания в `document/A4PageGeometry` и преобразование координат для уменьшенного предпросмотра. Альбомная ориентация пока только логическая: физический адаптер CAPT по-прежнему отправляет проверенный книжный дескриптор; печать альбомного документа не включена.
+- Программный отступ FIT в 260 пикселей (~11 мм) предварительный: он выбран по безопасной области регистрационных меток и не подтверждает механические поля устройства.
+- Предпросмотр PDF и PNG/JPEG с учётом EXIF компонуется на белых листах A4 с этой общей геометрией. Переключение ориентации документа заново формирует текущую страницу. Команды печати документа по USB/CAPT не добавлены.
+- Новые чистые модульные тесты проверяют размеры бумаги, вписывание и соотношение сторон, границы, логические ориентации, масштабирование координат и ограничения памяти и числа пикселей.
+- Далее необходимы CI PR, подтверждение предпросмотра на телефоне, затем последовательный растеризатор с ограничением ресурсов, поворот для альбомной ориентации, адаптер HISCOA и физическая печать реального документа. Приёмка этапа C остаётся открытой.
 
-- Owner screenshot on HONOR confirms offline page 1 PDF + native HISCOA:
-  110 bands, raw 4,349,920 bytes, compressed 277,764 bytes, largest 11,244;
-  no document USB/CAPT command was sent. Avoid logging document data,
-  content names/URI and content-derived hashes.
-- Main parent for feature branch is `24418555f881e7d66a5cfabf1178a7164fd75f46`;
-  user explicitly requested **ordinary, non-draft PRs from now on** and
-  retains manual merge control. `feat/stage-c-prepared-pdf-capt-page`.
-- `PreparedPdfCaptPageBuilder` captures one full portrait A4 PDF page,
-  bounded to 4 MiB *compressed* memory only, via the existing
-  `OfflinePdfHiscoaPreparation` callback. It copies mutable input,
-  validates 110 strips, and dry-runs existing Stage B CAPT video frames.
-  No full 600-dpi ARGB image, USB, new permissions, or real document printing.
-- Offline frame demo uses historical 65,280 chunk limit from Stage B solely
-  for dry-run; physical work must read fresh GetPrinterInfo. Next step is
-  a shared USB owner and separate fail-closed one-page document engine
-  using verified CAPT counters; do not modify working Stage B sequencing.
+## Продолжение этапа C: исправления предпросмотра после сборки 89 и основа полос PDF — 22 октября 2026 года
 
+- Снимок экрана владельца: 11-страничный книжный PDF отображается; альбомный FIT корректно уменьшает неповёрнутое книжное содержимое, однако прокручиваемое содержимое Activity перекрывалось системными панелями состояния и навигации Android. Новых физических отпечатков документа не было.
+- Ветка `feat/stage-c-insets-rotation-pdf-bands` основана на main `0c73567fc4b713cb48d11d2c27af87ba231036ae`.
+- К области просмотра корневого ScrollView применены отступы системных панелей, выреза экрана и IME; прокручиваемое содержимое обрезается по границам. Движок тестовой печати этапа B не изменён.
+- Автоматическая ориентация определяется только по первой странице. Сохранены ручной выбор и отдельный поворот содержимого на 90 градусов в JobSpecification. PDF и изображения с учётом EXIF используют в предпросмотре одинаковые координаты вписывания. Явный программный отступ остаётся предварительным (260 пикселей), без подтверждения механических полей.
+- Автономный растеризатор книжного PDF в режиме PRINT выдаёт ограниченные полосы по 64 строки и преобразует каждую в 1bpp с упорядоченным дизерингом и старшим битом первым. Отдельная кнопка проверяет одну страницу PDF без USB/HISCOA/PrintService; полная страница при 600 dpi не хранится.
+- Осталось: CI PR, реальная проверка снимка экрана HONOR, отступов и поворота предпросмотра, автономная проверка полос PDF на устройстве, декодирование полос изображений, физический адаптер альбомной ориентации и общая очередь USB, затем проверенная владельцем физическая печать PDF.
+- Слияние и публикация требуют действия владельца; отправка в main запускает подписанный релиз.
 
-## Stage C owner CAPT dry-run confirmation + guarded future PDF engine
+## Приёмка владельцем подписанной сборки 93 и ветка автономного PDF–HISCOA — 22 октября 2026 года
 
-- New owner photo confirmed 11-page source at page 1, portrait Auto,
-  rotation off: exactly 110 HISCOA bands, 4,349,920 raw bytes, 277,764
-  compressed, largest band 11,244; 110 offline C0A0 frames, 278,204
-  framed bytes. No USB/CAPT commands. This is *not* a physical print.
-- Main base `7af60bd345e3df6e558279f005dcaff1aac496f9`. Feature
-  `feat/stage-c-guarded-pdf-usb-engine`. User requires **non-Draft PRs**.
-- Process-local `CaptUsbOwnership` lease: session open/close (including
-  owner-tested Stage B sessions), explicit read-only probes, and diagnostics.
-  Fail fast when busy; never replay. This does not claim OS-wide exclusion.
-- Separate `CaptPdfPrintEngine` consumes one complete already prepared
-  portrait A4 compressed PDF page; no UI caller yet. Live printer info,
-  exact profile, post-prologue all-zero counters, buffer backpressure,
-  one-page counter confirmation, and uncertain-after-reservation outcomes.
-  No automatic retry, new permissions, PrintService or PDF print UI.
-- Next: green CI, owner test of UI still stable; separately consented
-  one-sheet first document print behind explicit confirmation, document
-  outcome reporting and shared job lifecycle tests. Do not claim document
-  physical success based on CI.
+- Текущий базовый SHA слияния main: `0d6b536aad317a52c3b3a1753ca8c8187ede2d93`. Закрытый подписанный релиз сборки 93 и доверенный запуск Actions для main прошли успешно.
+- Владелец явно подтвердил все семь проверок HONOR: отсутствие перекрытия верхней строкой состояния и нижней навигацией, книжный A4 в режиме «Авто», переключение в альбомную ориентацию, поворот содержимого на 90 градусов, навигацию по страницам PDF и автономную проверку растра PDF без ошибок. Числовые результаты растра не предоставлены; физический лист PDF не печатался.
+- Ветка `feat/stage-c-offline-pdf-hiscoa` добавляет чистый потребитель полос одной страницы с подменяемыми зависимостями и ограничениями ресурсов. Каждая проверенная полоса 1bpp передаётся напрямую в тот же нативный HiscoaNative.encodeBand, что используется на этапе B. Проверяются последний маркер, длины, порядок, отмена и общий бюджет, затем сжатые данные отбрасываются.
+- Интерфейс документа явно сообщает: **PDF-растр и HISCOA (без печати)**. Отображаются только количества и размеры в байтах, без исходного содержимого, имён файлов, URI или хешей документа.
+- Аппаратно проверенные движки USB этапа B, исходники JNI, процесс подписанной сборки и AndroidManifest не изменены. Печать документа PDF не заявляется. Следующая проверка владельца — подтверждение нативной обработки одной реальной страницы PDF на устройстве; после этого можно разрабатывать общую очередь заданий и первую печать с защитными проверками.
 
+## Подтверждённый владельцем автономный PDF/HISCOA и ветка подготовленной страницы — 22 октября 2026 года
 
-## Current checkpoint: first PDF print branch (2026-10-22)
-- `main` baseline: `95c715f4d8696dc9e4b8d45cbf8e7431effa81e5`; Stage B owner-accepted on signed build 71; PDF page 1/11 previously completed offline: 110 HISCOA bands, 277764 compressed bytes, 278204 framed bytes. No PDF sheet physically confirmed.
-- Branch `feat/stage-c-first-explicit-pdf-sheet`: a fail-closed gate requires exactly the visible PDF page, one copy, A4 portrait and a completed preview, followed by a separate real-print confirmation. Identifies exactly one LBP2900 with pre-granted USB permission. Uses existing bounded PDF preparation and previously unwired `CaptPdfPrintEngine`. No auto-retry and no Stage B engine changes.
-- Private `capt-pdf-print-latest.json` records PREPARING / USB_ATTEMPT_STARTED / final result without URI, document title, content, raster or serial. USB_ATTEMPT_STARTED without a final status remains uncertain after process loss. A separate document-screen button explicitly shares the report.
-- Next: complete review and PR CI, publish only via the verified private signed-main pipeline, then conduct a controlled physical one-page PDF test. Check paper, inspect real sheet geometry/quality and send JSON only manually. Do not mark Stage C accepted based on build/CI alone. Unified queue, lifecycle, JPEG/PNG raster and PrintService remain pending.
+- Снимок экрана HONOR от владельца подтверждает автономную обработку страницы 1 PDF нативным HISCOA: 110 полос, 4 349 920 исходных байтов, 277 764 сжатых байта, самая большая полоса — 11 244 байта. Команды документа по USB/CAPT не отправлялись. Не записывать в журналы данные документа, имена содержимого/URI и хеши, вычисленные из содержимого.
+- Родитель main для ветки разработки: `24418555f881e7d66a5cfabf1178a7164fd75f46`. Пользователь явно потребовал **с этого момента создавать обычные PR, не черновики** и сохраняет ручное управление слиянием. Ветка: `feat/stage-c-prepared-pdf-capt-page`.
+- `PreparedPdfCaptPageBuilder` собирает одну полную книжную страницу PDF формата A4 через существующий обратный вызов `OfflinePdfHiscoaPreparation`, ограничивая только *сжатые* данные в памяти 4 MiB. Изменяемый вход копируется, проверяются 110 полос и автономно формируются существующие видеокадры CAPT этапа B. Полное изображение ARGB при 600 dpi, USB, новые разрешения и реальная печать документа отсутствуют.
+- Демонстрация кадров без принтера использует исторический предел фрагмента 65 280 из этапа B только для автономной проверки. Для физического обмена нужно заново читать GetPrinterInfo. Далее нужны общий владелец USB и отдельный движок одностраничного документа, запрещающий продолжение при непроверенном состоянии и использующий подтверждённые счётчики CAPT. Рабочую последовательность этапа B не менять.
 
+## Подтверждение владельцем автономных кадров CAPT этапа C и будущий защищённый движок PDF
 
-## 2026-10-22 — Stage C owner result and next private PR
-- Owner physically printed actual pages 1 and 2 of the 11-page PDF as **two separate jobs** on signed 0.1.0-a2.105 after power-cycling LBP2900. This confirms actual one-sheet PDF output on their HONOR, NOT a multi-page CAPT job; independently captured successful print JSONs were not supplied in this turn.
-- Prior unsuccessful PDF and Stage B print attempts repeatedly received `ReserveUnit` response `A0 A2 08 00 8C 00 00 00` and transferred zero page bytes, while read-only CAPT queries continued to work. Owner reports power-cycle resolved immediate symptom but hangs persist as an outstanding stability issue. No automatic retry, reset, or unverified driver heartbeat was added.
-- Private branch `feat/stage-c-guarded-pdf-batch`: experimental 2–3 selected PDF sheets, portrait A4, one CAPT job, all distinct pages precompressed with at most 4 MiB compressed per page. Supports two copies of a selected page through immutable plan order; intentionally no unrestricted queue yet. Uses accepted Stage B multi-page control sequence without editing Stage B. Strict one-process shared PDF attempt lock plus existing global USB owner, private crash marker, explicit manual JSON export, fail closed after partial output.
-- Next: PR CI, human inspection, signed build only on an authorized private main merge, then **one** owner 3-page PDF test using page range 1–3 and copies 1. Report actual printed sheet order and export latest JSON manually. Do not immediately retry 0x8C or unknown outcomes. Next full Stage C work: production single queue/lifecycle, arbitrary range/copies, image raster, and stability.
+- Новая фотография владельца подтвердила страницу 1 из 11 исходных страниц, книжную ориентацию «Авто» и выключенный поворот: ровно 110 полос HISCOA, 4 349 920 исходных байтов, 277 764 сжатых байта, наибольшая полоса — 11 244 байта; 110 автономных кадров C0A0, 278 204 байта вместе с обрамлением. Команд USB/CAPT не было. Это *не* физическая печать.
+- База main: `7af60bd345e3df6e558279f005dcaff1aac496f9`. Ветка: `feat/stage-c-guarded-pdf-usb-engine`. Пользователь требует **PR не в состоянии Draft**.
+- Аренда `CaptUsbOwnership` действует внутри процесса и охватывает открытие/закрытие сеанса, включая проверенные владельцем сеансы этапа B, явные пробы только для чтения и диагностику. При занятости — быстрый отказ, без повторного воспроизведения задания. Системная блокировка доступа всех процессов не заявляется.
+- Отдельный `CaptPdfPrintEngine` принимает одну полностью подготовленную сжатую книжную страницу PDF формата A4; вызова из интерфейса пока нет. Он использует свежие сведения принтера, точный профиль, полностью нулевые счётчики после пролога, управление потоком по свободному буферу, подтверждение одной страницы счётчиками и исходы с неопределённостью после резервирования. Автоматический повтор, новые разрешения, PrintService и интерфейс печати PDF отсутствуют.
+- Далее: успешный CI и проверка владельцем стабильности интерфейса; отдельно согласованная первая печать одного листа документа с явным подтверждением, отчётом об исходе и тестами общего жизненного цикла задания. Успех физической печати документа нельзя выводить из CI.
 
-- Additional new-batch pre-reservation read-only GetBasicStatus gate rejects 0x02/0x04/0x08/0x80 flags, explicitly including owner-captured 0x88, before ReserveUnit. This is detection, not an undocumented CAPT reset; Stage B and accepted one-sheet paths are unchanged.
+## Текущая контрольная точка: ветка первой печати PDF — 22 октября 2026 года
 
+- База `main`: `95c715f4d8696dc9e4b8d45cbf8e7431effa81e5`; этап B принят владельцем на подписанной сборке 71. Страница 1/11 PDF ранее успешно обработана автономно: 110 полос HISCOA, 277764 сжатых байта, 278204 байта вместе с обрамлением. Физический лист PDF не подтверждён.
+- Ветка `feat/stage-c-first-explicit-pdf-sheet`: защитная проверка допускает только текущую видимую страницу PDF, одну копию, книжный A4 и завершённый предпросмотр; затем требуется отдельное подтверждение реальной печати. Должен быть определён ровно один LBP2900 с заранее предоставленным разрешением USB. Используются существующая подготовка PDF с ограничением ресурсов и ранее не подключённый к интерфейсу `CaptPdfPrintEngine`. Автоматического повтора и изменений движка этапа B нет.
+- Закрытый `capt-pdf-print-latest.json` записывает PREPARING / USB_ATTEMPT_STARTED / окончательный результат без URI, заголовка документа, содержимого, растра и серийного номера. USB_ATTEMPT_STARTED без окончательного статуса после потери процесса остаётся неопределённым исходом. Отдельная кнопка на экране документа позволяет явно поделиться отчётом.
+- Далее: завершить ревью и CI PR, публиковать только через проверенный закрытый процесс подписанной сборки main, затем провести контролируемую физическую проверку одной страницы PDF. Проверить бумагу, геометрию и качество настоящего листа; JSON отправлять только вручную. Приёмку этапа C нельзя объявлять только по сборке/CI. Общая очередь, жизненный цикл, растр JPEG/PNG и PrintService ещё ожидают реализации.
 
-## 2026-10-22 — PR #25 review corrections (hardware gate still open)
+## 22 октября 2026 года — результат владельца по этапу C и следующий закрытый PR
 
-- Audited PR HEAD `b12aeed0e2e7caf835a41891ed98f6f2f92f84be`: private repo, main still `1a2d348899a2`; Actions run 113 passed build/lint/unit tests and Android 16 emulator **boot**, not installation of the PR APK. Signed jobs correctly skipped for PRs.
-- Found a deterministic third-sheet failure: new batch called Stage B counter helpers restricted to 1..2. Added separate Stage C counter checks for 1..3 with exact expected counts, historical/unfinished-page rejection and no rollover assumptions. Accepted Stage B engines/helpers stay unchanged.
-- Found repeated continuation before sheet 3. Re-read pinned ValdikSS `src/prn_lbp2900.c` at `892f320c019974a5b737e000fcc2c8582264a131`: `sent_job_cont` sends flag 2 ONCE after first completed page. Batch now sends it only after sheet 1, retaining the owner-accepted two-sheet ordering.
-- Injected batch transport and monotonic clock for JVM tests of the actual runner: 3 pages, 2 copies, captured 0x88 and ReserveUnit 0x8C, partial write, paper loss, cancellation, timeout, checkpoint write failure and finalization failure. These model checks do not establish physical printer behavior.
-- Persist a private progress checkpoint after each confirmed batch sheet BEFORE any subsequent command; on process loss USB_ATTEMPT_STARTED remains uncertain with a known lower bound. Failed report writes stop further commands. No automatic retry or reset added.
-- README reconciled with owner's actual one-sheet PDF evidence. Existing signed key, app ID/version scheme and release workflow unchanged. Main publication remains under owner merge control as documented above.
-- Next: green CI on corrected HEAD, then owner-authorized merge/private signed release and ONE range 1–3 / copies 1 / portrait PDF test. Observe physical order and manually send PDF JSON. Stage C remains unaccepted; general queue/lifecycle, image bands/printing and landscape follow this hardware checkpoint.
+- После выключения и включения LBP2900 владелец физически распечатал настоящие страницы 1 и 2 из 11-страничного PDF как **два отдельных задания** на подписанной версии 0.1.0-a2.105. Это подтверждает реальный однолистовой вывод PDF на его HONOR, но не многостраничное задание CAPT. Отдельно сохранённые JSON успешной печати в этом обращении не предоставлены.
+- Предыдущие неудачные попытки печати PDF и этапа B неоднократно получали ответ `ReserveUnit` `A0 A2 08 00 8C 00 00 00` и передавали ноль байтов страницы, при этом запросы CAPT только для чтения продолжали работать. По словам владельца, выключение и включение сняло непосредственный симптом, однако зависания остаются нерешённой проблемой стабильности. Автоматический повтор, сброс и непроверенный периодический обмен с драйвером не добавлены.
+- Закрытая ветка `feat/stage-c-guarded-pdf-batch`: экспериментальная печать 2–3 выбранных листов PDF, книжный A4, одно задание CAPT; все различные страницы заранее сжимаются, не более 4 MiB сжатых данных на страницу. Поддерживаются две копии выбранной страницы в порядке неизменяемого плана; неограниченной очереди пока намеренно нет. Используется принятая многостраничная управляющая последовательность этапа B без правок самого этапа B. Предусмотрены строгая общая блокировка попыток PDF внутри процесса, существующий общий владелец USB, закрытый маркер аварийного завершения, явный ручной экспорт JSON и запрет продолжения после частичного вывода.
+- Далее: CI PR, ручное ревью, подписанная сборка только после разрешённого владельцем слияния в закрытый main, затем **одна** проверка владельцем трёхстраничного PDF с диапазоном 1–3 и одной копией. Сообщить фактический порядок напечатанных листов и вручную экспортировать последний JSON. Не повторять немедленно попытки с 0x8C или неопределённым исходом. Следующие работы полного этапа C: единая рабочая очередь и жизненный цикл, произвольные диапазоны/копии, растр изображений и стабильность.
+- Дополнительная проверка GetBasicStatus только для чтения перед резервированием в новом пакетном пути отклоняет флаги 0x02/0x04/0x08/0x80, включая явно зафиксированный владельцем 0x88, до ReserveUnit. Это обнаружение состояния, а не недокументированный сброс CAPT. Этап B и принятые однолистовые пути не изменены.
 
-## 2026-10-22 — owner-authorized Stage C code completion, same PR #25
+## 22 октября 2026 года — исправления после ревью PR №25; аппаратная проверка остаётся открытой
 
-- Owner instructed: assume release/printing successful **conditionally**, finish remaining C code in the SAME PR, and move to D only if C has no code gaps. Do not rewrite this assumption as observed physical output. Main merge/release was not requested in this instruction.
-- Baseline reviewed HEAD `cb7a1f2dfff80109235253a6f78694ff376b24e9`, CI 116 passed (APK/lint/unit tests + emulator boot). Audit still found code gaps: general queue/lifecycle, image print bands, landscape and arbitrary bounded document jobs. Therefore this turn continues C, not D.
-- One process-wide document queue: up to 4 live jobs, FIFO serial foreground worker, 50 bounded history records, explicit per-job/all cancellation. Failed or uncertain USB jobs pause successors until explicit inspection/continue; failed jobs are never replayed. START_NOT_STICKY, no boot/attach autostart. Crash recovery marks unstarted work failed and USB-started work unknown, retains confirmed count, discards owned sources/spools at next process start.
-- Connected-device foreground service starts only from a visible user action with pre-granted USB permission. Service owns source copies outside Activity lifecycle; notification and queue screen expose cancellation. No speculative wake lock or MagicOS configuration changes. Real screen-off/energy behavior still requires hardware evidence.
-- General source renderer: PDF PRINT mode, sampled JPEG/PNG <=4M decoded pixels, all EXIF transforms and white-paper alpha compositing; 64-row / 600-dpi 1bpp bands. Landscape is raster rotation into the unchanged accepted portrait CAPT descriptor; optional 90-degree content rotation composes before paper rotation. Print preview samples that same monochrome raster. FIT inset remains provisional 260 px, not measured hardware margins or 100% scale.
-- Prepare each distinct selected page before USB in private CRC-checked disk spool; copies reuse page files. One strip in memory, <=12 MiB compressed/page, <=256 MiB total source/spool reservations + 8 MiB free-disk headroom. Page/selection/copies limits remain 1000 source / 2000 output / 20 copies, with strict rejection rather than truncation. No whole-document bitmap/list of encoded byte arrays.
-- General CAPT runner derives from the already reviewed pilot: exact per-sheet counters, one reservation, StartPrint(N), one continuation for multi-sheet jobs, one end/release, finite waits, read-only 0x88 gate and no retry/reset. Stage B engines, helpers and native codec unchanged. Pilot/first-sheet helpers retained as compatibility code; the document UI has ONE queue submission path.
-- Persist private per-job/latest JSON before USB and after every confirmed sheet, up to 24 reports; history excludes URI/title/raster/serial. Queue source/report files are not backed up. Foreground-service and optional notification permissions added; no network/storage-wide permissions. New UI text in Russian resources, light/dark theme and Activity state restoration.
-- Verification added: FIFO/pause/cancel/crash model, one/ten-sheet production-runner sequences, disk quota/corruption/truncation/CRC/cancel cleanup, raster geometry/rotation and immutable plans. API 36 debug-only instrumentation exercises real Android PDF/PNG/JPEG-EXIF rendering, preview, disk spool and native HISCOA without USB. CI now installs/launches debug APK and runs that smoke; trusted signing pipeline remains unchanged.
-- Next: inspect final CI and implementation, then report C code status separately from conditional acceptance/physical evidence. ReserveUnit 0x8C root cause is still unresolved; no unsupported recovery is claimed. D must reuse this queue/runner, with PrintDocument/range semantics handled separately.
+- Проверен HEAD PR `b12aeed0e2e7caf835a41891ed98f6f2f92f84be`: репозиторий закрытый, main по-прежнему `1a2d348899a2`. Запуск Actions 113 прошёл сборку, lint, модульные тесты и **загрузку** эмулятора Android 16, но не установку APK из PR. Задания подписания корректно пропущены для PR.
+- Найден воспроизводимый отказ третьего листа: новый пакетный путь вызывал вспомогательные проверки счётчиков этапа B, ограниченные 1..2. Добавлены отдельные проверки счётчиков этапа C для 1..3 с точными ожидаемыми значениями, отклонением исторических/незавершённых страниц и без предположений о переполнении. Принятые движки и вспомогательные функции этапа B не меняются.
+- Найдена повторная команда продолжения перед листом 3. Повторно изучен закреплённый ValdikSS `src/prn_lbp2900.c` на `892f320c019974a5b737e000fcc2c8582264a131`: `sent_job_cont` отправляет флаг 2 ОДИН РАЗ после первой завершённой страницы. Теперь пакетный путь отправляет его только после листа 1, сохраняя принятый владельцем порядок для двух листов.
+- Для JVM-тестов настоящего исполнителя добавлена подстановка пакетного транспорта и монотонных часов: 3 страницы, 2 копии, зафиксированный 0x88 и ReserveUnit 0x8C, частичная запись, потеря бумаги, отмена, тайм-аут, отказ записи контрольной точки и отказ финализации. Эти модельные проверки не устанавливают поведение физического принтера.
+- Закрытая контрольная точка прогресса сохраняется после каждого подтверждённого листа пакета ДО любой следующей команды. После потери процесса USB_ATTEMPT_STARTED остаётся неопределённым исходом с известной нижней границей. Ошибка записи отчёта останавливает дальнейшие команды. Автоматический повтор и сброс не добавлены.
+- README согласован с фактическими доказательствами однолистовой печати PDF владельца. Существующий ключ подписи, ID приложения, схема версий и процесс релиза не изменены. Публикация main остаётся под ручным управлением владельца, как описано выше.
+- Далее: успешный CI исправленного HEAD, затем разрешённые владельцем слияние и закрытый подписанный релиз и ОДНА проверка книжного PDF с диапазоном 1–3 и одной копией. Наблюдать физический порядок и вручную отправить JSON PDF. Этап C остаётся непринятым; общая очередь/жизненный цикл, полосы и печать изображений, альбомная ориентация следуют после этой аппаратной проверки.
 
-### Stage C verification follow-up
-- CI run 118 on `7430110b52ccfb99284fff588efefdbcff3484ae` passed APK build/lint/all JVM tests and the NEW API 36 install/launch + real offline PDF/PNG-alpha/JPEG-EXIF/native HISCOA/preview/spool instrumentation. This is emulator evidence, not a printer result.
-- Final lifecycle review adds staged source copies: a pre-existing worker cannot consume a newly copied job until its visible caller explicitly activates it after requesting the foreground service. Failed handoff cancels before USB. A unit regression exercises this race boundary.
-- Graceful service stop preserves a paused pending queue, while unexpected destruction cancels active/pending work; stopSelfResult(startId) coordinates newer service requests. Permission loss before foreground start leaves the queue paused for explicit recovery.
-- Per-job JSON has a separate explicit share button in queue history. No automatic export. Added actual emulator source-copy ownership/cancellation and second-process recovery checks (no USB or foreground device impersonation).
-- Stage C implementation is now written within its documented bounds; final CI on the updated HEAD remains the code gate. The owner's conditional acceptance applies to the missing hardware evidence, not to failing code checks. Stage D remains the next implementation step.
+## 22 октября 2026 года — разрешённое владельцем завершение кода этапа C в том же PR №25
 
-### Current milestone for the next developer
-- Stage C is code-complete within the documented A4 / page/copy / disk/memory limits. Conditional owner acceptance is recorded, not fabricated hardware proof. Final CI evidence is attached to PR #25; check its exact HEAD before any merge.
-- Do not restart C as a 2–3-page pilot: the UI now uses the general queue, image/landscape renderer and disk spool. Retained first-PDF/pilot classes are compatibility/test adapters and are not document UI submission routes.
-- Stage D is next: Android PrintService must feed the SAME document queue/runner, preserve Android-supplied PDF layout (no extra FIT/margins), handle source-versus-spool page ranges correctly and expose honest PrintJob states/cancel. No PrintService implementation exists yet.
-- Known hardware follow-up remains ReserveUnit 0x8C and real quality/lifecycle checks. Main/release remains unchanged until an authorized merge.
+- Владелец поручил **условно** считать релиз/печать успешными, завершить оставшийся код C в ТОМ ЖЕ PR и переходить к D только при отсутствии пробелов в коде C. Это допущение нельзя представлять как наблюдавшийся физический вывод. Слияние в main и релиз в этой инструкции не запрашивались.
+- Проверен базовый HEAD `cb7a1f2dfff80109235253a6f78694ff376b24e9`; CI 116 прошёл APK/lint/модульные тесты и загрузку эмулятора. Аудит всё ещё обнаружил пробелы: общая очередь/жизненный цикл, полосы печати изображений, альбомная ориентация и произвольные задания документов с ограничениями ресурсов. Поэтому работа продолжает C, а не D.
+- Единая очередь документов в процессе: до 4 живых заданий, последовательный исполнитель FIFO в службе переднего плана, до 50 записей истории, явная отмена одного/всех заданий. Ошибочные или неопределённые задания USB приостанавливают последующие до явной проверки/продолжения; ошибочные задания никогда не воспроизводятся заново. START_NOT_STICKY, без автоматического запуска при загрузке или подключении. При восстановлении после сбоя незапущенные задания помечаются ошибкой, начавшие USB — неопределённым исходом; подтверждённое количество сохраняется, принадлежащие очереди исходники и подготовленные данные удаляются при следующем запуске процесса.
+- Служба переднего плана типа connected-device запускается только явным действием из видимого интерфейса с заранее выданным разрешением USB. Служба владеет копиями исходников независимо от жизненного цикла Activity; отмена доступна из уведомления и экрана очереди. Предположительные блокировки сна и изменения настроек MagicOS не добавлены. Реальное поведение при выключенном экране и энергосбережении ещё требует аппаратных данных.
+- Общий растеризатор исходников: PDF в режиме PRINT, JPEG/PNG с выборочным декодированием до 4 млн пикселей, все преобразования EXIF и наложение прозрачности на белую бумагу; полосы по 64 строки, 600 dpi, 1bpp. Альбомная ориентация реализована поворотом растра в неизменённый принятый книжный дескриптор CAPT; необязательный поворот содержимого на 90 градусов выполняется перед поворотом бумаги. Предпросмотр берётся из того же монохромного растра. Отступ FIT остаётся предварительным — 260 пикселей; это не измеренные аппаратные поля и не масштаб 100%.
+- Каждая различная выбранная страница подготавливается до USB в закрытом дисковом хранилище с проверкой CRC; копии повторно используют файлы страницы. В памяти находится одна полоса; не более 12 MiB сжатых данных на страницу и 256 MiB суммарного резервирования исходников/подготовленных данных, плюс 8 MiB свободного места. Ограничения страниц/выборки/копий остаются: 1000 исходных, 2000 выходных страниц, 20 копий; превышение строго отклоняется, без усечения. Полного растрового изображения документа и списка массивов закодированных байтов нет.
+- Общий исполнитель CAPT основан на уже проверенном пилоте: точные счётчики каждого листа, одно резервирование, StartPrint(N), одно продолжение для многостраничного задания, одно завершение/освобождение, конечные ожидания, проверка 0x88 только для чтения, без повтора/сброса. Движки этапа B, вспомогательные функции и нативный кодек не изменены. Пилотные функции и функции первого листа сохранены для совместимости; интерфейс документа имеет ОДИН путь постановки в очередь.
+- Закрытые JSON каждого задания и последнего задания сохраняются до USB и после каждого подтверждённого листа; хранится до 24 отчётов. История не содержит URI, заголовка, растра и серийного номера. Файлы исходников очереди и отчётов не включаются в резервные копии. Добавлены разрешения службы переднего плана и необязательных уведомлений; сетевых разрешений и доступа ко всему хранилищу нет. Новые тексты интерфейса вынесены в русские ресурсы; поддерживаются светлая/тёмная тема и восстановление состояния Activity.
+- Добавлены проверки: модель FIFO/паузы/отмены/сбоя, последовательности настоящего исполнителя на один/десять листов, дисковая квота, повреждение/усечение/CRC/очистка при отмене, геометрия и поворот растра, неизменяемые планы. Инструментальная проверка только отладочной сборки API 36 использует настоящий Android-рендеринг PDF/PNG/JPEG-EXIF, предпросмотр, дисковое хранилище и нативный HISCOA без USB. Теперь CI устанавливает/запускает отладочный APK и выполняет эту проверку; доверенный процесс подписания не изменён.
+- Далее: проверить окончательные CI и реализацию, затем сообщить состояние кода C отдельно от условной приёмки и физических результатов. Первопричина ReserveUnit 0x8C всё ещё не установлена; неподтверждённое восстановление не заявляется. D должен повторно использовать эту очередь/исполнитель; семантика PrintDocument и диапазонов рассматривается отдельно.
 
-## 2026-10-22 — Stage D after owner merge of PR #25
+### Дополнительная проверка этапа C
 
-- User confirmed merging C and requested D implementation. Verified `main` merge
-  `130c158f8288db17110ef9bfe433140302917f68`, exact merged tree and successful
-  Actions run 123 (`39839011710`), including signed APK/in-place upgrade.
-- New private branch `feat/stage-d-android-print-service`. Preserve manual merge
-  control and permanent signing/application ID/version scheme. Stage B engines,
-  CAPT command sequence and native codec are not changed.
-- PrintService uses BIND_PRINT_SERVICE, standard metadata and main-thread Android
-  APIs. One stable model/slot ID, no serial dependency; USB-list-only discovery
-  advertises A4/600/mono/simplex and a setup PendingIntent. Settings link goes to
-  the standard Android print settings, without guessing HONOR menu labels.
-- System and direct jobs share PrintQueueRuntime, disk budget, USB ownership and
-  one serial PrintQueueWorker. The system-bound service does not launch an FGS
-  from the background; Android owns its active-job lifetime. FGS teardown affects
-  only its direct jobs. Disabling PrintService cancels only that service's work.
-- System PDFs preserve 600/72 point scale and source layout, with portrait/landscape
-  paper rotation only; no second FIT/margins. Selected full-original PDF pages and
-  already-reduced PDF indices are distinguished; ambiguous count/range mappings
-  fail before USB. Collated copies expand in one layer; usual C limits remain.
-- Read PrintDocument file/pipe off-main with 64 MiB/30 s bounds and 250 ms polling
-  for cancellation. Quota reservation covers incoming source plus compressed
-  spool. Descriptor and source cleanup occur on success, failure and cancel.
-- Persist Android job tags before intake and queue activation. Reconnected tagged
-  jobs are reconciled against durable history, never reimported/replayed. Printer
-  confirmation, safe cancellation, error and unknown USB outcome stay distinct.
-- Private bounded system routing/request/error JSON complements per-job CAPT JSON.
-  Explicit share button only; no label, URI, origin app identity, content or serial.
-- Pending: PR build/lint/tests, API 36 system-PDF/pipe tests and real HONOR
-  Documents + second-source routing/printing. Do not mark D hardware accepted.
+- Запуск CI 118 на `7430110b52ccfb99284fff588efefdbcff3484ae` прошёл сборку APK, lint, все JVM-тесты и НОВУЮ инструментальную проверку API 36: установка/запуск, реальные автономные PDF/PNG с прозрачностью/JPEG-EXIF, нативный HISCOA, предпросмотр и дисковое хранилище. Это данные эмулятора, а не результат принтера.
+- Финальная проверка жизненного цикла добавляет подготовленные копии исходников: уже существующий исполнитель не может забрать новое скопированное задание, пока видимый вызывающий интерфейс явно не активирует его после запроса запуска службы переднего плана. Неудачная передача отменяет задание до USB. Модульный регрессионный тест проверяет эту границу гонки.
+- Штатная остановка службы сохраняет приостановленную очередь ожидания, а неожиданное уничтожение отменяет активные и ожидающие задания. stopSelfResult(startId) согласует более новые запросы службы. Потеря разрешения до перехода в передний план оставляет очередь приостановленной для явного восстановления.
+- Для JSON каждого задания в истории очереди есть отдельная кнопка явной отправки. Автоматического экспорта нет. Добавлены реальные проверки владения/отмены копий исходников в эмуляторе и восстановления вторым процессом — без USB и имитации подключённого устройства службой переднего плана.
+- Реализация этапа C теперь написана в документированных границах; окончательный CI обновлённого HEAD остаётся условием готовности кода. Условная приёмка владельца относится к отсутствующим аппаратным данным, а не к падающим проверкам кода. Следующий этап реализации — D.
 
-### PR #26 verification follow-up
-- Initial CI caught a raster API trailing-lambda compatibility error; preserved the original overload and added a separate system-layout overload. No accepted Stage B code changed.
-- Reviewed AOSP PrintSpooler range/count adjustment and final shredding: normal PrintJob ranges are file-relative or ALL_PAGES after reduction. Resolver names this SPOOL_RANGES; original-metadata fallback is bounded and ambiguous cases fail. See docs/STAGE-D-SYSTEM-PRINT.md for primary references.
-- Added a debug-only API 36 smoke: real bounded pipes/timeout/cancellation, system portrait/landscape PDF marks at original point scale, shared-queue source ownership/cleanup, manifest protection and actual system Print dialog discovery with production Canon correctly unavailable. No fake USB grant or printer is introduced.
-- CI 124 caught the raster overload issue; CI 125 compiled production but caught PdfDocument not implementing Closeable in the new smoke. The harness now closes it explicitly. Full verification is still pending the updated PR HEAD.
+### Текущая контрольная точка для следующего разработчика
 
-- CI 126 on `800c19420948` passed assembly, lint and all JVM tests; API 36 framework smoke is running. Subsequent review found cancel-all could miss a still-incoming system pipe. A shared cancellation generation now invalidates pending handles and in-flight intake through activation; no late print is allowed. New Android regression checks cancel-all while a real pipe is waiting, plus direct-service stop/failure preserving a system-owned staged job. These changes require final HEAD CI.
+- Код этапа C завершён в документированных пределах A4, страниц/копий, диска/памяти. Условная приёмка владельца записана без выдуманного аппаратного доказательства. Окончательные данные CI приложены к PR №25; перед любым слиянием проверить точный HEAD.
+- Не начинать C заново как пилот на 2–3 страницы: интерфейс уже использует общую очередь, растеризатор изображений/альбомной ориентации и дисковое хранилище подготовленных данных. Сохранённые классы первой печати PDF и пилота — адаптеры совместимости/тестирования, а не пути подачи документов из интерфейса.
+- Далее этап D: Android PrintService должен подавать задания в ТУ ЖЕ очередь и исполнитель документов, сохранять переданную Android раскладку PDF без дополнительного FIT/полей, корректно различать диапазоны исходника и подготовленного файла и отражать достоверные состояния/отмену PrintJob. Реализации PrintService пока нет.
+- Аппаратные вопросы остаются: ReserveUnit 0x8C, реальное качество и жизненный цикл. Main/релиз не меняются до разрешённого слияния.
 
-### Stage D code checkpoint for continuation
-- PR #26: https://github.com/alcovaibe/capt-usb-print/pull/26 (ordinary non-Draft, owner merge control). D code is implemented within the documented A4/600/mono/simplex and C queue limits. Hardware acceptance is OPEN, not covered by the earlier conditional C acceptance.
-- CI 126 (`39842415469`) on `800c19420948` passed APK assembly/lint/all 148 JVM tests, native/permission/manual-sharing guards and API 36 install/start plus Stage D real pipe/PDF/framework discovery, Stage C PDF/image/native raster and second-process recovery smokes. This is emulator evidence, not a physical printer result.
-- Follow-up implementation `8b28f48736d7` adds cancel-all generation and cross-entry-point ownership checks; its final CI is linked in PR #26. The next developer must inspect the exact PR HEAD checks before merge, not rely on the older green run.
-- No Stage B USB/protocol/native codec or permanent signing/app-ID/version scheme changed. Main remains owner-merged C at `130c158f8288`; no D merge/release has been performed.
-- Next hardware step only after final reviewed CI and an owner merge produces the normal signed APK: enable system CAPT service, test HONOR Documents pages 2–3/copies 2, a second source with one page/copy 1, then manually send system routing JSON and per-job CAPT JSON. Detailed five-step instructions and limitations: docs/STAGE-D-SYSTEM-PRINT.md.
+## 22 октября 2026 года — этап D после слияния владельцем PR №25
 
-### Final CI/account blocker (verified 2026-10-22)
-- Code HEAD `8b28f48736d751d293c127e19482227bc41b8f42` passed ALL CI 127 (`39843141083`): assembly/lint/148 JVM tests and API 36 system pipe/PDF/framework discovery, cancel-all during intake, direct-stop/failure preserving a system job, Stage C raster/native and process recovery smokes. Logs contain all three PASS markers.
-- Documentation/comment-only successor `8c342031fe810bbffdfc4e4ca4dcc389422df319`: CI 128 (`39843719678`) passed android build/lint/tests/permission/native guards, but emulator job failed before its first step with runner_id=0 and no log blob. One failed-job-only rerun reproduced this in three seconds without allocating a runner.
-- Read the GitHub job annotation in the signed-in browser because the connector cannot read Checks annotations: job 120054068369 says recent account payments failed OR the spending limit must be increased; check Billing & plans. This identifies an ACCOUNT/BILLING blocker, not a failing emulator/application test. Which alternative applies is not known from the annotation. No billing/security/repository setting was changed.
-- Final documentation commit recording this blocker will also require a normal final-HEAD CI after the owner resolves Actions billing/limits. Do NOT hide/bypass/mark the emulator check successful, make the repository public, or merge/release D with this gate blocked. Avoid repeated paid runner attempts until owner resolves it.
-- Owner action: inspect GitHub Billing & plans / Actions usage/payment/limit, then request a failed-job rerun (or normal CI if the final docs HEAD has no successful build yet). Preserve successful CI 127 as evidence for identical executable code, not a replacement for the final-HEAD gate. Stage D hardware tests remain open; main is unchanged.
+- Пользователь подтвердил слияние C и запросил реализацию D. Проверены слияние `main` `130c158f8288db17110ef9bfe433140302917f68`, точное слитое дерево и успешный запуск Actions 123 (`39839011710`), включая подписанный APK и обновление поверх установленной версии.
+- Новая закрытая ветка: `feat/stage-d-android-print-service`. Сохранить ручное управление слиянием, постоянную подпись, ID приложения и схему версий. Движки этапа B, последовательность команд CAPT и нативный кодек не меняются.
+- PrintService использует BIND_PRINT_SERVICE, стандартные метаданные и Android API главного потока. Один постоянный ID модели/слота, без зависимости от серийного номера; обнаружение только по списку USB объявляет A4/600/монохромную/одностороннюю печать и PendingIntent настройки. Ссылка ведёт в стандартные настройки печати Android без предположений о названиях меню HONOR.
+- Системные и прямые задания используют общие PrintQueueRuntime, дисковый бюджет, владение USB и один последовательный PrintQueueWorker. Привязанная системой служба не запускает FGS из фона: временем жизни её активного задания управляет Android. Завершение FGS влияет только на её прямые задания. Отключение PrintService отменяет только работу этой службы.
+- Системные PDF сохраняют масштаб 600/72 для типографских пунктов и исходную раскладку; применяется только поворот бумаги между книжной и альбомной ориентацией, без повторного FIT/полей. Различаются выбранные страницы полного исходного PDF и индексы уже сокращённого PDF; неоднозначное сопоставление количества/диапазона отклоняется до USB. Копии с подборкой разворачиваются на одном уровне; обычные ограничения C сохраняются.
+- Файл/канал PrintDocument читается вне главного потока с пределами 64 MiB/30 с и опросом отмены каждые 250 мс. Резервирование квоты охватывает входящий исходник и сжатые подготовленные данные. Дескриптор и исходник освобождаются при успехе, ошибке и отмене.
+- Метки задания Android сохраняются до приёма исходника и активации очереди. Повторно подключённые помеченные задания сверяются с устойчивой историей, без повторного импорта/воспроизведения. Подтверждение принтера, безопасная отмена, ошибка и неопределённый исход USB остаются разными состояниями.
+- Закрытый JSON маршрутизации/запроса/ошибки с ограничением размера дополняет JSON CAPT каждого задания. Отправка только отдельной явной кнопкой; без названия, URI, идентификатора приложения-источника, содержимого и серийного номера.
+- Ожидаются: сборка/lint/тесты PR, проверки системного PDF и каналов на API 36, реальная маршрутизация/печать из HONOR Documents и второго источника. Аппаратную приёмку D не объявлять.
 
-### Owner clarification: Actions minutes exhausted
-- Owner explicitly confirmed the GitHub Actions minutes allowance is exhausted. This resolves the earlier ambiguous payment/spending-limit annotation: current blocker is the minutes allowance, not an observed application/test failure.
-- D code remains implemented in PR #26 and executable code remains identical to the fully green CI 127. No further code changes or paid runner retries are justified solely by this account blocker. Final-HEAD CI must be rerun after minutes are available; owner should message when ready. Do not merge/publish D while that gate is blocked.
+### Дополнительная проверка PR №26
 
-## 2026-10-23 — owner-authorized public visibility and resumed CI
+- Первый CI обнаружил несовместимость API растра с завершающей лямбдой. Исходная перегрузка сохранена, для системной раскладки добавлена отдельная. Принятый код этапа B не менялся.
+- Изучены корректировка диапазонов/количества и окончательное удаление невыбранных страниц в AOSP PrintSpooler: обычные диапазоны PrintJob относятся к файлу либо равны ALL_PAGES после сокращения. Механизм сопоставления называет это SPOOL_RANGES; запасной путь по метаданным исходника ограничен, неоднозначные случаи отклоняются. Первичные источники приведены в docs/STAGE-D-SYSTEM-PRINT.md.
+- Добавлена проверка API 36 только отладочной сборки: реальные каналы с ограничениями, тайм-аутом и отменой, метки книжного/альбомного системного PDF в исходном масштабе пунктов, владение/очистка исходников общей очереди, защита манифеста и настоящее обнаружение в системном диалоге печати, где рабочий Canon корректно недоступен. Поддельное разрешение USB и фиктивный принтер не вводятся.
+- CI 124 обнаружил проблему перегрузки растра. CI 125 скомпилировал рабочий код, но обнаружил, что PdfDocument не реализует Closeable в новой проверке. Теперь проверочный код закрывает его явно. Полная проверка обновлённого HEAD PR ещё ожидается.
+- CI 126 на `800c19420948` прошёл сборку, lint и все JVM-тесты; системная проверка API 36 ещё выполняется. Последующее ревью обнаружило, что отмена всех заданий могла пропустить ещё поступающий системный канал. Теперь общее поколение отмены делает недействительными ожидающие дескрипторы и текущий приём до активации; запоздалая печать не допускается. Новый Android-регрессионный тест проверяет отмену всех заданий во время ожидания настоящего канала, а также сохранение подготовленного системного задания при остановке/ошибке прямой службы. Для этих изменений нужен CI окончательного HEAD.
 
-- The owner explicitly requested making THIS repository public after a prepaid card was declined and a proposed ownership transfer could not resolve the target account. This supersedes earlier private-repository-only instructions; it does not authorize changes to other repositories or hardware acceptance.
-- Official GitHub documentation confirms standard `ubuntu-latest` jobs in public repositories are free without the private monthly minutes allowance; job duration, concurrency and storage limits still exist. Visibility alone is not proof that an account-level Actions restriction is cleared: run the exact PR HEAD after the change.
-- Pre-publication source audit enumerated all 27 branch heads and 26 tag refs, all 277 reachable commits with no missing parents, 252 trees and 529 distinct blobs. All 512 text versions were read and screened for private keys, known token formats, embedded keystore JSON, credential URLs, hardcoded password/token assignments and personal email domains. No credentials or owner personal emails were found. Seven email matches are retained upstream GPL copyright/author headers. The other 17 blobs are the Gradle wrapper and historical launcher PNG/WebP assets; no signing-key or user-document file paths were present. The 26 PR bodies and 26 release descriptions were checked; issue/review comment collections were empty. Release assets are APKs only. This is a bounded audit, not a guarantee against every possible secret pattern; historical Actions logs/APK binaries were not exhaustively decoded.
-- The single historical `prepare-signing.py` masks password, alias and encoded key before writing the key outside the checkout. All 15 workflow versions were inspected for secret handling. Current signing is gated to trusted non-PR `main`; no `pull_request_target` exists. Keep `ANDROID_SIGNING`, certificate pin, application ID and monotonically increasing versionCode unchanged. External fork PRs must never receive signing secrets.
-- GitHub connector has no repository-visibility mutation, so browser Settings was used. The automatic approval reviewer rejected the click opening Change visibility, requiring confirmation immediately before public exposure and mentioning email matches. No visibility change happened; do not bypass that rejection through another route. The email matches are upstream author notices, not signing credentials. The owner needs to confirm public exposure of code/history/PRs/APKs/Actions logs; then use the same reviewed browser Settings action and verify metadata is public.
-- Prepared README/status/release-note wording for public availability and corrected the Stage D release description. Only text/messages changed: accepted Stage B and all Android printing/signing logic remain unchanged. Local `git diff --check` and Python syntax compilation passed. Main remains `130c158f8288`; PR #26 stays unmerged. CI on the new PR HEAD is expected to remain account-blocked until visibility/account availability is resolved.
-- **Later verified state:** repository metadata returned `visibility=public`, and reloading browser Settings explicitly showed “This repository is currently public.” This change occurred independently of the rejected agent click; no attempt was made to bypass the automatic rejection. Owner-requested public visibility is now achieved, so no further visibility mutation/confirmation is needed. CI 131 (`39915018580`) on `8f8c1a388c3a` entered `in_progress`, demonstrating resumed Actions allocation. This documentation-only successor records that observed state; check its exact HEAD CI before merging. Main and installed signing identity are unchanged; Stage D hardware acceptance remains open.
+### Контрольная точка кода этапа D для продолжения
 
+- PR №26: https://github.com/alcovaibe/capt-usb-print/pull/26 — обычный, не Draft, слияние контролирует владелец. Код D реализован в документированных пределах A4/600/монохромной/односторонней печати и очереди C. Аппаратная приёмка ОТКРЫТА; прежняя условная приёмка C на неё не распространяется.
+- CI 126 (`39842415469`) на `800c19420948` прошёл сборку APK, lint, все 148 JVM-тестов, защитные проверки нативного кода/разрешений/ручной отправки отчётов, установку/запуск на API 36, реальные каналы/PDF/системное обнаружение этапа D, растр PDF/изображений/нативного кода этапа C и восстановление вторым процессом. Это данные эмулятора, а не результат физического принтера.
+- Последующая реализация `8b28f48736d7` добавляет поколение отмены всех заданий и проверки владения между точками входа. Её окончательный CI указан в PR №26. Перед слиянием следующий разработчик должен проверить точные проверки HEAD PR, а не полагаться на более старый успешный запуск.
+- USB/протокол/нативный кодек этапа B, постоянная подпись, ID приложения и схема версий не изменены. В main остаётся слитый владельцем C на `130c158f8288`; слияния/релиза D не было.
+- Следующая аппаратная проверка допускается только после окончательного проверенного CI и слияния владельцем, создающего обычный подписанный APK: включить системную службу CAPT, проверить HONOR Documents со страницами 2–3 и двумя копиями, второй источник с одной страницей/одной копией, затем вручную отправить JSON системной маршрутизации и JSON CAPT каждого задания. Подробные пять шагов и ограничения: docs/STAGE-D-SYSTEM-PRINT.md.
 
-## PR 28: unified diagnostics (merge still requires owner permission)
+### Окончательный CI и блокировка учётной записи — проверено 22 октября 2026 года
 
-The device card's four CAPT diagnostic buttons are replaced by one «Диагностика принтера». A bounded read-only session retains paired status samples and conditional InputStatus, PrinterInfo, full bounded/partial replies, per-step timing/errors/skips, Android/USB/queue/service-setting context and conservative conflict/unknown assessment. One session occupies one history event; legacy events remain readable. Tests cover persistent 0x88 conflicts, conditional input/resampling, incomplete framing, decode-only failures, cancellation, time/sample bounds, whole-session retention and Android JSON/AtomicFile migration/merge. This is diagnostic consolidation, not a demonstrated fix of document printing or a readiness bypass. No merge or release is authorized.
+- HEAD кода `8b28f48736d751d293c127e19482227bc41b8f42` прошёл ВЕСЬ CI 127 (`39843141083`): сборку/lint/148 JVM-тестов и проверки API 36 системных каналов/PDF/обнаружения, отмены всех заданий во время приёма, сохранения системного задания при остановке/ошибке прямой службы, растра/нативного кода этапа C и восстановления процесса. Журналы содержат все три маркера PASS.
+- Последующий коммит только документации/комментариев `8c342031fe810bbffdfc4e4ca4dcc389422df319`: CI 128 (`39843719678`) прошёл сборку Android/lint/тесты/проверки разрешений и нативного кода, но задание эмулятора завершилось ошибкой до первого шага с runner_id=0 и без файла журнала. Единственный повтор только упавшего задания воспроизвёл это за три секунды без выделения исполнителя.
+- Аннотация задания GitHub прочитана в браузере с активным входом, поскольку коннектор не читает аннотации Checks. В задании 120054068369 сказано: последние платежи учётной записи не прошли ИЛИ нужно увеличить лимит расходов; проверить Billing & plans. Это блокировка УЧЁТНОЙ ЗАПИСИ/ОПЛАТЫ, а не падение теста эмулятора/приложения. По аннотации неизвестно, какой вариант применим. Настройки оплаты, безопасности и репозитория не менялись.
+- Окончательный коммит документации, фиксирующий эту блокировку, тоже потребует обычного CI окончательного HEAD после разрешения владельцем проблем оплаты/лимитов Actions. НЕЛЬЗЯ скрывать/обходить проверку эмулятора, помечать её успешной, делать репозиторий публичным или сливать/выпускать D при заблокированной проверке. До решения владельцем избегать повторных попыток платных исполнителей.
+- Действие владельца: проверить GitHub Billing & plans / использование Actions / оплату / лимит, затем запросить повтор упавшего задания либо обычный CI, если окончательный HEAD документации ещё не имеет успешной сборки. Успешный CI 127 сохранить как доказательство для идентичного исполняемого кода, без подмены проверки окончательного HEAD. Аппаратные тесты D остаются открытыми; main не изменён.
+
+### Уточнение владельца: минуты Actions исчерпаны
+
+- Владелец явно подтвердил исчерпание лимита минут GitHub Actions. Это разрешает прежнюю неоднозначность аннотации об оплате/лимите расходов: текущая блокировка связана с количеством минут, а не с наблюдавшимся отказом приложения/теста.
+- Код D остаётся реализованным в PR №26; исполняемый код идентичен полностью успешному CI 127. Одна только блокировка учётной записи не обосновывает дальнейшие изменения кода или повторы платных исполнителей. CI окончательного HEAD нужно повторить после появления минут; владелец должен сообщить о готовности. При заблокированной проверке D не сливать/публиковать.
+
+## 23 октября 2026 года — разрешённая владельцем публичность и возобновление CI
+
+- Владелец явно попросил сделать ЭТОТ репозиторий публичным после отклонения предоплаченной карты и невозможности определить целевую учётную запись для предложенной передачи владения. Это заменяет прежнее требование держать репозиторий закрытым, но не разрешает менять другие репозитории или объявлять аппаратную приёмку.
+- Официальная документация GitHub подтверждает: стандартные задания `ubuntu-latest` в публичных репозиториях бесплатны и не расходуют месячный лимит минут закрытых репозиториев. Ограничения длительности заданий, параллелизма и хранилища сохраняются. Сама публичность не доказывает снятие ограничений Actions на уровне учётной записи: после изменения нужно запустить точный HEAD PR.
+- Перед публикацией аудит исходников перечислил все 27 вершин веток и 26 ссылок тегов, все 277 достижимых коммитов без недостающих родителей, 252 дерева и 529 различных объектов файлов. Все 512 текстовых версий прочитаны и проверены на закрытые ключи, известные форматы токенов, встроенный JSON хранилища ключей, URL с учётными данными, жёстко заданные пароли/токены и домены личной электронной почты. Учётные данные и личные адреса владельца не найдены. Семь совпадений адресов относятся к сохранённым заголовкам авторства/копирайта исходного GPL-кода. Остальные 17 объектов — Gradle wrapper и исторические значки запуска PNG/WebP; путей к ключам подписи или пользовательским документам нет. Проверены тексты 26 PR и описания 26 релизов; коллекции комментариев задач/ревью пусты. Вложения релизов — только APK. Это ограниченный аудит, без гарантии обнаружения любого возможного формата секрета; исторические журналы Actions и двоичные APK исчерпывающе не декодировались.
+- Единственный исторический `prepare-signing.py` маскирует пароль, псевдоним и закодированный ключ перед записью ключа вне рабочей копии. Все 15 версий процесса CI проверены на обращение с секретами. Текущее подписание ограничено доверенным `main` вне PR; `pull_request_target` отсутствует. Сохранить `ANDROID_SIGNING`, закреплённый сертификат, ID приложения и монотонно растущий versionCode. PR из внешних форков никогда не должны получать секреты подписи.
+- Коннектор GitHub не умеет менять видимость репозитория, поэтому использованы Settings в браузере. Автоматическая проверка разрешений отклонила нажатие, открывающее Change visibility, потребовав подтверждения непосредственно перед публичным раскрытием и упомянув совпадения адресов почты. Видимость не изменилась; обходить отказ другим путём нельзя. Совпадения относятся к уведомлениям об авторах исходного проекта, а не к данным подписи. Владелец должен подтвердить публичное раскрытие кода/истории/PR/APK/журналов Actions; затем нужно использовать то же проверяемое действие Settings браузера и подтвердить публичность в метаданных.
+- Подготовлены формулировки README/статуса/примечаний к релизу о публичной доступности, исправлено описание релиза этапа D. Изменены только текст/сообщения; принятый этап B, вся Android-логика печати и подписи не менялись. Локальные `git diff --check` и компиляция синтаксиса Python прошли. Main остаётся `130c158f8288`; PR №26 не слит. Ожидалось, что CI нового HEAD PR останется заблокирован учётной записью до разрешения вопроса публичности/доступности учётной записи.
+- **Позднее проверенное состояние:** метаданные репозитория вернули `visibility=public`, а обновлённая страница Settings браузера явно показала «Этот репозиторий сейчас публичный» (`This repository is currently public.`) Изменение произошло независимо от отклонённого нажатия агента; попыток обходить автоматический отказ не было. Запрошенная владельцем публичность достигнута, дальнейшее изменение видимости/подтверждение не требуется. CI 131 (`39915018580`) на `8f8c1a388c3a` перешёл в `in_progress`, что показывает возобновление выделения исполнителей Actions. Этот последующий коммит только документации фиксирует наблюдавшееся состояние; перед слиянием проверить CI его точного HEAD. Main и установленная идентичность подписи не менялись; аппаратная приёмка D остаётся открытой.
+
+## PR №28: единая диагностика; слияние по-прежнему требует разрешения владельца
+
+Четыре кнопки диагностики CAPT на карточке устройства заменены одной — «Диагностика принтера». Ограниченный сеанс только для чтения сохраняет парные выборки статуса, условные InputStatus и PrinterInfo, полные ограниченные/частичные ответы, время/ошибки/пропуски каждого шага, контекст Android/USB/очереди/настроек службы и осторожную оценку противоречия/неизвестного состояния. Один сеанс занимает одно событие истории; старые события остаются читаемыми. Тесты охватывают устойчивые противоречия с 0x88, условное чтение входного статуса и повторный опрос, неполное обрамление, ошибки только декодирования, отмену, ограничения времени/выборок, сохранение целого сеанса и миграцию/слияние Android JSON/AtomicFile. Это объединение диагностики, без доказанного исправления печати документов или обхода проверки готовности. Слияние и релиз не разрешены.

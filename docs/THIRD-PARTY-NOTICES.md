@@ -1,19 +1,11 @@
-# Third-party licensing
+# Лицензии сторонних компонентов
 
-HISCOA encoder source files vendored from **ValdikSS/captdriver**,
-commit `892f320c019974a5b737e000fcc2c8582264a131`,
-original HISCOA authorship **Alexey Galakhov**, copyright 2013.
+Исходники кодировщика HISCOA включены из **ValdikSS/captdriver**, коммит `892f320c019974a5b737e000fcc2c8582264a131`; автор исходного HISCOA — **Alexey Galakhov**, авторские права 2013 года.
 
-Imported from that revision, with one nonbehavioral Android build fix (`unsigned best_cmd = 0` instead of an uninitialized declaration in `hiscoa-compress.c` to satisfy strict compiler diagnostics), in `app/src/main/cpp/upstream/`:
-`hiscoa-compress.c`, `hiscoa-compress.h`, `hiscoa-common.c`,
-`hiscoa-common.h`, `std.h`, `word.h`.
+Из этой ревизии в `app/src/main/cpp/upstream/` перенесены `hiscoa-compress.c`, `hiscoa-compress.h`, `hiscoa-common.c`, `hiscoa-common.h`, `std.h` и `word.h`. Единственное исправление сборки Android, не меняющее поведение: `unsigned best_cmd = 0` вместо неинициализированного объявления в `hiscoa-compress.c`, чтобы удовлетворить строгие проверки компилятора.
 
-The original headers specify GNU GPL version 3 or later. The full
-GNU GPL v3 license is included in the project root `COPYING` and as
-`app/src/main/cpp/upstream/COPYING`.
+Исходные заголовки указывают GNU GPL версии 3 или более поздней. Полный текст GNU GPL v3 включён в `COPYING` в корне проекта и в `app/src/main/cpp/upstream/COPYING`.
 
-`hiscoa_jni.c`, `HiscoaNative.kt` and the CAPT integration are separate
-project glue for Android. Redistributing the combined application
-requires following GPL license terms, including source availability
-to recipients. This repository is currently private; the owner has
-not authorized publishing it or uploading it to a public store.
+`hiscoa_jni.c`, `HiscoaNative.kt` и интеграция CAPT — отдельный связующий код проекта для Android. При распространении объединённого приложения необходимо соблюдать GPL, в том числе предоставлять получателям исходный код.
+
+Историческое состояние на момент добавления этих уведомлений: репозиторий был приватным, владелец не разрешал его публикацию или загрузку в публичный магазин. Последующее разрешение на публичный репозиторий от 23 октября 2026 года зафиксировано в README и PROJECT_CONTEXT.md; условия лицензии от этого не меняются.

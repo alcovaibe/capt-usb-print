@@ -1,119 +1,93 @@
 # CAPT USB Print — Android / Canon LBP2900
 
-Independent offline Android CAPT prototype for the owner's HONOR X9c (Android API 36) and Canon LBP2900. No PrintHand dependency or app-side INTERNET permission. Other Android devices and printers are not claimed supported.
+Независимый автономный прототип CAPT для Android, рассчитанный на HONOR X9c владельца (Android API 36) и Canon LBP2900. Приложение не зависит от PrintHand и не запрашивает разрешение INTERNET. Поддержка других устройств Android и принтеров не заявляется.
 
-**Verified on the owner's hardware:** Stage A USB diagnostics; Stage B A4/600-dpi test sheets, repeated separate jobs and two distinct sheets in one CAPT job (signed build 71). On signed build 105 the owner printed actual PDF pages 1 and 2 as two separate jobs after a printer power cycle. Stage C PR #25 and Stage D PR #26 are merged; Stage C retains owner-authorized conditional acceptance. General queue, image and landscape code are described below; intermittent ReserveUnit `0x8C` remains unresolved. Physical confirmation of the new paths and PrintService integration are separate.
+> Актуальные результаты сборки 147 и изменения очереди, отмены и продолжения печати приведены в [контексте проекта](PROJECT_CONTEXT.md) и [описании восстановления очереди](docs/PRINT-QUEUE-RECOVERY.md). Ниже сохранены также исторические сведения об этапах разработки; их ограничения относятся к указанным сборкам.
 
-## Hardware and bounded diagnostic
-On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, interface 0 / class 7/1/2, BULK OUT 0x01 and IN 0x82, permission and guarded claim verified. Manual CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo responses are tracked in private JSON. Device-list monitoring itself does not send CAPT commands; diagnostics exclude document content and printer serial numbers.
+**Проверено на оборудовании владельца:** USB-диагностика этапа A; тестовые листы A4/600 dpi этапа B, повторные отдельные задания и два разных листа в одном задании CAPT (подписанная сборка 71). В подписанной сборке 105 владелец напечатал реальные страницы 1 и 2 PDF двумя отдельными заданиями после выключения и включения принтера. PR №25 этапа C и PR №26 этапа D слиты; для этапа C сохраняется разрешённая владельцем условная приёмка. Общая очередь, изображения и альбомная ориентация описаны ниже; периодический ответ ReserveUnit `0x8C` остаётся нерешённой проблемой этого исторического состояния. Физическое подтверждение новых путей и интеграции PrintService рассматривается отдельно.
 
-### Launcher icon
-The launcher uses an adaptive white background and black printer line-art, with round and monochrome variants.
+## Оборудование и ограниченная диагностика
 
-## Stage C: local document queue
+HONOR BRP-NX1: API 36, измеренный размер страницы памяти 4096 байт; Canon LBP2900 04A9:2676, интерфейс 0 / класс 7/1/2, BULK OUT 0x01 и IN 0x82, разрешение и контролируемый захват интерфейса подтверждены. Ответы на вручную запущенные CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo сохраняются в приватном JSON. Наблюдение за списком устройств само по себе не отправляет команды CAPT; диагностика не включает содержимое документов и серийные номера принтеров.
 
-PDF, JPEG and PNG share one bounded document queue and CAPT runner. Select page ranges, 1–20 collated copies, A4 portrait/landscape and optional content rotation, inspect the actual monochrome print preview, then explicitly confirm submission. Limits are 1000 source pages, 2000 output sheets and four live jobs; an unsupported plan is rejected without truncation.
+### Значок приложения
 
-Each distinct page is rasterized/compressed before USB into private CRC-checked spool files. Copies reuse the same files. Memory holds a bounded sampled image (at most 4M decoded pixels), a 64-row raster band and the current encoded strip. A compressed page is limited to 12 MiB, total private queue reservations to 256 MiB, with an additional 8 MiB free-space reserve. Disk exhaustion or preparation failure stops before printing. The provisional 260 px (~11 mm) FIT inset is not a measured mechanical margin; 100% scale is not offered.
+Адаптивный значок имеет белый фон и чёрное контурное изображение принтера; предусмотрены круглый и монохромный варианты.
 
-A connected-device foreground service owns serial document execution beyond the Activity lifecycle. Queue and notification expose cancellation. After uncertain/failed USB execution, successor jobs pause until explicit inspection/continue. Unfinished work never resumes after process restart, reconnect or reboot; USB-started records become unknown, other unfinished records fail, sources/spools are removed. No automatic replay or speculative CAPT reset is implemented. Grant USB access on the main screen before adding jobs; notification permission is optional for printing but permits a visible foreground notification.
+## Этап C: локальная очередь документов
 
-The general engine retains the accepted portrait CAPT descriptor: landscape is a raster transform. It sends one reservation, sequential StartPrint(N), one inter-page continuation for multi-sheet jobs and one end/release. Accepted Stage B engines/helpers and signing identity are unchanged. Read-only BasicStatus 0x88 detection does not repair ReserveUnit 0x8C.
+PDF, JPEG и PNG используют одну очередь документов с ограничениями ресурсов и общий движок CAPT. Можно выбрать диапазон страниц, 1–20 копий с подборкой по экземплярам, книжную/альбомную ориентацию A4 и дополнительный поворот содержимого, проверить реальный монохромный предпросмотр печати и явно подтвердить отправку. Ограничения: 1000 исходных страниц, 2000 выходных листов и четыре незавершённых задания. Неподдерживаемый план отклоняется целиком, без усечения.
 
-Private history is bounded to 50 jobs and reports to 24; JSON records settings, app/device versions, CAPT state and confirmed counters, excluding document names/URIs/content/raster/hashes/serials. Sharing is explicit. Preview/settings survive screen recreation; queued jobs own independent private source copies.
+Каждая уникальная страница растеризуется и сжимается до обращения к USB в приватные файлы печатных данных с проверкой CRC. Копии используют те же файлы. В памяти находятся уменьшенное изображение ограниченного размера (не более 4 млн декодированных пикселей), растровая полоса высотой 64 строки и текущая сжатая полоса. Сжатая страница ограничена 12 МиБ, общий резерв приватной очереди — 256 МиБ; дополнительно сохраняется 8 МиБ свободного места. Нехватка диска или ошибка подготовки останавливают задание до печати. Предварительный отступ FIT 260 px (около 11 мм) не является измеренным механическим полем; масштаб 100% не предлагается.
 
-**Acceptance distinction:** the owner authorized conditional release/print success to finish code. Actual hardware evidence remains separate PDF sheets on build 105 and accepted Stage A/B. New queue, image output, landscape and MagicOS screen-off behavior are not reported as physically observed. Stage D PrintService is under verification below; its hardware acceptance remains open.
+Служба переднего плана типа connected-device последовательно выполняет задания независимо от жизненного цикла Activity. Отмена доступна в очереди и уведомлении. После неудачного или неопределённого выполнения по USB следующие задания приостанавливаются до явной проверки и продолжения. В исходной реализации незавершённая работа не возобновляется после перезапуска процесса, переподключения или перезагрузки: записи с начатым USB-этапом получают неопределённый исход, остальные завершаются ошибкой, исходники и подготовленные файлы удаляются. Автоматический повтор и предположительный сброс CAPT отсутствуют. Новое исключение для вручную продолжаемого ожидания бумаги описано в [восстановлении очереди](docs/PRINT-QUEUE-RECOVERY.md). Перед добавлением заданий выдайте доступ к USB на главном экране. Разрешение на уведомления необязательно для печати, но позволяет показывать уведомление службы переднего плана.
 
-## Stage D: Android system printing (under verification)
+Общий движок сохраняет принятый книжный дескриптор CAPT: альбомная ориентация получается преобразованием растра. Используются одно резервирование, последовательные StartPrint(N), одна команда продолжения между страницами многостраничного задания и одно завершение/освобождение. В исходной версии этого этапа принятые движки/вспомогательные функции этапа B и подпись приложения не менялись. Обнаружение BasicStatus 0x88 запросом состояния не исправляет ReserveUnit 0x8C.
 
-The Android PrintService advertises one stable Canon LBP2900 USB slot and the
-existing A4 / 600 dpi / monochrome / simplex profile. Enable CAPT USB Print through
-the app's system-print settings button, grant USB access on the main screen, then
-select the Canon from an application's Android Print dialog. Missing/ambiguous USB
-devices or permissions block an unstarted job with a setup message.
+Приватная история ограничена 50 заданиями, отчёты — 24 файлами. JSON содержит настройки, версии приложения/устройства, состояние CAPT и подтверждённые счётчики, но не имена/URI/содержимое/растр/хеши документов и серийные номера. Экспорт выполняется явно. Предпросмотр и настройки переживают пересоздание экрана; задания очереди владеют независимыми приватными копиями исходников.
 
-System PDFs enter the same bounded queue and serial worker as direct documents.
-Their existing point scale, margins and layout are preserved; the app's FIT inset
-is not applied again. Original-versus-reduced PDF page selections are resolved
-once, with ambiguous mappings rejected. One layer expands collated copies.
-PrintDocument pipes are read off the main thread with a 64 MiB / 30-second bound,
-cancellation and shared disk quotas. PrintJob APIs stay on the main thread.
+**Различие видов приёмки:** владелец разрешил условно считать выпуск и печать успешными, чтобы завершить код. В историческом состоянии фактическими аппаратными результатами оставались отдельные листы PDF на сборке 105 и принятые этапы A/B. Новая очередь, вывод изображений, альбомная ориентация и поведение MagicOS при выключенном экране тогда не были физически подтверждены. Ниже сохранено описание проверки PrintService этапа D, аппаратная приёмка которого на том этапе оставалась открытой.
 
-Disabling/disconnecting the service cancels its work without cancelling unrelated
-direct jobs. Tagged interrupted jobs are reconciled without automatic replay.
-Printer-confirmed completion, cancellation before printing and uncertain USB
-outcomes remain distinct. Queue history exposes a separate explicit system JSON
-share button, with no document labels, URIs, content or serials.
+## Этап D: системная печать Android — историческое состояние проверки
 
-Automated build/raster/framework checks and final-HEAD CI are tracked in
-[PR #26](https://github.com/alcovaibe/capt-usb-print/pull/26). Build-133 reports now confirm HONOR Documents routing, PDF intake and preparation.
-Printing stopped before ReserveUnit at BasicStatus `0x88`; no system sheet or
-second-source acceptance is confirmed. Stage D hardware acceptance remains open. No new CAPT command, reset, retry or signing change is
-introduced.
+Android PrintService объявляет один постоянный USB-принтер Canon LBP2900 с существующим профилем A4 / 600 dpi / монохромная / односторонняя печать. Включите CAPT USB Print кнопкой системных настроек печати в приложении, выдайте доступ к USB на главном экране и выберите Canon в системном диалоге печати другого приложения. Отсутствие/неоднозначность USB-устройства или разрешения блокируют ещё не запущенное задание с сообщением о настройке.
 
-### Document CAPT preflight
+Системные PDF поступают в ту же ограниченную очередь и последовательный обработчик, что и документы из приложения. Исходный масштаб в пунктах, поля и расположение сохраняются; отступ FIT приложения повторно не применяется. Соответствие выбранных страниц полному или сокращённому PDF определяется один раз, неоднозначные случаи отклоняются. Разворачивание копий с подборкой выполняется в одном месте. Каналы PrintDocument читаются вне главного потока с ограничениями 64 МиБ / 30 секунд, отменой и общей квотой диска. Вызовы PrintJob остаются на главном потоке.
 
-Before reservation the shared document runner reconciles Basic/Extended status,
-reads InputStatus when either reply requests it, and polls transient states with
-a 5-second polling budget and at most 21 samples. Each USB query has its own
-finite transport timeout. No status gate is bypassed. A persistent basic/extended
-mismatch stops as `CAPT_STATUS_CONFLICT`; malformed status stops as
-`CAPT_STATUS_INVALID`. Both raw status replies are retained in the explicit per-job
-JSON, with distinct messages in queue/system printing. Only read-only status
-queries repeat. This does not claim a fix for sustained `0x88` or ReserveUnit
-`0x8C`. See [preflight investigation](docs/CAPT-PREFLIGHT-STATUS.md).
+Отключение/разрыв соединения со службой отменяет её работу, не отменяя независимые задания из приложения. Помеченные прерванные задания согласуются с сохранённым состоянием без автоматического повтора. Подтверждённое принтером завершение, отмена до печати и неопределённый исход USB различаются. В исходном интерфейсе истории имелась отдельная явная кнопка экспорта системного JSON без названий документов, URI, содержимого и серийных номеров.
 
-## Signed releases and upgrade compatibility
+Автоматические проверки сборки, растра, Android и CI последней ревизии отражены в [PR №26](https://github.com/alcovaibe/capt-usb-print/pull/26). Отчёты сборки 133 подтвердили маршрут из HONOR Documents, получение и подготовку PDF. Печать останавливалась до ReserveUnit на BasicStatus `0x88`; системный лист и приёмка второго приложения-источника тогда не были подтверждены. Аппаратная приёмка этапа D оставалась открытой. В том изменении не добавлялись команды CAPT, сбросы, повторы или изменения подписи.
 
-Public signed prereleases: [Releases](https://github.com/alcovaibe/capt-usb-print/releases). The owner authorized public repository visibility on 2026-10-23 so standard GitHub-hosted CI can run without consuming the private-repository minute allowance. Public visibility is confirmed in GitHub metadata and Settings. Source, history, PRs, release APKs and Actions logs are readable by everyone; signing credentials and on-device document/diagnostic data remain private. Future installed **signed** versions upgrade in place via the ordinary Android APK installer, keeping app settings. Signing certificate and `applicationId=com.cryonum.captusbprint` are permanently pinned. `versionCode` increases for each GitHub Actions release build.
+### Предварительная проверка CAPT для документов — историческое состояние
 
-The previous A1 diagnostic prerelease is a **debug app** using `com.cryonum.captusbprint.debug`; it cannot upgrade into a signed release. Install the first permanently signed A2 APK as a separate app, then all newer signed A2+ builds can install over it. There is no automatic in-app updater; download a signed APK from Releases and install it with Android's ordinary installer. The app deliberately has no INTERNET permission.
+До резервирования общий обработчик документов сопоставлял Basic/Extended, читал InputStatus по запросу любого ответа и опрашивал переходные состояния в пределах 5 секунд, не более 21 выборки. Каждый USB-запрос имеет собственный конечный транспортный таймаут. Проверки состояния не обходились. Постоянное расхождение Basic/Extended останавливало задание с `CAPT_STATUS_CONFLICT`, некорректный ответ — с `CAPT_STATUS_INVALID`. Оба необработанных ответа сохранялись в JSON задания с отдельными сообщениями в очереди и системной печати. Повторялись только запросы состояния без записи. Это не было заявлением об исправлении постоянного `0x88` или ReserveUnit `0x8C`. См. [расследование предварительной проверки](docs/CAPT-PREFLIGHT-STATUS.md) и последующее [исправление запуска](docs/LBP2900-STARTUP-CONTRACT.md).
 
-**Owner-controlled signing setup is complete.** The repository secret `ANDROID_SIGNING` is configured, and signed build 33 passed the signature, package/version, prior-release and Android 16 in-place-upgrade checks before publication. Keep *two separate encrypted backups* of `CAPT_USB_Print_SIGNING_BACKUP.zip` from the conversation; it contains the private key backup and secret JSON. Do **not** commit, send publicly, upload to Releases or share that backup. Losing the private key means losing the ability to install later APKs as compatible upgrades.
+## Подписанные релизы и совместимость обновлений
 
-CI never generates or changes the private signing key and cannot publish a release without the configured secret. `config/release-certificate.sha256` pins the independently generated public signing certificate, not the secret. Only the release job for trusted `main` has access to signing material, reconstructed outside the checkout and removed on completion. A signed release must pass build/lint/unit tests, APK verification and emulator install or in-place update on API 36 before publishing.
+Публичные подписанные предварительные релизы: [Releases](https://github.com/alcovaibe/capt-usb-print/releases). Владелец разрешил сделать репозиторий публичным 23 октября 2026 года, чтобы обычные GitHub-hosted проверки не расходовали лимит минут приватного репозитория. Публичность подтверждена метаданными GitHub и настройками. Исходники, история, PR, релизные APK и журналы Actions доступны всем; материалы подписи и документы/диагностика на устройстве остаются приватными. Установленные **подписанные** версии обновляются поверх предыдущих обычным установщиком APK Android с сохранением настроек. Сертификат подписи и `applicationId=com.cryonum.captusbprint` закреплены постоянно. `versionCode` увеличивается для каждой релизной сборки GitHub Actions.
 
-## Local development and diagnostics
+Предыдущая диагностическая версия A1 — **отладочное приложение** с `com.cryonum.captusbprint.debug`; обновить её до подписанного релиза поверх нельзя. Первый APK A2 с постоянной подписью устанавливается отдельным приложением; последующие подписанные A2+ устанавливаются поверх него. Автоматического обновления внутри приложения нет: скачайте подписанный APK из Releases и установите обычным установщиком Android. Разрешение INTERNET намеренно отсутствует.
 
-JDK 21; Android Gradle Plugin 9.2.1; Gradle Wrapper 9.4.1; compileSdk/targetSdk 36; minSdk 29; Android SDK Build Tools 36.0.0. Build debug with `./gradlew :app:assembleDebug`. Debug is NOT upgradeable release. Never use ephemeral debug signing for user-facing Releases.
+**Настройка подписи под управлением владельца завершена.** Секрет репозитория `ANDROID_SIGNING` настроен; подписанная сборка 33 прошла проверку подписи, пакета/версии, предыдущего релиза и обновления поверх на Android 16 до публикации. Храните *две отдельные зашифрованные резервные копии* `CAPT_USB_Print_SIGNING_BACKUP.zip` из разговора: архив содержит резервную копию закрытого ключа и JSON секрета. **Не** добавляйте его в коммиты, не отправляйте публично, не загружайте в Releases и не делитесь им. Потеря закрытого ключа лишает возможности выпускать совместимые обновления APK.
 
-PR CI builds/lints/tests the APK, checks permissions/native packaging and installs/launches it on API 36. Debug-only offline instrumentation runs Android PDF, PNG alpha, JPEG EXIF, actual monochrome preview, spool and native HISCOA checks without printer access. The signed-main pipeline independently verifies permanent signature and in-place upgrade before publication.
+CI не создаёт и не заменяет закрытый ключ подписи и не публикует релиз без настроенного секрета. `config/release-certificate.sha256` закрепляет независимо созданный открытый сертификат, а не секрет. Доступ к материалам подписи имеет только релизное задание доверенной `main`; материалы восстанавливаются вне рабочей копии и удаляются по завершении. До публикации подписанный релиз проходит сборку, lint, модульные тесты, проверку APK и установку либо обновление поверх в эмуляторе API 36.
 
-See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for audit, limitations and next steps. This is unofficial software not endorsed by Canon.
+## Локальная разработка и диагностика
 
-### CAPT framing and source attribution
+JDK 21; Android Gradle Plugin 9.2.1; Gradle Wrapper 9.4.1; compileSdk/targetSdk 36; minSdk 29; Android SDK Build Tools 36.0.0. Отладочная сборка: `./gradlew :app:assembleDebug`. Отладочный APK не является совместимым релизным обновлением. Для пользовательских Releases нельзя использовать временную отладочную подпись.
 
-Pure-Kotlin CAPT framing and bounded I/O foundations remain in the core, while owner-tested Stage B hardware engines use the pinned HISCOA encoder. See docs and GPL notices for the separate upstream path and test evidence.
+CI для PR собирает APK, выполняет lint и тесты, проверяет разрешения и упаковку нативных библиотек, устанавливает и запускает приложение на API 36. Отладочные автономные инструментальные проверки используют Android PDF, прозрачность PNG, EXIF JPEG, реальный монохромный предпросмотр, подготовленные файлы и нативный HISCOA без доступа к принтеру. Конвейер подписанной `main` отдельно проверяет постоянную подпись и обновление поверх до публикации.
 
-### JSON diagnostics and Telegram sharing
-Manual actions (USB rescan, permission request, and CAPT queries) append private diagnostic history. The explicit Share button exports a new immutable `.json` snapshot. The Show/Hide Details control and background USB list monitoring never open a share window. If installed, standard Telegram is opened directly as a document share target; the user still selects a chat and confirms sending. If unavailable, Android Sharesheet is used. The app has no INTERNET permission and does not transmit on its own. Files are offered through a nonexported scoped FileProvider with temporary URI read grants (cache reports/ only), not file:// paths.
-The JSON contains app version/revision, a scan text record plus structured numeric VID/PID and permission values, bounded manual event history, full bounded CAPT response frame hex when available (header included), and separate decoded values. Raw data is retained even on field-parse failures after a full reply. The original on-screen diagnostic remains available. There is no printer serial query, document data, or automatic print retry. JSON schemaVersion=1; unknown/missing values are null rather than invented.
+### Когда запускается CI
 
+Для `push` в `main` и событий `pull_request` настроен `paths-ignore: ['**/*.md']`. Если весь набор изменённых файлов состоит из Markdown-документации `.md`, автоматический конвейер не запускается; изменение кода, настроек сборки, workflow или любого другого файла сохраняет обычные проверки. Ручной запуск `workflow_dispatch` остаётся доступным.
 
-### Physically verified Stage B sheets
+GitHub проверяет для `push` разницу отправленных ревизий, а для `pull_request` — весь набор изменений PR относительно его общей базы. Поэтому дополнительный коммит только с `.md` в PR, где уже есть изменения кода, сам по себе не исключает запуск CI. Описание поведения: [документация GitHub](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#using-filters-to-target-specific-paths-for-pull-request-or-push-events).
 
-The owner confirmed the first A4/600-dpi sheet, two repeat separate jobs, and two distinct sheets in one reserved CAPT job on signed build 71. CAPT completed counters matched each printed test; this is not proof of real PDF printing. Reports are saved locally and sent only by an explicit Share action. No automatic retry. See Stage B docs and THIRD-PARTY-NOTICES.md.
+Аудит, ограничения и следующие шаги приведены в [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md). Это неофициальное ПО, не одобренное Canon.
 
+### Формат пакетов CAPT и источники
 
-### Preview print actions and one queue report
+Базовые механизмы формата CAPT и ограниченного ввода-вывода на чистом Kotlin остаются в ядре; аппаратные движки этапа B, проверенные владельцем, используют закреплённый кодировщик HISCOA. Отдельный путь исходников и свидетельства тестирования описаны в документации и уведомлениях GPL.
 
-Document print actions stay visible below the scrolling preview/settings screen.
-The ordinary action submits to the shared queue. The separate experimental PDF
-button restores the earlier one-sheet portrait path: select only the visible
-page, one copy and A4 portrait, with no unfinished queue jobs. It asks for explicit
-confirmation, uses the existing USB ownership/attempt lock and durable report,
-and cancels when leaving the screen. It is not an automatic fallback or repair
-for failed general/system jobs. Its last report is included in the queue export.
+### JSON-диагностика и отправка через Telegram
 
-Queue descriptions and newest-first ordering remain intact. One bottom button
-exports a single JSON with queue summaries and retained job/system/PDF/USB reports.
-It uses a temporary scoped FileProvider file, no document/spool data, per-part
-limits and an 8 MiB bundle ceiling. Missing, invalid or size-limited reports are
-listed under `omittedReports`; older reports already pruned are not fabricated.
+Ручные действия (повторный поиск USB, запрос разрешения и запросы CAPT) дополняют приватную историю диагностики. Явная кнопка отправки создаёт новый неизменяемый снимок `.json`. Показ/скрытие подробностей и фоновое наблюдение за USB-списком не открывают окно отправки. Если установлен обычный Telegram, он открывается как приложение для передачи документа; пользователь сам выбирает чат и подтверждает отправку. Иначе используется системное меню Android. Приложение не имеет разрешения INTERNET и ничего не передаёт самостоятельно. Файлы выдаются через неэкспортируемый ограниченный FileProvider с временным разрешением чтения URI (только `cache reports/`), а не по путям `file://`.
 
+JSON содержит версию/ревизию приложения, текстовый результат поиска, числовые VID/PID и значения разрешений, ограниченную историю ручных действий, полный HEX ответа CAPT в пределах лимита, включая заголовок, и отдельно декодированные значения. Необработанные данные сохраняются и при ошибке разбора полей после получения полного ответа. Исходная диагностика на экране остаётся доступной. Запроса серийного номера принтера, данных документа и автоматического повтора печати нет. `schemaVersion=1`; неизвестные/отсутствующие значения записываются как `null`, а не выдумываются.
 
-### Unified printer diagnostics
+### Физически проверенные листы этапа B
 
-The main device card has one **Диагностика принтера** action instead of four individual CAPT queries. It holds one non-forced USB claim and the process-wide lease while reading Basic/Extended status, requested InputStatus and PrinterInfo. Conflicting/busy/input-pending status is sampled at most three times, 250 ms apart; a 15-second scheduling budget stops further commands (an already-running bounded USB transfer may finish after that budget). Broken transport/framing stops all further queries. A fully consumed but undecodable reply is retained and does not hide the other available results. This operation sends no document, reserve, reset or print commands and never grants permission to bypass the print engine's own preflight. Unfinished queue work blocks diagnostics; leaving the screen requests cancellation.
+Владелец подтвердил первый лист A4/600 dpi, два повторных отдельных задания и два разных листа в одном зарезервированном задании CAPT на подписанной сборке 71. Счётчики завершённых страниц CAPT совпали с каждым тестовым отпечатком; это не доказывает печать реального PDF. Отчёты сохраняются локально и отправляются только явным действием. Автоматического повтора нет. См. документы этапа B и THIRD-PARTY-NOTICES.md.
 
-Each button press is one `commands` event with `action=PrinterDiagnostics`; its `decoded` object contains the whole session: ID, timestamps/durations, per-command legacy result fields, requests/responses in HEX, available partial response bytes, transport/decode errors, skipped-step reasons, repeated observations and a conservative assessment. It also includes Android/device facts, selected USB interface/endpoints, queue metadata and the enabled-print-service setting (not a claim about a live service connection). Unknown fields remain unknown. Existing individual diagnostic events still load. History retains at most 64 whole events and 640 KiB of event JSON; complete oldest sessions are evicted rather than cut apart. The private snapshot is capped at 1 MiB, remains included in the PR's queue bundle and is exported only by an explicit share action. No document content, printer serial number or USB device path is added.
+### Действия печати под предпросмотром и единый отчёт очереди
+
+Кнопки печати документа остаются видимыми под прокручиваемым экраном предпросмотра/настроек. Обычное действие отправляет документ в общую очередь. Отдельная экспериментальная кнопка PDF возвращает прежний одностраничный книжный путь: только видимая страница, одна копия, A4 в книжной ориентации и отсутствие незавершённых заданий очереди. Она требует явного подтверждения, использует имеющуюся блокировку USB/попытки печати и сохраняемый отчёт, а при уходе с экрана запрашивает отмену. Это не автоматический запасной путь и не исправление неудачных общих/системных заданий. Последний отчёт включается в экспорт очереди.
+
+Описание очереди и порядок от новых к старым сохранены. Одна нижняя кнопка экспортирует JSON со сводкой очереди и сохранёнными отчётами заданий, системной/PDF/USB-печати. Используются временный ограниченный файл FileProvider, ограничения размера частей и общий предел 8 МиБ; содержимое документов и подготовленные печатные данные не включаются. Отсутствующие, некорректные и превышающие размер отчёты перечисляются в `omittedReports`; уже удалённые старые отчёты не воссоздаются вымышленно.
+
+### Единая диагностика принтера
+
+На главной карточке устройства доступно одно действие **«Диагностика принтера»** вместо четырёх отдельных запросов CAPT. Оно удерживает один захват интерфейса без принуждения и общую блокировку процесса при чтении Basic/Extended, запрошенного InputStatus и PrinterInfo. Противоречивое/занятое состояние и ожидающий InputStatus опрашиваются не более трёх раз с интервалом 250 мс; общий бюджет планирования 15 секунд запрещает новые команды после его истечения (уже начатая ограниченная USB-передача может завершиться позднее). Ошибка транспорта или формата останавливает все следующие запросы. Полностью полученный, но не декодируемый ответ сохраняется и не скрывает другие доступные результаты. Операция не отправляет документы, резервирование, сбросы или команды печати и не разрешает обходить собственную предварительную проверку движка. Незавершённая очередь блокирует диагностику; уход с экрана запрашивает отмену.
+
+Каждое нажатие создаёт одно событие `commands` с `action=PrinterDiagnostics`; его объект `decoded` содержит весь сеанс: ID, время/длительность, прежние поля результатов отдельных команд, запросы/ответы в HEX, доступные части ответа, ошибки транспорта/декодирования, причины пропуска шагов, повторные наблюдения и осторожную оценку. Туда также входят сведения об Android/устройстве, выбранные интерфейс/конечные точки USB, метаданные очереди и настройка включённой службы печати (она не доказывает живое соединение со службой). Неизвестные поля остаются неизвестными. Старые отдельные диагностические события продолжают загружаться. История ограничена 64 целыми событиями и 640 КиБ JSON; самые старые сеансы удаляются целиком, а не разрезаются. Приватный снимок ограничен 1 МиБ, включается в общий отчёт очереди PR и экспортируется только явным действием. Содержимое документов, серийный номер принтера и путь USB-устройства не добавляются.

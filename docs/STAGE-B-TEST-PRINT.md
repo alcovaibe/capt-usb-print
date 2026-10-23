@@ -1,43 +1,19 @@
-# Stage B: real CAPT test printing, current evidence
+# Этап B: реальная тестовая печать CAPT и свидетельства этой контрольной точки
 
-The owner's Canon LBP2900 (VID:PID 04A9:2676) on HONOR X9c / Android API 36
-has printed the original A4/600dpi test sheet and then **two further sheets in
-two independent jobs** using signed build 62. Photos and CAPT counters confirmed
-the first; the owner explicitly confirmed the following two physical sheets
-without rebooting the printer. This does NOT yet prove two sheets in one job.
+Canon LBP2900 владельца (VID:PID 04A9:2676) на HONOR X9c / Android API 36 напечатал исходный тестовый лист A4/600 dpi, затем **ещё два листа двумя независимыми заданиями** на подписанной сборке 62. Первый результат подтверждён фотографиями и счётчиками CAPT; следующие два физических листа владелец явно подтвердил без перезагрузки принтера. Это ещё не доказывает печать двух листов в одном задании.
 
-## Verified implementation and limits
+## Проверенная реализация и ограничения
 
-- Upstream GPLv3-or-later HISCOA from ValdikSS/captdriver, pinned commit
-  `892f320c019974a5b737e000fcc2c8582264a131`. JNI handles band compression;
-  CAPT and USB transport are Android native (no CUPS, PrintHand or Internet).
-- Single-sheet A4 4960x7016, 600dpi, 110 bounded bands, native HISCOA encoding,
-  exclusive USB session, device and paper state validation, conservative buffer
-  backpressure before every video frame, bounded waits and no automatic retry.
-- The two independent build-62 PrintTestPage commands both produced a real
-  sheet and `printer_counter_confirmed`. The correction to retained counters
-  uses the current job's baseline, not an absolute `>=1`.
-- All actions append to a private, bounded JSON history. **Only**
-  «Поделиться JSON-ответом» opens Telegram/Android Sharesheet. Physical print
-  buttons send real USB commands, not report requests.
-- A separate explicit **two-page experiment** has now been implemented using
-  one ReserveUnit/JobID and one job-start/end. It prepares different rasters,
-  verifies the first sheet's completed/settled counters, sends SetJobInfo2
-  continuation flag 2 once, then starts the second page with StartPrint(2).
-  A confirmation dialog guards its button, and the existing one-page engine
-  is untouched. See `docs/STAGE-B-TWO-PAGE-TEST.md`.
+- HISCOA из ValdikSS/captdriver под GPLv3-or-later, закреплённый коммит `892f320c019974a5b737e000fcc2c8582264a131`. JNI сжимает полосы; CAPT и USB реализованы средствами Android без CUPS, PrintHand и интернета.
+- Один лист A4 4960×7016, 600 dpi, 110 ограниченных полос, нативный HISCOA, исключительный USB-сеанс, проверка устройства и бумаги, осторожное управление потоком перед каждым видеокадром, ограниченное ожидание и отсутствие автоматического повтора.
+- Обе независимые команды PrintTestPage сборки 62 дали реальный лист и `printer_counter_confirmed`. Исправление учёта сохранённых счётчиков использует исходное состояние текущего задания, а не абсолютное `>=1`.
+- Все действия дополняют приватную ограниченную историю JSON. **Только** «Поделиться JSON-ответом» открывает Telegram/системное меню Android. Кнопки физической печати отправляют реальные команды USB, а не запрос отчёта.
+- Отдельный явный **эксперимент с двумя страницами** реализован с одним ReserveUnit/JobID и одним началом/завершением задания. Готовятся разные растры, проверяются завершённые/согласованные счётчики первого листа, один раз отправляется флаг продолжения SetJobInfo2=2, затем вторая страница запускается StartPrint(2). Кнопка защищена диалогом подтверждения; прежний одностраничный движок в этом историческом изменении не менялся. См. `docs/STAGE-B-TWO-PAGE-TEST.md`.
 
-## Next hardware acceptance
+## Следующая аппаратная приёмка
 
-After a signed build passes Android 16 installation/upgrade CI, perform the
-single explicitly confirmed two-page experiment once. Observe two actual A4
-sheets, their order, matching top/left registration target, and two additional
-lower-left bars on sheet two. Export its JSON manually. Do NOT retry a failed
-or ambiguous outcome before diagnostic analysis.
+После успешного CI установки/обновления подписанной сборки на Android 16 один раз выполнить явно подтверждённый двухстраничный эксперимент. Проверить два реальных листа A4, их порядок, совпадение верхней/левой регистрационной мишени и две дополнительные полосы внизу слева на втором листе. Вручную экспортировать JSON. До разбора диагностики не повторять попытку с ошибкой или неоднозначным исходом.
 
-Stage B remains incomplete until the owner confirms the two real pages in one
-CAPT job with correct orientation and no positional drift. PDF, image print
-and system PrintService are later stages C and D, not included here.
+На этой контрольной точке этап B оставался незавершённым, пока владелец не подтвердит две реальные страницы в одном задании CAPT с правильной ориентацией и без смещения. Печать PDF, изображений и системный PrintService относятся к последующим этапам C и D и сюда не входят.
 
-Unknown CAPT status flags and device-recovery commands remain unvalidated.
-Unexpected errors, unplugging or cancellation are not silently replayed.
+Неизвестные флаги состояния CAPT и команды восстановления устройства не проверены. Неожиданные ошибки, отключение кабеля и отмена не приводят к скрытому повтору.

@@ -1,81 +1,31 @@
-# CAPT investigation follow-up: acknowledgements and phase evidence
+# Продолжение расследования CAPT: подтверждения команд и свидетельства фаз
 
-> Historical checkpoint, superseded by [LBP2900-STARTUP-CONTRACT.md](LBP2900-STARTUP-CONTRACT.md)
-> after the build-144 hardware reports. The earlier requirement to preserve the
-> Basic veto is replaced by the shared LBP2900 Extended/Input policy. PR 29's
-> mandatory SetPowerDown Error-byte interpretation was unjustified and is
-> corrected; required JobInfo/StartPrint/END/Release ACK checks remain.
+> Историческая контрольная точка, заменённая [LBP2900-STARTUP-CONTRACT.md](LBP2900-STARTUP-CONTRACT.md) после аппаратных отчётов сборки 144. Прежнее требование сохранить запрет по Basic заменено общей политикой LBP2900 Extended/Input. Введённая PR №29 обязательная трактовка ответа SetPowerDown как байта Error была необоснованна и исправлена; обязательные проверки ACK JobInfo/StartPrint/END/Release сохранены.
 
+База: main 75e7c5176ca0c157a5ba5bd5d5d3b14a78b94123 (PR №28). Опорная версия: ValdikSS/captdriver 892f320c019974a5b737e000fcc2c8582264a131.
 
-Baseline: main 75e7c5176ca0c157a5ba5bd5d5d3b14a78b94123 (PR 28).
-Reference: ValdikSS/captdriver 892f320c019974a5b737e000fcc2c8582264a131.
+Изменение исправляло подтверждённые исходниками дефекты обработки подтверждений и сбора диагностики. Оно **не** устанавливало значение зафиксированного владельцем короткого BasicStatus `A0 E0 06 00 88 00` и не заявляло исправление физической печати документов. Существующая ограниченная остановка до резервирования сохранялась. Сброс, повтор резервирования, очистка конечной точки, автоматический повтор задания, новые запросы Basic и предположительное завершение не добавлялись.
 
-This change fixes source-proven acknowledgement and diagnostic collection defects.
-It does **not** establish the meaning of the owner-captured short BasicStatus
-`A0 E0 06 00 88 00`, or claim physical document printing is repaired.
-The existing bounded pre-reservation stop remains. No reset, reservation retry,
-endpoint flush, automatic replay, new Basic probes or speculative teardown is added.
+## Исправленное поведение этой исторической версии
 
-## Corrected behavior
+- Каждый движок печати записывал ответы управляющих команд до проверки. Байты, считавшиеся Error для SetPowerDown, SetJobInfo2, GoOffline, GoOnline, DiscardData, ClearMisPrint, ClearError, StartPrint и ReleaseUnit, требовались нулевыми. Непонятный второй байт сохранялся без присвоения смысла. Это правило не распространялось на запросы состояния и ReserveUnit, у которого отдельный парсер состояния/JobID. Необоснованное включение SetPowerDown в это правило впоследствии исправлено, как указано выше.
+- Отрицательный END/Release не мог дать успешный результат освобождённого задания. Ранее подтверждённые страницы оставались нижней границей, исход — неопределённым без автоматического повтора. Закрытие USB не является освобождением CAPT.
+- Basic раскрывал длину полезной нагрузки и форму ответа. Двухбайтная нагрузка — `SHORT_UNVERIFIED`; названия битов были возможными трактовками, а не диагнозом физической ошибки. Оценка этой формы оставалась UNKNOWN. Полная описанная структура означает только структуру, а не новую аппаратную приёмку.
+- Решение о новой диагностической выборке принималось по наблюдениям ввода/занятости/счётчиков/конфликта отдельно от UNKNOWN. Зафиксированные вторичные флаги 0x88/0x8A больше не подавляли ограниченные повторы или пары состояний после Input.
+- JSON печати включал `protocolDiagnostics`: случайный ID сеанса, сборку, владельца, PID/поток, монотонное время события, фазу, захват/конечные точки/размеры пакетов, ID команд, запрошенные/фактические объёмы USB, полные управляющие IN-кадры в пределах лимита, части кадров при ошибке чтения и подтверждённое состояние резервирования/страниц/завершения/освобождения.
+- Журнал удерживал первые 24 и последние 72 события, явно считая пропущенные. В него не копировались OUT-нагрузки, байты документа/растра, имена, URI, серийные номера, пути USB и строки JobInfo. Он приватный и экспортируется только прежними явными ручными действиями; необработанные события не передаются в сообщения прогресса или Logcat.
+- Общий читатель печати сохранял прежнее чтение шестибайтного начала и объявленного остатка. Он обрабатывает частичные чтения, предпочитает длину LE (56, а не BCD 38) и останавливается при неправильном коде операции или неполном вводе. После ошибки поиск следующего кадра не выполняется. Устаревшие ответы с тем же кодом операции не доказаны, но и не исключены.
 
-- Every print engine records control replies before validation. The Error byte of
-  SetPowerDown, SetJobInfo2, GoOffline, GoOnline, DiscardData, ClearMisPrint,
-  ClearError, StartPrint and ReleaseUnit must be zero. The opaque second byte is
-  retained without assigning it a meaning. This contract does not apply to status
-  queries or ReserveUnit, whose status/JobID parser remains separate.
-- A negative END/Release reply cannot produce a successful released-job result.
-  Previously confirmed pages remain a lower bound, and the outcome remains
-  uncertain without automatic repetition. USB close is not CAPT release.
-- Basic replies expose payload length and response form. A two-byte payload is
-  `SHORT_UNVERIFIED`; its bit names are candidate interpretations, not a physical
-  error diagnosis. Diagnostic assessment remains UNKNOWN for that form.
-  Full described layout means layout only, not new hardware acceptance.
-- Diagnostics decide whether to sample again from input/busy/counter/conflict
-  observations, separately from UNKNOWN classification. Captured secondary flags
-  0x88/0x8A no longer suppress bounded repeats or post-Input status pairs.
-- Print JSON includes `protocolDiagnostics`: a random session ID, build, owner,
-  PID/thread, monotonic event time, phase, claim/endpoints/packet sizes, command IDs,
-  requested/actual USB counts, full bounded control IN frames, partial frames on
-  read failure and confirmed reservation/page/end/release state.
-- The log keeps its first 24 and last 72 events, with an explicit omitted count.
-  It never copies OUT payloads, document/raster bytes, names, URIs, serial numbers,
-  USB paths or JobInfo strings. It is private and exported only by existing
-  explicit manual actions; raw events are not passed to UI progress or Logcat.
-- The shared printing reader preserves the existing six-byte prefix then declared
-  remainder. It handles partial reads, prefers LE length (56, not BCD 38), and
-  stops on wrong opcode or incomplete input. It never searches for another frame
-  after an error. Identical-opcode stale replies remain unproven, not excluded.
+## Свидетельства и пределы тестов
 
-## Evidence and test scope
+Имевшиеся аппаратные данные: два задания SYSTEM_PDF сборки 133 остановились до Reserve с нулём байтов растра и коротким Basic 0x88. Более ранние тестовые задания работали; прежняя одностраничная PDF-печать подтверждена сообщением владельца. Отдельные отказы Reserve 0x8C — другое событие. Необработанные отчёты владельца в этот PR не добавлялись.
 
-Existing hardware evidence: two build-133 SYSTEM_PDF jobs stopped before Reserve
-with zero raster bytes and short Basic 0x88. Earlier test jobs succeeded; old
-single-page PDF success is owner-reported. Separate Reserve 0x8C failures are not
-the same event. No raw owner report is committed in this PR.
+Регрессионные тесты используют полученные кадры для структуры и UNKNOWN/повторных выборок, а явно синтетические изменения — для отказа команд, отмены, частичных чтений, неправильного/позднего кода операции и сроков ожидания. Тесты движка возвращают отрицательные ACK корректного формата при инициализации, END и Release; одного теста с IOException недостаточно. Синтетические успешные Basic не являются положительным аппаратным свидетельством. Тесты трассы проверяют ограничения, сохранение подготовки/ошибки, жизненный цикл и исключение OUT-данных.
 
-Regression tests use captured frames for raw layout and UNKNOWN/resampling, and
-explicit synthetic mutations for command rejection, cancellation, partial reads,
-wrong/late opcode and deadlines. Engine tests return correctly framed negative
-ACKs at initialization, END and Release; an IOException-only test is insufficient.
-Synthetic successful Basic replies do not constitute positive hardware evidence.
-Trace tests check bounds, setup/failure retention, lifecycle and OUT redaction.
+## Следующие аппаратные данные
 
-## Next hardware evidence
+После просмотренного владельцем слияния и обычной подписанной сборки сохранить питание принтера неизменным и получить **одно** новое одностраничное задание в одной копии через HONOR Documents. Затем вручную экспортировать JSON прежней нижней кнопкой и сообщить о выходе листа. При постоянном отказе до печати парная трасса должна показывать Basic/Extended/Input, ноль растра и отсутствие Reserve; повторять 11-страничное задание не нужно.
 
-After an owner-reviewed merge and the normal signed build, keep printer power
-unchanged and collect **one** new one-sheet/copy job through HONOR Documents,
-then export the existing footer JSON manually and report whether a sheet emerged.
-On persistent preflight refusal, the paired trace should show Basic/Extended/Input,
-zero raster and no Reserve; do not repeat an eleven-sheet job.
+Отдельно явно запущенный принятый одностраничный тестовый/PDF-путь теперь пассивно записывает прежнюю последовательность и все управляющие ответы, не добавляя Basic. Сравнение сеансов может установить поведение ACK/жизненного цикла. Для доказательства фазовой семантики Basic всё ещё нужен последующий контролируемый эксперимент с одной переменной или захват USB со стороны принтера. Нельзя выводить её из поддельных ответов готовности, снимать запрет или добавлять изменяющее состояние восстановление на основании этого PR.
 
-Separately, an explicitly started accepted one-sheet test/PDF path now passively
-records its existing command sequence and all control replies. It does not add
-Basic queries. Comparing those sessions can establish ACK/lifecycle behavior;
-to prove Basic phase semantics, a later controlled single-variable experiment
-(or printer-side USB capture) is still required. Do not infer it from fake
-ready responses, remove the gate, or insert state-changing recovery based on this PR.
-
-Once the phase-specific contract is known, implement one model-specific status
-policy rather than a 0x88 whitelist. Buffer drain before BlackEnd and InputStatus
-during printing are separate downstream investigations, not explanations of the
-already observed zero-data preflight failures.
+После выяснения фазового контракта следует реализовать одну политику состояния для модели, а не список разрешённых 0x88. Освобождение буфера до BlackEnd и InputStatus во время печати — отдельные последующие направления, не объяснение уже наблюдавшихся отказов до передачи данных.

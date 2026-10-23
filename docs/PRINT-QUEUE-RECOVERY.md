@@ -1,150 +1,58 @@
-# Queue, cancellation and paper-out recovery
+# Очередь, отмена и восстановление после окончания бумаги
 
-Implementation baseline: main `69d10642874d0d6bdd411d4dc0d73b8fc526aa1d`
-(signed build 147). This is a new user-requested change; merge/release remains
-an owner action. Protocol sources are pinned at
-[`ValdikSS/captdriver@892f320c019974a5b737e000fcc2c8582264a131`](https://github.com/ValdikSS/captdriver/tree/892f320c019974a5b737e000fcc2c8582264a131).
+База реализации: main `69d10642874d0d6bdd411d4dc0d73b8fc526aa1d` (подписанная сборка 147). Это новое запрошенное пользователем изменение; слияние/выпуск остаются действием владельца. Источники протокола закреплены на [`ValdikSS/captdriver@892f320c019974a5b737e000fcc2c8582264a131`](https://github.com/ValdikSS/captdriver/tree/892f320c019974a5b737e000fcc2c8582264a131).
 
-## Evidence and limits
+## Свидетельства и ограничения
 
-The owner physically printed 11 pages from HONOR Documents, a screenshot,
-a selected document page and a test sheet on build 147. Supplied
-`capt-queue-3453670785821991103.json` confirms three successful document jobs:
-11 system-PDF sheets and two single-sheet JPEG jobs, with acknowledged END
-and ReleaseUnit. This is physical owner testimony plus corresponding wire/
-counter evidence, not an emulator result. The test sheet's physical output
-is owner-reported; its cancelled attempt did not obtain a completion checkpoint.
+На сборке 147 владелец физически напечатал 11 страниц из HONOR Documents, снимок экрана, выбранную страницу документа и тестовый лист. Предоставленный `capt-queue-3453670785821991103.json` подтверждает три успешных задания документов: 11 листов системного PDF и два одностраничных JPEG с подтверждёнными END и ReleaseUnit. Это физическое свидетельство владельца с соответствующим обменом/счётчиками, а не результат эмулятора. Физический тестовый лист подтверждён сообщением владельца; его отменённая попытка не получила контрольной точки завершения.
 
-`capt-diagnostic-1721637016193938057.json` shows the separate test JobID=4:
-23,044 print bytes, StartPrint(1), user cancel at 15:51:46.363, then USB close
-without END/Release. After reconnect,
-`capt-queue-5096530881151047118.json` and
-`capt-diagnostic-5503370876703577279.json` show three JPEG jobs and another test
-refused by ReserveUnit (`A0 A2 08 00 8C 00 00 00`), with no valid JobID/raster.
-Power off/on restored printing according to the owner. An abandoned reservation
-is a supported hypothesis, not a complete proven decoding of `8C`. This is
-separate from the old GetBasicStatus `A0 E0 06 00 88 00` preflight rejection.
+`capt-diagnostic-1721637016193938057.json` показывает отдельный тест JobID=4: 23 044 печатных байта, StartPrint(1), отмена пользователем в 15:51:46.363, затем закрытие USB без END/Release. После переподключения `capt-queue-5096530881151047118.json` и `capt-diagnostic-5503370876703577279.json` показывают три JPEG и ещё один тест, отклонённые ReserveUnit (`A0 A2 08 00 8C 00 00 00`) без корректного JobID/растра. По сообщению владельца выключение/включение питания восстановило печать. Оставленное резервирование — подкреплённая гипотеза, а не полная доказанная расшифровка `8C`. Это отдельный случай, не прежний отказ предварительной проверки GetBasicStatus `A0 E0 06 00 88 00`.
 
-The new cancellation, global clear and paper-out continuation have **not been
-physically accepted yet**. Pinned `src/prn_lbp2900.c:lbp2900_cancel_cleanup`
-sends SetLEDStatus(12 zero bytes), JobInfo ABORT=4 and ReleaseUnit. The pinned
-`info/lbp3000-protocol.md` itself labels flag 4 *unconfirmed*. We follow that
-specific procedure only for an owned live job and require every ACK; rejection
-or missing reply leaves an uncertain result, never a claimed clear.
+Новые отмена, общая очистка и продолжение после бумаги **ещё не прошли физическую приёмку**. Закреплённый `src/prn_lbp2900.c:lbp2900_cancel_cleanup` отправляет SetLEDStatus(12 нулевых байт), JobInfo ABORT=4 и ReleaseUnit. Сам закреплённый `info/lbp3000-protocol.md` помечает флаг 4 как *неподтверждённый*. Процедура применяется только к собственному текущему заданию с проверкой каждого ACK; отказ или отсутствие ответа оставляет неопределённость, а не объявление очистки.
 
-## Cancellation
+## Отмена
 
-`CaptDocumentPrintEngine` owns the lifecycle for documents, PDF pilot, one-sheet
-and two-sheet tests. Soft cancellation waits for the current complete CAPT
-frame/query reply; it does not interrupt a transport write/read. Between
-exchanges it stops new raster/StartPrint commands and runs:
+`CaptDocumentPrintEngine` управляет жизненным циклом документов, PDF-пилота, одностраничного и двухстраничного тестов. Мягкая отмена ждёт завершения текущего полного кадра/ответа CAPT, не обрывая транспортную запись/чтение. Между обменами она прекращает новый растр/StartPrint и выполняет:
 
-1. If JobInfo START was accepted: SetLEDStatus(zeros), JobInfo(known JobID, 4).
-2. ReleaseUnit with the JobID returned by **this live session**. Before START,
-   only Release is needed. If all requested sheets were already confirmed,
-   finish with normal END=6 and Release instead of ABORT.
-3. Fresh Extended/Input status, bounded wait for Aux.PAPER_DELIVERY to clear.
+1. Если JobInfo START принят: SetLEDStatus(нули), JobInfo(известный JobID, 4).
+2. ReleaseUnit с JobID, возвращённым **этим живым сеансом**. До START достаточно Release. Если все запрошенные листы уже подтверждены, вместо ABORT выполняются обычные END=6 и Release.
+3. Свежие Extended/Input и ограниченное ожидание снятия Aux.PAPER_DELIVERY.
 
-Only acknowledged cleanup and settled delivery produce `cancelled`. A partial
-write, missing/malformed reply, hard thread interrupt, rejected cleanup or
-delivery timeout produces uncertainty and pauses successors. No cleanup is
-appended to an exchange whose alignment is unknown. No automatic print replay.
-An already accepted sheet may still exit after Cancel. Already acknowledged
-END is not sent twice if cancellation arrives just before Release.
+Только подтверждённая очистка с завершённой выдачей даёт `cancelled`. Частичная запись, отсутствующий/некорректный ответ, жёсткое прерывание потока, отказ очистки или таймаут выдачи сохраняют неопределённость и приостанавливают следующие задания. При неизвестных границах обмена команды очистки не дописываются. Автоматического повтора печати нет. Уже принятый лист может выйти после отмены. Если отмена пришла непосредственно перед Release, уже подтверждённый END не отправляется повторно.
 
-`CaptPrinterStateStore` atomically records reservation/END/ABORT/Release evidence
-before further commands. Stored JobIDs are evidence only: they are **never**
-reused after reopen/reconnect. Uncertain/open lifecycle or corrupt state blocks
-new print sessions until explicit clear. An Activity teardown uses soft cancel
-and orderly executor shutdown instead of interrupting the print worker.
+`CaptPrinterStateStore` атомарно сохраняет свидетельства резервирования/END/ABORT/Release до следующих команд. Сохранённые JobID — только свидетельства: после открытия заново/переподключения они **никогда** не используются повторно. Неопределённый/незакрытый жизненный цикл или повреждённое состояние блокирует новые сеансы до явной очистки. Завершение Activity использует мягкую отмену и штатное закрытие исполнителя вместо прерывания потока печати.
 
-## Clear queue and printer
+## Очистка очереди и принтера
 
-The confirmation stops new intake, invalidates in-flight system imports,
-signals active print cancellation and serializes maintenance behind the active
-document job. Terminal records, private sources/prepared pages and per-job
-reports are removed. Android PrintService handles are cancelled even when
-their local row has already been removed. New system jobs submitted after
-the clear request remain separate user intents.
+Подтверждение останавливает новый приём, отменяет уже начатый импорт системных документов, подаёт сигнал отмены активной печати и ставит обслуживание после активного документа на общий последовательный обработчик. Завершённые записи, приватные исходники/подготовленные страницы и отчёты заданий удаляются. Задания Android PrintService отменяются, даже если соответствующая локальная строка уже удалена. Новые системные задания, отправленные после запроса очистки, остаются отдельными пользовательскими действиями.
 
-Printer clearing is verified independently of deleting local records:
+Очистка принтера проверяется независимо от удаления локальных записей:
 
-- Acquire the existing exclusive USB lease for one granted LBP2900. Allow a
-  cancelled test worker to close first; never force-claim the interface.
-- Read fresh Extended state; reject engine/other communication faults. Wait
-  for physical delivery (Aux bit 4) before destructive clear commands.
-- GoOffline if necessary and verify OFFLINE, then **DiscardData → ClearMisPrint
-  → ClearError → GoOnline**, the order used by pinned `capt_reserve_unit`'s
-  error recovery. Check each control ACK; poll bounded fresh Extended status
-  for online idle and all five counters zero.
-- Probe one **new** ReserveUnit; require zero Error/nonzero JobID; immediately
-  Release that new ID. Read Input and fresh Extended status and verify again.
-  The probe sends no JobInfo START, page descriptor, raster or StartPrint.
+- Получить существующую исключительную USB-блокировку для одного LBP2900 с разрешением. Дать отменённому тестовому обработчику сначала закрыться; не захватывать интерфейс принудительно.
+- Прочитать свежее Extended; отклонить неисправности движка/прочие ошибки связи. До разрушающей очистки дождаться окончания физической выдачи (Aux, маска 4).
+- При необходимости GoOffline с подтверждением OFFLINE, затем **DiscardData → ClearMisPrint → ClearError → GoOnline** — порядок обработки ошибки закреплённого `capt_reserve_unit`. Проверить каждый управляющий ACK; ограниченно опрашивать свежий Extended до свободного онлайн-состояния и нулевых пяти счётчиков.
+- Один раз проверить **новый** ReserveUnit с нулевым Error/ненулевым JobID и немедленно освободить именно новый ID. Прочитать Input и свежий Extended, проверить повторно. Проба не отправляет JobInfo START, дескриптор страницы, растр или StartPrint.
 
-This is an explicit clear operation, never an automatic Reserve retry or
-failed-job replay. It uses no USB reset, drain/flush or guessed stale JobID.
-If unavailable/refused, the local list can be empty while the UI says printer
-clear is unconfirmed and blocks new jobs. Reconnect/grant USB and press Clear
-again. A pending maintenance marker survives process death. The private
-maintenance result and reservation evidence are included in manual JSON export.
+Это явная операция очистки, а не автоматический повтор Reserve или неудачного задания. Сброс USB, опустошение/очистка канала и угаданный старый JobID не используются. Если принтер недоступен/отказывает, локальный список может стать пустым, но интерфейс сообщит о неподтверждённой очистке принтера и заблокирует новые задания. Подключите принтер/выдайте USB-разрешение и нажмите очистку снова. Метка незавершённого обслуживания переживает смерть процесса. Приватный результат обслуживания и свидетельства резервирования включаются в ручной экспорт JSON.
 
-## Paper interruption and continuation
+## Прерывание и продолжение после окончания бумаги
 
-Recognize only the pinned error signature: Extended Eng=0, Cnt=40, Pap=00,
-Bas contains NOTREADY+OFFLINE (12). Pap=00 alone, jam, cover, communication
-faults or the short Basic 88 do not become a resumable paper-out diagnosis.
+Распознаётся только закреплённая сигнатура ошибки: Extended Eng=0, Cnt=40, Pap=00, Bas содержит NOTREADY+OFFLINE (12). Один Pap=00, замятие, крышка, ошибка связи или короткий Basic 88 не превращаются в диагноз отсутствия бумаги с разрешённым продолжением.
 
-After sending page data, the safe continuation boundary additionally requires
-Shipped=Printed=Printing equal to the last durable confirmed prefix,
-Decoding/Received within that prefix or the next sheet, and no Aux delivery.
-This means the rejected current sheet was not accepted by the engine. Cleanup
-must be acknowledged as above. Otherwise keep an unknown outcome, without a
-Continue button. Do not infer the last physical sheet solely from a successful
-USB write or reset counters after GoOnline.
+После отправки страницы безопасная граница продолжения дополнительно требует Shipped=Printed=Printing на последнем сохранённом подтверждённом префиксе, Decoding/Received в пределах этого префикса или следующего листа и отсутствия выдачи Aux. Это означает, что отклонённый текущий лист не принят движком. Описанная выше очистка должна быть подтверждена. Иначе сохраняется неопределённый исход без кнопки продолжения. Последний физический лист нельзя определять только по успешной записи USB или сброшенным после GoOnline счётчикам.
 
-The queue retains source and CRC-protected prepared pages privately under the
-existing 256 MiB quota, enters WAITING_PAPER and blocks successors. Android's
-job is blocked with guidance to the app queue. On process restart **only** this
-explicitly paused, released segment and a valid manifest may be retained; it
-does not run automatically. Old queued/in-flight attempts still become
-interrupted terminal outcomes and their source files are deleted.
+Очередь приватно сохраняет исходник и подготовленные страницы с CRC в рамках прежней квоты 256 МиБ, входит в WAITING_PAPER и блокирует следующие задания. Задание Android блокируется с указанием открыть очередь приложения. После перезапуска сохраняться может **только** такой явно приостановленный освобождённый сегмент с корректным манифестом; автоматически он не запускается. Прежние ожидавшие/выполнявшиеся попытки по-прежнему получают конечный прерванный исход, а их исходники удаляются.
 
-The user loads paper and presses **Continue from sheet N**. The worker validates
-all spool CRCs before USB, performs explicit clear, checks Input's reported
-ready bit (payload byte 3 bit 40, zero Error) and fresh Extended Pap=80/idle,
-then starts a new CAPT segment containing `outputPageOrder.drop(confirmed)`.
-Global confirmation is `confirmedBeforeAttempt + segmentConfirmed`; local
-StartPrint numbering restarts at 1 after reset. Selected ranges and collated
-copies keep their original physical output order. No confirmed prefix is resent.
-Only normal document/system queue jobs retain a resumable spool; standalone
-experimental test/PDF pilot actions stop with a paper message and require a
-new explicit action rather than promising a nonexistent queue Continue button.
+Пользователь загружает бумагу и нажимает **«Продолжить с листа N»**. Обработчик проверяет все CRC до USB, выполняет явную очистку, проверяет сообщённый Input бит готовности (байт 3 нагрузки, маска 40, нулевой Error), свежий Extended Pap=80/свободен и начинает новый сегмент CAPT из `outputPageOrder.drop(confirmed)`. Общее подтверждение — `confirmedBeforeAttempt + segmentConfirmed`; локальная нумерация StartPrint после сброса начинается с 1. Диапазоны и копии с подборкой сохраняют исходный физический порядок. Подтверждённый префикс не отправляется заново.
 
-These fields report engine/input readiness, **not proven physical tray
-presence**. LBP3000 source notes about no tray sensor/physical Go button are
-not established LBP2900 hardware facts. We do not ask the user to press a
-nonexistent Go button. If readiness stays absent, retain the pause and send no
-new raster. Further hardware captures may require a model-specific adjustment.
+Подготовленные файлы для продолжения сохраняют только обычные задания общей очереди документов/системной печати. Отдельные экспериментальные тесты/PDF-пилоты останавливаются с сообщением о бумаге и требуют нового явного действия, не обещая несуществующую кнопку продолжения в очереди.
 
-## Verification
+Поля сообщают готовность движка/входа, **а не доказанное физическое наличие бумаги в лотке**. Утверждения исходных заметок LBP3000 об отсутствии датчика лотка/физической кнопке Go не являются установленными аппаратными фактами LBP2900. Пользователю не предлагается нажимать несуществующую Go. Если готовность не появилась, пауза сохраняется, новый растр не отправляется. Последующие аппаратные захваты могут потребовать поправки для модели.
 
-- JVM injected transports exercise exact clear/known-ID cancel order, ACK
-  rejection, Reserve 8C, buffer flow, paper signature and boundary, partial
-  writes, cancellation during raster, delivery settling, range/copy resume
-  with new local counters, monotonic queue state and process recovery rules.
-- API-36 smoke exercises actual AtomicFile/JSON/FileProvider and CRC spool
-  retention across force-stop; a missing printer keeps paper jobs paused,
-  corrupt spool cannot start maintenance, and explicit clear removes local
-  rows/files while reporting printer clear unconfirmed. Debug fixtures are
-  explicitly synthetic and send no USB commands.
-- Native HISCOA smoke and manual-only sanitized JSON sharing guard remain.
+## Проверки
 
-CI cannot prove that ABORT=4 stops this printer, the clear probe releases its
-stale state, the paper signature matches its firmware, or readiness changes
-after loading paper. After a separately approved signed release, hardware
-acceptance should cover Cancel during raster/confirmation, a following fresh
-one-sheet job without power cycle, Clear with USB attached/detached, then a
-three-sheet document with one sheet loaded: load paper, Continue, verify exact
-sheet order/count and export JSON. Start with this bounded test rather than an
-eleven-page document. Do not claim those observations before the owner supplies
-the physical result and matching trace.
+- JVM-тесты с подставленным транспортом проверяют точный порядок очистки/отмены известного ID, отказ ACK, Reserve 8C, поток буфера, сигнатуру/границу бумаги, частичную запись, отмену во время растра, окончание выдачи, продолжение диапазонов/копий с новой локальной нумерацией, монотонные состояния и восстановление процесса.
+- Проверки API 36 используют настоящие AtomicFile/JSON/FileProvider и сохранение файлов с CRC через принудительную остановку: отсутствие принтера удерживает паузу, повреждение файлов не допускает обслуживания, явная очистка удаляет локальные строки/файлы, сообщая о неподтверждённой очистке принтера. Отладочные образцы явно синтетические, команд USB не отправляют.
+- Нативная проверка HISCOA и контроль только ручной передачи очищенного JSON сохранены.
+
+CI не доказывает, что ABORT=4 останавливает этот принтер, проба очистки снимает его старое состояние, сигнатура бумаги подходит его прошивке или готовность меняется после загрузки. После отдельно разрешённого подписанного релиза аппаратная приёмка должна проверить отмену при растре/подтверждении, следующее новое одностраничное задание без выключения, очистку с подключённым/отключённым USB, затем трёхстраничный документ при одном загруженном листе: загрузить бумагу, продолжить, проверить точное число/порядок листов, экспортировать JSON. Начинать следует с этой ограниченной проверки, а не 11-страничного документа. Не объявлять наблюдения состоявшимися до физического результата владельца и соответствующей трассы.
