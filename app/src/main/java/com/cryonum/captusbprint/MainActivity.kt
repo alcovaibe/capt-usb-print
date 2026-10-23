@@ -434,7 +434,7 @@ class MainActivity : Activity() {
                         "sentPrintDataBytes" to result.sentPrintDataBytes,
                         "compressedSha256" to result.compressedSha256,
                         "printerConfirmedPages" to result.printerConfirmedPages,
-                        "trace" to result.trace,
+                        "protocolDiagnostics" to result.protocolDiagnostics, "trace" to result.trace,
                         "automaticRetry" to false
                     ), detail)
                 status.text = result.summary
@@ -484,7 +484,7 @@ class MainActivity : Activity() {
                         "sentPrintDataBytes" to result.sentPrintDataBytes,
                         "compressedSha256" to result.compressedSha256,
                         "printerConfirmedPages" to result.printerConfirmedPages,
-                        "trace" to result.trace,
+                        "protocolDiagnostics" to result.protocolDiagnostics, "trace" to result.trace,
                         "automaticRetry" to false
                     ), detail)
                 status.text = result.summary

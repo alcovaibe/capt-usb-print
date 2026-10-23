@@ -1,6 +1,9 @@
 package com.cryonum.captusbprint.usb
 
 import android.content.Context
+import com.cryonum.captusbprint.core.CaptProtocolTrace
+import com.cryonum.captusbprint.core.CaptCommandAckFailure
+import com.cryonum.captusbprint.core.CaptReplyReadFailure
 import android.os.SystemClock
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
@@ -36,6 +39,7 @@ object CaptTwoPagePrintEngine {
         progress: (String) -> Unit = {}
     ): CaptTestPrintResult {
         var stage = "PREPARING_TWO_PAGES"
+        val protocol = CaptProtocolTrace(phase = { stage }, now = { SystemClock.elapsedRealtime() })
         var bytesSent = 0L
         var combinedSha: String? = null
         var lastFrame: String? = null
@@ -85,11 +89,12 @@ object CaptTwoPagePrintEngine {
             }
 
             stage = "PREFLIGHT"
-            CaptUsbSession.open(context, deviceKey, cancelled).use { session ->
+            CaptUsbSession.open(context, deviceKey, cancelled, protocol, "TEST_TWO_PAGES").use { session ->
                 fun query(command: Int, payload: ByteArray = byteArrayOf()): ByteArray {
                     guard()
                     val frame = session.query(command, payload)
                     lastFrame = hex(frame)
+                    protocol.reply(command, frame, payload)
                     return frame
                 }
                 fun state(): CaptExtendedStatus =
@@ -134,6 +139,7 @@ object CaptTwoPagePrintEngine {
                 sideEffectsStarted = true
                 val jobId = CaptJobProtocol.parseReservedJob(
                     query(CaptJobProtocol.RESERVE_UNIT, CaptJobProtocol.reserveRequest()))
+                protocol.reserved(jobId)
                 note("ReserveUnit once; JobID present")
                 query(CaptJobProtocol.SET_POWER_DOWN, CaptJobProtocol.powerDownSettings())
                 query(CaptJobProtocol.SET_JOB_INFO2,
@@ -209,6 +215,7 @@ object CaptTwoPagePrintEngine {
                             it.pageCompleted == number
                     }
                     confirmedPages = number
+                    protocol.pagesConfirmed(number)
                     note("Page $number/2: printer counters agree at completed=${observed.pageCompleted}; physical page must be checked by owner")
                     if (number == 1) {
                         // Upstream LBP2900 sends job continuation once after Printed>=1,
@@ -231,7 +238,8 @@ object CaptTwoPagePrintEngine {
             return CaptTestPrintResult(
                 "printer_counter_confirmed",
                 "CAPT подтвердил два листа в одном задании. Проверь оба физических отпечатка.",
-                stage, bytesSent, combinedSha, confirmedPages, lastFrame, trace
+                stage, bytesSent, combinedSha, confirmedPages, lastFrame, trace,
+                protocolDiagnostics = protocol.snapshot()
             )
         } catch (error: Throwable) {
             val uncertain = sideEffectsStarted || bytesSent > 0L
@@ -241,7 +249,12 @@ object CaptTwoPagePrintEngine {
                 outcome,
                 if (uncertain) "Двухстраничная печать не подтверждена; исход неизвестен. Не запускайте повторно."
                 else "Двухстраничное задание не отправлено: ${error.message ?: error.javaClass.simpleName}",
-                stage, bytesSent, combinedSha, confirmedPages, lastFrame, trace
+                stage, bytesSent, combinedSha, confirmedPages, lastFrame, trace,
+                failureCode = when (error) {
+                    is CaptCommandAckFailure -> "CAPT_COMMAND_REJECTED"
+                    is CaptReplyReadFailure -> "CAPT_TRANSPORT_INVALID"
+                    else -> null
+                }, protocolDiagnostics = protocol.snapshot()
             )
         }
     }

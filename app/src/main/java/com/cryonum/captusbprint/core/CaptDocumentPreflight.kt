@@ -38,6 +38,7 @@ object CaptDocumentPreflight {
             }
             val basicRaw = read(CaptJobProtocol.GET_BASIC_STATUS, "GetBasicStatus")
             val basic = parse { CaptBasicStatusParser.parse(basicRaw) }
+            note("Basic responseForm=${basic.responseForm}; payloadBytes=${basic.payloadBytes}; short-response semantics are unverified")
             val extendedRaw = read(CaptJobProtocol.GET_EXTENDED_STATUS, "GetExtendedStatus")
             val extended = parse { CaptExtendedStatusParser.parse(extendedRaw) }
             val idle = parse { CaptPageCounterProgress.hasNoOutstandingPage(extended) }

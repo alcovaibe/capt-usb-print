@@ -69,3 +69,12 @@ After successful CI, review and a separately requested signed build:
 Do not ask for further 11-page attempts while preflight is unresolved. Physical
 Stage D acceptance, exact margins, second-source behavior and ReserveUnit
 recovery remain open.
+
+## Investigation follow-up (2026-10-23)
+
+The short Basic response has transport-valid framing, but its phase-specific
+status semantics are unverified. It is no longer presented as a proven physical
+error. The bounded preflight gate is retained pending hardware evidence.
+See [CAPT-PROTOCOL-FOLLOWUP.md](CAPT-PROTOCOL-FOLLOWUP.md) for ACK validation,
+UNKNOWN/input resampling, bounded per-session wire evidence and the remaining
+hardware decision. This is not a 0x88 bypass or a demonstrated printing repair.

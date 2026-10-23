@@ -47,12 +47,14 @@ class PdfBatchEngineTest {
         var disconnectOnPage = 0
         var noPaperOnPage = 0
         var rejectEnd = false
+        var rejectAck: Int? = null
         var bufferSlots = 15
         var drainOnStart = false
         var onBasic: () -> Unit = {}
 
         override fun query(command: Int, payload: ByteArray): ByteArray {
             commands.add(command)
+            if (command == rejectAck) return CaptFrame.encode(command, byteArrayOf(0x88.toByte(), 0))
             when (command) {
                 P.GET_PRINTER_INFO -> return info.copyOf()
                 P.GET_BASIC_STATUS -> {
@@ -268,6 +270,37 @@ class PdfBatchEngineTest {
         assertEquals(3, result.printerConfirmedPages)
         assertFalse(printer.commands.contains(P.RELEASE_UNIT))
         assertTrue(printer.closed)
+    }
+
+    @Test fun syntacticallyValidRejectedInitializationAckStopsBeforeRasterWithoutReplay() {
+        val printer = Printer().apply { rejectAck = P.SET_POWER_DOWN }
+        val result = run(printer)
+        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals("CAPT_COMMAND_REJECTED", result.failureCode)
+        assertEquals(0L, result.sentPrintDataBytes)
+        assertEquals(0, printer.descriptors)
+        assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
+        assertFalse(printer.commands.contains(P.SET_JOB_INFO2))
+        assertEquals(false, result.protocolDiagnostics["releaseAcknowledged"])
+        assertTrue(printer.closed)
+    }
+
+    @Test fun rejectedEndOrReleasePreservesConfirmedSheetsWithoutClaimingJobSuccess() {
+        for (command in listOf(P.SET_JOB_INFO2, P.RELEASE_UNIT)) {
+            val printer = Printer()
+            // Set rejection only once all pages have been confirmed.
+            val result = run(printer, checkpoint = {
+                if (it.printerConfirmedPages == 3) printer.rejectAck = command
+            })
+            assertEquals("unknown_after_print_command", result.outcome)
+            assertEquals(3, result.printerConfirmedPages)
+            assertEquals("CAPT_COMMAND_REJECTED", result.failureCode)
+            assertEquals(false, result.protocolDiagnostics["releaseAcknowledged"])
+            assertEquals(command == P.RELEASE_UNIT, result.protocolDiagnostics["endAcknowledged"])
+            assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
+            assertEquals(if (command == P.RELEASE_UNIT) 1 else 0, printer.commands.count { it == P.RELEASE_UNIT })
+            assertTrue(printer.closed)
+        }
     }
 
     @Test fun cancelBeforeOpenDoesNotClaimUsbOrSendAnything() {

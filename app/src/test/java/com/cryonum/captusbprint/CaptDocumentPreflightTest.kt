@@ -11,6 +11,7 @@ class CaptDocumentPreflightTest {
     // Owner-captured replies. Basic 0x88 and extended Bas=0x01/Bas1=0x88
     // must stay separate; neither is fabricated into a successful reservation.
     private val blocked = hex("A0 E0 06 00 88 00")
+    // Synthetic positive Basic; no positive Basic was captured on hardware.
     private val ready = hex("A0 E0 06 00 01 00")
     private val extended = hex("A8 A0 38 00 01 88 00 00 0F 00 00 00 00 00 80 00 00 00 02 00 02 00 02 00 02 00 00 00 57 00 00 00 01 00 00 00 00 05 02 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00")
     private val input = hex("A1 A0 16 00 00 10 C0 00 00 00 00 00 00 00 96 00 FD 00 00 00 00 00")

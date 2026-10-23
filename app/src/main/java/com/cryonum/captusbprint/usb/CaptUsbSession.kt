@@ -9,7 +9,10 @@ import android.hardware.usb.UsbManager
 import android.os.SystemClock
 import com.cryonum.captusbprint.core.BulkChannel
 import com.cryonum.captusbprint.core.BulkIo
+import com.cryonum.captusbprint.BuildConfig
 import com.cryonum.captusbprint.core.CaptFrame
+import com.cryonum.captusbprint.core.CaptProtocolTrace
+import com.cryonum.captusbprint.core.CaptReplyReader
 import com.cryonum.captusbprint.engine.EndpointFact
 import com.cryonum.captusbprint.engine.InterfaceFact
 import com.cryonum.captusbprint.engine.LinkSelection
@@ -26,11 +29,16 @@ internal class CaptUsbSession private constructor(
     private val inEp: UsbEndpoint,
     private val outEp: UsbEndpoint,
     private val cancelled: () -> Boolean,
-    private val ownership: CaptUsbOwnership.Lease
+    private val ownership: CaptUsbOwnership.Lease,
+    private val protocol: CaptProtocolTrace
 ) : AutoCloseable {
+    private var writingCommand = 0
     private val channel = object : BulkChannel {
-        override fun write(data: ByteArray, offset: Int, length: Int, timeoutMillis: Int): Int =
-            connection.bulkTransfer(outEp, data, offset, length, timeoutMillis)
+        override fun write(data: ByteArray, offset: Int, length: Int, timeoutMillis: Int): Int {
+            val count = connection.bulkTransfer(outEp, data, offset, length, timeoutMillis)
+            protocol.transfer("OUT", writingCommand, offset, length, count)
+            return count
+        }
         override fun read(data: ByteArray, offset: Int, length: Int, timeoutMillis: Int): Int =
             connection.bulkTransfer(inEp, data, offset, length, timeoutMillis)
     }
@@ -44,62 +52,49 @@ internal class CaptUsbSession private constructor(
     fun sendFrame(frame: ByteArray) {
         check(!cancelled()) { "Cancelled before CAPT frame" }
         require(frame.size in 4..65535)
-        writer.writeExactly(frame, timeoutMillis = 15000, perCallTimeoutMillis = 2000)
+        writingCommand = (frame[0].toInt() and 255) or ((frame[1].toInt() and 255) shl 8)
+        try { writer.writeExactly(frame, timeoutMillis = 15000, perCallTimeoutMillis = 2000) }
+        catch (error: Exception) {
+            protocol.event("WRITE_FAILED", mapOf("command" to writingCommand,
+                "type" to error.javaClass.simpleName,
+                "acceptedBytes" to (error as? com.cryonum.captusbprint.core.TransferUncertainException)?.acceptedBytes))
+            throw error
+        }
     }
 
     /** Query sends one command and reads one exact bounded reply, no transparent retry. */
     fun query(command: Int, body: ByteArray = byteArrayOf()): ByteArray {
+        protocol.begin(command)
         sendOnly(command, body)
-        return readReply(command)
-    }
-
-    /**
-     * The measured LBP2900 replies use little-endian lengths. Some historic
-     * frames also have a *different* plausible BCD length (e.g. LE 56 vs BCD 38).
-     * Prefer LE and NEVER accept the BCD interpretation in the middle of a valid
-     * LE reply, which would truncate an otherwise successful 56-byte answer.
-     */
-    private fun readReply(expectedCommand: Int): ByteArray {
-        val first = readExactly(6, 5000)
-        val actualCommand = (first[0].toInt() and 0xff) or
-            ((first[1].toInt() and 0xff) shl 8)
-        check(actualCommand == expectedCommand) { "Unexpected CAPT response command" }
-        val length = CaptFrame.preferredReplyLength(first, 1024)
-        check(length >= 6 && length <= 1024)
-        val reply = if (length == 6) first
-            else first + readExactly(length - 6, 6000)
-        CaptFrame.parseReply(expectedCommand, reply)
-        return reply
-    }
-
-    private fun readExactly(length: Int, totalTimeoutMs: Long): ByteArray {
-        require(length in 1..1024)
-        val buf = ByteArray(length)
-        val deadline = SystemClock.elapsedRealtime() + totalTimeoutMs
-        var got = 0
-        while (got < length) {
-            check(!cancelled()) { "Cancelled while waiting for CAPT reply" }
-            val remaining = deadline - SystemClock.elapsedRealtime()
-            check(remaining > 0) { "Timed out reading CAPT response ($got/$length)" }
-            val requested = length - got
-            val count = connection.bulkTransfer(
-                inEp, buf, got, requested, minOf(2000L, remaining).toInt())
-            check(count in 1..requested) { "Incomplete CAPT reply ($got/$length)" }
-            got += count
-        }
-        return buf
+        return CaptReplyReader(channel, protocol, { SystemClock.elapsedRealtime() }, cancelled).read(command)
     }
 
     override fun close() {
-        try { connection.releaseInterface(iface) }
+        try {
+            val released = connection.releaseInterface(iface)
+            protocol.event("USB_INTERFACE_RELEASED", mapOf("released" to released))
+        }
         finally {
-            try { connection.close() } finally { ownership.close() }
+            try { connection.close() } finally {
+                ownership.close()
+                protocol.event("USB_CLOSED", mapOf("captReleaseAcknowledgedByClose" to false))
+            }
         }
     }
 
     companion object {
-        fun open(context: Context, key: String, cancelled: () -> Boolean): CaptUsbSession {
-            val ownership = CaptUsbOwnership.acquire()
+        fun open(context: Context, key: String, cancelled: () -> Boolean,
+                 protocol: CaptProtocolTrace = CaptProtocolTrace(), owner: String = "CAPT_PRINT"): CaptUsbSession {
+            protocol.context(mapOf("owner" to owner, "sourceRevision" to BuildConfig.SOURCE_REVISION,
+                "appVersion" to BuildConfig.VERSION_NAME, "openedAtEpochMillis" to System.currentTimeMillis(),
+                "pid" to android.os.Process.myPid(),
+                "threadId" to Thread.currentThread().id))
+            protocol.event("USB_LEASE_REQUESTED")
+            val ownership = try { CaptUsbOwnership.acquire() } catch (error: Exception) {
+                protocol.event("USB_LEASE_REJECTED", mapOf("type" to error.javaClass.simpleName))
+                throw error
+            }
+            protocol.event("USB_LEASE_ACQUIRED")
             try {
             val usb = context.getSystemService(Context.USB_SERVICE) as UsbManager
             val device = usb.deviceList.values.singleOrNull { it.deviceName == key }
@@ -143,13 +138,18 @@ internal class CaptUsbSession private constructor(
                 ?: throw IllegalStateException("Failed to open device: busy or disconnected")
             try {
                 check(conn.claimInterface(iface, false)) { "Failed to claim USB without force" }
-                return CaptUsbSession(conn, iface, input, out, cancelled, ownership)
+                protocol.event("USB_INTERFACE_CLAIMED", mapOf("interfaceId" to iface.id,
+                    "alternateSetting" to iface.alternateSetting, "inEndpoint" to input.address,
+                    "outEndpoint" to out.address, "inMaxPacketSize" to input.maxPacketSize,
+                    "outMaxPacketSize" to out.maxPacketSize, "force" to false))
+                return CaptUsbSession(conn, iface, input, out, cancelled, ownership, protocol)
             } catch (error: Throwable) {
                 conn.close()
                 throw error
             }
             } catch (error: Throwable) {
                 ownership.close()
+                protocol.event("USB_OPEN_FAILED", mapOf("type" to error.javaClass.simpleName))
                 throw error
             }
         }

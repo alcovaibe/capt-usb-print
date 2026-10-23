@@ -1,6 +1,9 @@
 package com.cryonum.captusbprint.usb
 
 import android.content.Context
+import com.cryonum.captusbprint.core.CaptProtocolTrace
+import com.cryonum.captusbprint.core.CaptCommandAckFailure
+import com.cryonum.captusbprint.core.CaptReplyReadFailure
 import android.os.SystemClock
 import com.cryonum.captusbprint.core.CaptDocumentPreflight
 import com.cryonum.captusbprint.core.CaptPreflightFailure
@@ -35,20 +38,23 @@ internal object CaptDocumentPrintEngine {
         cancelled: () -> Boolean,
         progress: (String) -> Unit = {},
         checkpoint: (CaptTestPrintResult) -> Unit = {}
-    ): CaptTestPrintResult = runPrepared(
-        prepared, cancelled, progress, checkpoint,
-        openSession = {
-            val usb = CaptUsbSession.open(context, deviceKey, cancelled)
-            object : PdfBatchSession {
-                override fun query(command: Int, payload: ByteArray) = usb.query(command, payload)
-                override fun sendFrame(frame: ByteArray) = usb.sendFrame(frame)
-                override fun sendOnly(command: Int) = usb.sendOnly(command)
-                override fun close() = usb.close()
-            }
-        },
-        now = { SystemClock.elapsedRealtime() },
-        pause = { Thread.sleep(it) }
-    )
+    ): CaptTestPrintResult {
+        val protocol = CaptProtocolTrace(now = { SystemClock.elapsedRealtime() })
+        return runPrepared(
+            prepared, cancelled, progress, checkpoint,
+            openSession = {
+                val usb = CaptUsbSession.open(context, deviceKey, cancelled, protocol, "DOCUMENT_QUEUE")
+                object : PdfBatchSession {
+                    override fun query(command: Int, payload: ByteArray) = usb.query(command, payload)
+                    override fun sendFrame(frame: ByteArray) = usb.sendFrame(frame)
+                    override fun sendOnly(command: Int) = usb.sendOnly(command)
+                    override fun close() = usb.close()
+                }
+            },
+            now = { SystemClock.elapsedRealtime() },
+            pause = { Thread.sleep(it) }, protocol = protocol
+        )
+    }
 
     /** Same production sequence with injected I/O and clock for bounded fault tests. */
     internal fun runPrepared(
@@ -58,9 +64,11 @@ internal object CaptDocumentPrintEngine {
         checkpoint: (CaptTestPrintResult) -> Unit = {},
         openSession: () -> PdfBatchSession,
         now: () -> Long,
-        pause: (Long) -> Unit
+        pause: (Long) -> Unit,
+        protocol: CaptProtocolTrace = CaptProtocolTrace(now = now)
     ): CaptTestPrintResult {
         var stage = "VALIDATING_DOCUMENT_JOB"
+        protocol.phase = { stage }
         var bytesSent = 0L
         var lastFrame: String? = null
         var confirmedPages: Int? = null
@@ -95,6 +103,7 @@ internal object CaptDocumentPrintEngine {
                     guard()
                     val frame = session.query(command, payload)
                     lastFrame = hex(frame)
+                    protocol.reply(command, frame, payload)
                     return frame
                 }
                 fun state(): CaptExtendedStatus =
@@ -133,6 +142,7 @@ internal object CaptDocumentPrintEngine {
                 sideEffectsStarted = true
                 val jobId = CaptJobProtocol.parseReservedJob(
                     query(CaptJobProtocol.RESERVE_UNIT, CaptJobProtocol.reserveRequest()))
+                protocol.reserved(jobId)
                 note("ReserveUnit once; JobID present")
                 query(CaptJobProtocol.SET_POWER_DOWN, CaptJobProtocol.powerDownSettings())
                 query(CaptJobProtocol.SET_JOB_INFO2,
@@ -207,11 +217,13 @@ internal object CaptDocumentPrintEngine {
                         DocumentPageProgress.completed(initial, it, number)
                     }
                     confirmedPages = number
+                    protocol.pagesConfirmed(number)
                     note("document page $number/$totalPages: counters agree at completed=${observed.pageCompleted}; visual check is separate")
                     // Persist each confirmed sheet BEFORE another printer command.
                     // A crash can retain a lower bound, never imply the whole job succeeded.
                     checkpoint(CaptTestPrintResult("in_progress", "document page counter checkpoint",
-                        stage, bytesSent, null, confirmedPages, lastFrame, trace.toList()))
+                        stage, bytesSent, null, confirmedPages, lastFrame, trace.toList(),
+                        protocolDiagnostics = protocol.snapshot()))
                     if (number == 1 && totalPages > 1) {
                         // Upstream LBP2900 sends job continuation once after Printed>=1,
                         // between pages, not a second ReserveUnit/GoOnline.
@@ -233,7 +245,8 @@ internal object CaptDocumentPrintEngine {
             return CaptTestPrintResult(
                 "printer_counter_confirmed",
                 "CAPT подтвердил $totalPages листа в одном задании. Проверь физические отпечатки.",
-                stage, bytesSent, null, confirmedPages, lastFrame, trace
+                stage, bytesSent, null, confirmedPages, lastFrame, trace,
+                protocolDiagnostics = protocol.snapshot()
             )
         } catch (error: Throwable) {
             val uncertain = sideEffectsStarted || bytesSent > 0L
@@ -241,10 +254,16 @@ internal object CaptDocumentPrintEngine {
             note("Stopped at $stage: ${error.javaClass.simpleName}: ${error.message ?: "no details"}; no automatic retry or recovery")
             return CaptTestPrintResult(
                 outcome,
-                if (uncertain) "Печать документа не подтверждена; возможен частичный выпуск листов. Не повторяйте задание автоматически."
+                if ((confirmedPages ?: 0) > 0) "CAPT подтвердил $confirmedPages лист(а); дальнейший исход задания не подтверждён. Автоматического повтора нет."
+                else if (uncertain) "Печать документа не подтверждена; возможен частичный выпуск листов. Не повторяйте задание автоматически."
                 else "Задание не отправлено: ${error.message ?: error.javaClass.simpleName}",
                 stage, bytesSent, null, confirmedPages, lastFrame, trace,
-                failureCode = (error as? CaptPreflightFailure)?.code
+                failureCode = when (error) {
+                    is CaptPreflightFailure -> error.code
+                    is CaptCommandAckFailure -> "CAPT_COMMAND_REJECTED"
+                    is CaptReplyReadFailure -> "CAPT_TRANSPORT_INVALID"
+                    else -> null
+                }, protocolDiagnostics = protocol.snapshot()
             )
         }
     }

@@ -240,12 +240,15 @@ object CaptStatusProbe {
         val secondary = hex(status.secondaryByte)
         val basicNames = CaptStatusFlagDecoder.basic(status.statusByte).joinToString("|")
         val secondaryNames = CaptStatusFlagDecoder.secondary(status.secondaryByte).joinToString("|")
-        val summary = "GetBasicStatus: 0x$basic [$basicNames]; secondary 0x$secondary [$secondaryNames]. Печать не выполнялась."
-        val report = "CAPT GetBasicStatus: valid reply; totalBytes=${frame.size}; " +
+        val summary = if (status.responseForm != "FULL_DESCRIBED_LAYOUT")
+            "GetBasicStatus: короткий ответ $basic $secondary; значение состояния не подтверждено. Печать не выполнялась."
+        else "GetBasicStatus: 0x$basic [$basicNames]; secondary 0x$secondary [$secondaryNames]. Печать не выполнялась."
+        val report = "CAPT GetBasicStatus: valid frame; responseForm=${status.responseForm}; totalBytes=${frame.size}; " +
             "statusFlags=0x$basic[$basicNames]; secondaryFlags=0x$secondary[$secondaryNames]; " +
             "bufferLevel=${status.bufferLowByte?.let { hex(it) } ?: "unavailable"}:" +
             "${status.bufferHighByte?.let { hex(it) } ?: "unavailable"}; no print/page data sent."
         return CaptStatusProbeResult(summary, report, frameHex(frame), mapOf(
+            "responseForm" to status.responseForm, "payloadBytes" to status.payloadBytes,
             "statusByte" to status.statusByte,
             "secondaryByte" to status.secondaryByte,
             "statusFlags" to CaptStatusFlagDecoder.basic(status.statusByte),

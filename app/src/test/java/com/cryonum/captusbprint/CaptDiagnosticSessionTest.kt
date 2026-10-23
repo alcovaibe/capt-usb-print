@@ -125,4 +125,56 @@ class CaptDiagnosticSessionTest {
         assertTrue(kept.all { it["decoded"] == session })
         assertTrue(kept.sumOf { DiagnosticJson.stringify(it).toByteArray().size + 1 } <= DiagnosticEventRetention.MAX_EVENTS_BYTES)
     }
+    private fun capturedReply(command: CaptDiagnosticCommand, secondary: Int): CaptDiagnosticReply {
+        fun bytes(value: String) = value.split(" ").map { it.toInt(16).toByte() }.toByteArray()
+        if (command == CaptDiagnosticCommand.GetBasicStatus) {
+            val raw = bytes("A0 E0 06 00 88 00")
+            val b = CaptBasicStatusParser.parse(raw)
+            return CaptDiagnosticReply("short", "captured Basic", CaptProtocolTrace.hex(raw), mapOf(
+                "statusByte" to b.statusByte, "secondaryByte" to b.secondaryByte,
+                "responseForm" to b.responseForm, "payloadBytes" to b.payloadBytes))
+        }
+        if (command == CaptDiagnosticCommand.GetExtendedStatus) {
+            val raw = bytes("A8 A0 38 00 01 88 00 00 0F 00 00 00 00 00 80 00 00 00 02 00 02 00 02 00 02 00 00 00 57 00 00 00 01 00 00 00 00 05 02 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00")
+            // 0x88 and 0x8A were both observed; mutate only the secondary field.
+            raw[5] = secondary.toByte()
+            val e = CaptExtendedStatusParser.parse(raw)
+            return CaptDiagnosticReply("extended", "captured Extended", CaptProtocolTrace.hex(raw), mapOf(
+                "basicStatusByte" to e.basicStatusByte, "secondaryByte" to e.secondaryByte,
+                "engineFlags" to e.engineFlags, "engineCommunicationByte" to e.engineCommunicationByte,
+                "paperAvailabilityByte" to e.paperAvailabilityByte, "auxiliaryByte" to e.auxiliaryByte,
+                "pageDecoding" to e.pageDecoding, "pagePrinting" to e.pagePrinting,
+                "pageOut" to e.pageOut, "pageCompleted" to e.pageCompleted, "pageReceived" to e.pageReceived))
+        }
+        return reply(command)
+    }
+
+    @Test fun capturedUnknownSecondaryFlagsDoNotSuppressBoundedResampling() {
+        for (secondary in listOf(0x88, 0x8a)) {
+            val f = Fixture()
+            val result = f.run { capturedReply(it, secondary) }
+            assertEquals("UNKNOWN", result.report["assessment"])
+            assertEquals(3, f.commands.count { it == CaptDiagnosticCommand.GetBasicStatus })
+            assertEquals(if (secondary == 0x8a) 3 else 0,
+                f.commands.count { it == CaptDiagnosticCommand.GetInputStatus })
+            assertEquals(false, result.report["readinessGuarantee"])
+            assertEquals(false, result.report["recoveryCommandsSent"])
+            assertEquals(false, result.report["printDataSent"])
+            assertFalse(result.summary.contains("ошибку"))
+        }
+    }
+
+    @Test fun inputConsumedWithUnknownBitsStillGetsFreshStatusPair() {
+        val f = Fixture()
+        var pending = true
+        val result = f.run { command ->
+            val answer = capturedReply(command, if (pending) 0x8a else 0x88)
+            if (command == CaptDiagnosticCommand.GetInputStatus) pending = false
+            answer
+        }
+        assertEquals(1, f.commands.count { it == CaptDiagnosticCommand.GetInputStatus })
+        assertEquals(3, f.commands.count { it == CaptDiagnosticCommand.GetExtendedStatus })
+        assertEquals("UNKNOWN", result.report["assessment"])
+    }
+
 }

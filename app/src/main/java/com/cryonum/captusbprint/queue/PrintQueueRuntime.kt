@@ -264,7 +264,7 @@ internal object PrintQueueRuntime {
                     "failureClass" to failure, "result" to result?.let { mapOf(
                         "outcome" to it.outcome, "stage" to it.stage, "sentPrintDataBytes" to it.sentPrintDataBytes,
                         "printerConfirmedPages" to it.printerConfirmedPages, "lastStatusFrameHex" to it.lastStatusFrameHex,
-                        "trace" to it.trace, "failureCode" to it.failureCode) })
+                        "protocolDiagnostics" to it.protocolDiagnostics, "trace" to it.trace, "failureCode" to it.failureCode) })
                 val directory = File(app.noBackupFilesDir, "print-reports").apply { mkdirs() }
                 atomicWrite(reportFile(id), data)
                 atomicWrite(FirstPdfPrintAttempt.reportFile(app), data)
