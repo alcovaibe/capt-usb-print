@@ -17,6 +17,8 @@ class PdfBatchEngineTest {
     private fun hex(value: String) = value.split(" ").map { it.toInt(16).toByte() }.toByteArray()
     private val info = hex("A1 A1 38 00 00 0B 31 2A 01 01 F0 FF 40 00 04 00 41 00 01 00 D0 02 00 00 6F 08 00 00 E4 0D 00 00 00 00 00 00 FA 02 00 00 F6 04 00 00 28 3C 32 32 58 02 58 02 15 03 02 00")
     private val observed = hex("A8 A0 38 00 01 88 00 00 0F 00 00 00 00 00 80 00 00 00 02 00 02 00 02 00 02 00 00 00 57 00 00 00 01 00 00 00 00 05 02 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00")
+    // Build-144 captured startup, before the successful reservation of JobID=1.
+    private val startup = hex("A8 A0 38 00 31 88 00 00 0F 00 00 00 00 00 80 00 00 00 00 00 00 00 00 00 00 00 00 00 56 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00")
     private val sheet by lazy {
         PreparedPdfCaptPageBuilder.prepare(
             produceBands = { accept ->
@@ -40,7 +42,13 @@ class PdfBatchEngineTest {
         var decoded = 2
         var completed = 2
         var offline = false
-        var basic = 1
+        var capturedStartup = false
+        var startupEnded = false
+        var powerDownResult = 0
+        var powerConfigured = false
+        var setupFault = false
+        var preflightFault = false
+        var reserveErrorByte = 0x8c
         var inputPending = false
         var refuseReserve = false
         var stalledPage = 0
@@ -50,47 +58,51 @@ class PdfBatchEngineTest {
         var rejectAck: Int? = null
         var bufferSlots = 15
         var drainOnStart = false
-        var onBasic: () -> Unit = {}
+        var onExtended: () -> Unit = {}
 
         override fun query(command: Int, payload: ByteArray): ByteArray {
             commands.add(command)
             if (command == rejectAck) return CaptFrame.encode(command, byteArrayOf(0x88.toByte(), 0))
             when (command) {
                 P.GET_PRINTER_INFO -> return info.copyOf()
-                P.GET_BASIC_STATUS -> {
-                    onBasic()
-                    return hex("A0 E0 06 00 01 00").also {
-                        it[4] = basic.toByte()
-                        if (inputPending) it[5] = 2
-                    }
-                }
+                P.GET_BASIC_STATUS -> error("Unverified Basic reply is not an LBP2900 admission contract")
                 P.GET_INPUT_STATUS -> {
                     inputPending = false
                     return hex("A1 A0 16 00 00 10 C0 00 00 00 00 00 00 00 96 00 FD 00 00 00 00 00")
                 }
-                P.RESERVE_UNIT -> return if (refuseReserve) hex("A0 A2 08 00 8C 00 00 00")
+                P.RESERVE_UNIT -> return if (refuseReserve)
+                    hex("A0 A2 08 00 8C 00 00 00").also { it[4] = reserveErrorByte.toByte() }
+                    else if (capturedStartup) hex("A0 A2 08 00 00 00 01 00")
                     else hex("A0 A2 08 00 00 00 2A 00")
                 P.GO_OFFLINE -> offline = true
-                P.GO_ONLINE -> { offline = false; decoded = 0; completed = 0 }
+                P.GO_ONLINE -> { offline = false; startupEnded = true; decoded = 0; completed = 0 }
                 P.SET_JOB_INFO2 -> {
                     flags.add(payload[16].toInt())
-                    assertEquals(42, payload[18].toInt())
+                    assertEquals(if (capturedStartup) 1 else 42, payload[18].toInt())
                     if (rejectEnd && payload[16].toInt() == 6) throw IOException("Uncertain end reply")
                 }
-                P.SET_POWER_DOWN, P.DISCARD_DATA, P.CLEAR_MIS_PRINT, P.CLEAR_ERROR, P.RELEASE_UNIT -> Unit
+                P.SET_POWER_DOWN -> {
+                    powerConfigured = true
+                    return CaptFrame.encode(command, byteArrayOf(powerDownResult.toByte(), 0))
+                }
+                P.DISCARD_DATA, P.CLEAR_MIS_PRINT, P.CLEAR_ERROR, P.RELEASE_UNIT -> Unit
                 P.START_PRINT -> {
                     val number = payload[0].toInt() and 255
                     starts.add(number)
                     if (drainOnStart) bufferSlots = 15
                     if (number != stalledPage) completed = number
                 }
-                P.GET_EXTENDED_STATUS -> return observed.copyOf().also {
-                    it[4] = if (offline) 0x11 else 1
-                    it[5] = if (inputPending) 0x8a.toByte() else 0x88.toByte()
-                    it[8] = bufferSlots.toByte()
-                    if (descriptors > 0 && decoded == noPaperOnPage && noPaperOnPage > 0) it[14] = 0
-                    for (offset in listOf(18, 38)) { it[offset] = decoded.toByte(); it[offset + 1] = 0 }
-                    for (offset in listOf(20, 22, 24)) { it[offset] = completed.toByte(); it[offset + 1] = 0 }
+                P.GET_EXTENDED_STATUS -> {
+                    onExtended()
+                    return (if (capturedStartup && !startupEnded) startup else observed).copyOf().also {
+                        it[4] = if (capturedStartup && !startupEnded) 0x31 else if (offline) 0x11 else 1
+                        if (preflightFault || (setupFault && powerConfigured)) it[16] = 1
+                        it[5] = if (inputPending) 0x8a.toByte() else 0x88.toByte()
+                        it[8] = bufferSlots.toByte()
+                        if (descriptors > 0 && decoded == noPaperOnPage && noPaperOnPage > 0) it[14] = 0
+                        for (offset in listOf(18, 38)) { it[offset] = decoded.toByte(); it[offset + 1] = 0 }
+                        for (offset in listOf(20, 22, 24)) { it[offset] = completed.toByte(); it[offset + 1] = 0 }
+                    }
                 }
                 else -> error("Unexpected query $command")
             }
@@ -169,20 +181,49 @@ class PdfBatchEngineTest {
         assertTrue(printer.closed)
     }
 
-    @Test fun persistentCapturedConflictStopsBeforeReserveAndRetainsBothReplies() {
-        val printer = Printer().apply { basic = 0x88 }
+    @Test fun capturedStartupAndPowerDownReplyReachJobStartWithoutInventingAReadyBasicReply() {
+        val printer = Printer().apply {
+            capturedStartup = true; decoded = 0; completed = 0; powerDownResult = 0x80
+        }
+        // Only the prefix through SetPowerDown is hardware-captured. Status and
+        // page confirmation AFTER that point are synthetic continuation fixtures.
+        val result = run(printer, pages = 1)
+        assertEquals(result.trace.joinToString("\n"), "printer_counter_confirmed", result.outcome)
+        assertEquals(listOf(P.GET_PRINTER_INFO, P.GET_EXTENDED_STATUS, P.RESERVE_UNIT,
+            P.SET_POWER_DOWN, P.GET_EXTENDED_STATUS, P.SET_JOB_INFO2), printer.commands.take(6))
+        assertFalse(printer.commands.contains(P.GET_BASIC_STATUS))
+        assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
+        assertEquals(1, printer.commands.count { it == P.SET_POWER_DOWN })
+        assertEquals(1, result.protocolDiagnostics["reservedJobId"])
+        assertEquals(0x80, result.protocolDiagnostics["powerDownResponseWord"])
+        assertEquals(listOf(1, 6), printer.flags)
+        assertEquals(listOf(1), printer.starts)
+        assertTrue(printer.closed)
+    }
+
+    @Test fun extendedHardwareErrorStillStopsBeforeReservationAndRaster() {
+        val printer = Printer().apply { preflightFault = true }
         val result = run(printer)
         assertEquals("failed_before_print_commands", result.outcome)
-        assertEquals("CAPT_STATUS_CONFLICT", result.failureCode)
-        assertTrue(result.trace.any { it.contains("A0 E0 06 00 88 00") })
-        assertTrue(result.trace.any { it.contains("A8 A0 38 00 01 88") })
-        assertEquals(21, printer.commands.count { it == P.GET_BASIC_STATUS })
+        assertEquals("PRINTER_STATUS", result.failureCode)
         assertFalse(printer.commands.contains(P.RESERVE_UNIT))
-        assertTrue(printer.commands.all { it == P.GET_PRINTER_INFO ||
-            it == P.GET_BASIC_STATUS || it == P.GET_EXTENDED_STATUS })
-        assertEquals(0, result.sentPrintDataBytes.toInt())
+        assertEquals(0L, result.sentPrintDataBytes)
         assertEquals(0, printer.descriptors)
         assertTrue(printer.closed)
+    }
+
+    @Test fun powerDownResponseCannotOverrideAnEngineFaultDuringSetup() {
+        val printer = Printer().apply { powerDownResult = 0x80; setupFault = true }
+        val result = run(printer)
+        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals("PRINTER_STATUS", result.failureCode)
+        assertEquals("CONFIGURING_JOB", result.stage)
+        assertFalse(printer.commands.contains(P.SET_JOB_INFO2))
+        assertFalse(printer.commands.contains(P.RELEASE_UNIT))
+        assertEquals(P.GET_EXTENDED_STATUS, printer.commands.last())
+        assertEquals(0L, result.sentPrintDataBytes)
+        assertEquals(0, printer.descriptors)
+        assertEquals(false, result.protocolDiagnostics["releaseAcknowledged"])
     }
 
     @Test fun inputStatusIsSettledBeforeExactlyOneReservation() {
@@ -190,14 +231,16 @@ class PdfBatchEngineTest {
         val result = run(printer, pages = 1)
         assertEquals(result.trace.joinToString("\n"), "printer_counter_confirmed", result.outcome)
         assertTrue(printer.commands.indexOf(P.GET_INPUT_STATUS) < printer.commands.indexOf(P.RESERVE_UNIT))
-        assertEquals(2, printer.commands.count { it == P.GET_BASIC_STATUS })
+        val reserveIndex = printer.commands.indexOf(P.RESERVE_UNIT)
+        assertEquals(2, printer.commands.take(reserveIndex).count { it == P.GET_EXTENDED_STATUS })
+        assertFalse(printer.commands.contains(P.GET_BASIC_STATUS))
         assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
         assertEquals(listOf(1), printer.starts)
     }
 
     @Test fun cancellationDuringReadOnlyReconciliationNeverReserves() {
         var stop = false
-        val printer = Printer().apply { onBasic = { stop = true } }
+        val printer = Printer().apply { onExtended = { stop = true } }
         val result = run(printer, cancelled = { stop })
         assertEquals("failed_before_print_commands", result.outcome)
         assertFalse(printer.commands.contains(P.RESERVE_UNIT))
@@ -214,6 +257,17 @@ class PdfBatchEngineTest {
         assertEquals(P.RESERVE_UNIT, printer.commands.last())
         assertEquals(0, printer.descriptors)
         assertTrue(printer.closed)
+    }
+
+    @Test fun capturedReserve87AlsoStopsWithoutBorrowingAJobOrSendingPowerConfiguration() {
+        val printer = Printer().apply { refuseReserve = true; reserveErrorByte = 0x87 }
+        val result = run(printer)
+        assertEquals("unknown_after_print_command", result.outcome)
+        assertEquals("A0 A2 08 00 87 00 00 00", result.lastStatusFrameHex)
+        assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
+        assertEquals(P.RESERVE_UNIT, printer.commands.last())
+        assertNull(result.protocolDiagnostics["reservedJobId"])
+        assertEquals(0, printer.descriptors)
     }
 
     @Test fun cancellationAfterFirstConfirmationNeverSubmitsSecondPage() {
@@ -273,14 +327,15 @@ class PdfBatchEngineTest {
     }
 
     @Test fun syntacticallyValidRejectedInitializationAckStopsBeforeRasterWithoutReplay() {
-        val printer = Printer().apply { rejectAck = P.SET_POWER_DOWN }
+        val printer = Printer().apply { rejectAck = P.SET_JOB_INFO2 }
         val result = run(printer)
         assertEquals("unknown_after_print_command", result.outcome)
         assertEquals("CAPT_COMMAND_REJECTED", result.failureCode)
         assertEquals(0L, result.sentPrintDataBytes)
         assertEquals(0, printer.descriptors)
         assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
-        assertFalse(printer.commands.contains(P.SET_JOB_INFO2))
+        assertEquals(1, printer.commands.count { it == P.SET_JOB_INFO2 })
+        assertEquals(P.SET_JOB_INFO2, printer.commands.last())
         assertEquals(false, result.protocolDiagnostics["releaseAcknowledged"])
         assertTrue(printer.closed)
     }

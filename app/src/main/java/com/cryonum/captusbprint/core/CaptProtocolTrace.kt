@@ -38,6 +38,7 @@ class CaptProtocolTrace(
     private var endAcknowledged = false
     private var releaseAcknowledged = false
     private var confirmedPages: Int? = null
+    private var powerDownResponseWord: Int? = null
 
     fun context(values: Map<String, Any?>) { metadata = values.toMap() }
 
@@ -90,6 +91,13 @@ class CaptProtocolTrace(
             if ((command == CaptJobProtocol.START_PRINT || command == CaptJobProtocol.RELEASE_UNIT) && payload.size == 2)
                 put("pageOrJobId", (payload[0].toInt() and 255) or ((payload[1].toInt() and 255) shl 8))
         })
+        if (command == CaptJobProtocol.SET_POWER_DOWN) {
+            val reply = CaptFrame.parseReply(command, raw)
+            require(reply.size == 2) { "Invalid SetPowerDown response length" }
+            powerDownResponseWord = (reply[0].toInt() and 255) or ((reply[1].toInt() and 255) shl 8)
+            event("POWER_DOWN_REPLY", mapOf("responseWord" to powerDownResponseWord,
+                "printAcceptance" to false, "requiresExtendedStateCheck" to true))
+        }
         try { CaptCommandAcks.requireAccepted(command, raw) }
         catch (failure: CaptCommandAckFailure) {
             event("COMMAND_REJECTED", mapOf("command" to command, "resultByte" to failure.resultByte))
@@ -116,7 +124,7 @@ class CaptProtocolTrace(
         "schemaVersion" to 1, "sessionId" to id, "context" to metadata,
         "lastPhase" to phase(), "reservedJobId" to reservedJob,
         "endAcknowledged" to endAcknowledged, "releaseAcknowledged" to releaseAcknowledged,
-        "printerConfirmedPages" to confirmedPages,
+        "printerConfirmedPages" to confirmedPages, "powerDownResponseWord" to powerDownResponseWord,
         "totalEvents" to sequence, "omittedEvents" to (sequence - head.size - tail.size),
         "events" to (head.toList() + tail.toList()),
         "documentDataIncluded" to false, "automaticRecovery" to false

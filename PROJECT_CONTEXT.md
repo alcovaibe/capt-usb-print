@@ -1,6 +1,26 @@
 # CAPT USB Print — project context
 
-Latest protocol checkpoint (2026-10-23): follow-up from the owner's investigation,
+Latest startup correction (2026-10-23), baseline main 34af4653324d / signed build
+144: fresh hardware proves ReserveUnit returned JobID=1, then PR 29's new
+SetPowerDown ACK validator aborted on `BA E0 06 00 80 00` before any page data.
+This is a software regression, not proof of a hardware fault. Document jobs
+separately stop on the unverified short Basic `88` despite Extended `31/88`.
+All four engines now share the pinned LBP2900 Extended/Input startup policy,
+with bounded input/busy/counter checks. SetPowerDown is recorded separately and
+followed by an Extended-state check before JobInfo START. Mandatory job/control
+ACKs and separate Reserve Error/JobID parsing remain. No resets, flushes,
+automatic release/retry/replay or fabricated readiness/JobID. Basic diagnostics
+remain UNKNOWN for the short form; setup phase/messages distinguish zero page
+data from later uncertain printing. See docs/LBP2900-STARTUP-CONTRACT.md for
+Canon service documentation, primary protocol sources, captured-byte evidence,
+ranked hypotheses and test limits. Physical document/system printing remains
+unverified; API-36 CI and owner-controlled merge/release are still required.
+
+Historical checkpoints follow; the paragraph above supersedes earlier claims
+that SetPowerDown must have a zero Error byte or the Basic gate must remain.
+
+
+Historical PR-29 protocol checkpoint (2026-10-23): follow-up from the owner's investigation,
 starting at main 75e7c5176ca0c157a5ba5bd5d5d3b14a78b94123. Control-command ACKs
 are now checked separately from status/Reserve replies in all print engines;
 negative END/Release cannot claim released success and confirmed pages survive.

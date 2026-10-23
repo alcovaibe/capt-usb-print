@@ -1,5 +1,12 @@
 # CAPT investigation follow-up: acknowledgements and phase evidence
 
+> Historical checkpoint, superseded by [LBP2900-STARTUP-CONTRACT.md](LBP2900-STARTUP-CONTRACT.md)
+> after the build-144 hardware reports. The earlier requirement to preserve the
+> Basic veto is replaced by the shared LBP2900 Extended/Input policy. PR 29's
+> mandatory SetPowerDown Error-byte interpretation was unjustified and is
+> corrected; required JobInfo/StartPrint/END/Release ACK checks remain.
+
+
 Baseline: main 75e7c5176ca0c157a5ba5bd5d5d3b14a78b94123 (PR 28).
 Reference: ValdikSS/captdriver 892f320c019974a5b737e000fcc2c8582264a131.
 

@@ -1,11 +1,12 @@
 package com.cryonum.captusbprint.core
 
 /** These commands return an Error byte (zero means accepted), then an opaque byte.
- * Status queries and ReserveUnit have different contracts and MUST NOT use this decoder.
+ * Status queries, ReserveUnit and SetPowerDown have different contracts.
+ * SetPowerDown is followed by an ExtendedStatus check, as in the pinned prologue.
  */
 object CaptCommandAcks {
     private val commands = setOf(
-        CaptJobProtocol.SET_POWER_DOWN, CaptJobProtocol.SET_JOB_INFO2,
+        CaptJobProtocol.SET_JOB_INFO2,
         CaptJobProtocol.GO_OFFLINE, CaptJobProtocol.GO_ONLINE,
         CaptJobProtocol.DISCARD_DATA, CaptJobProtocol.CLEAR_MIS_PRINT,
         CaptJobProtocol.CLEAR_ERROR, CaptJobProtocol.START_PRINT, CaptJobProtocol.RELEASE_UNIT

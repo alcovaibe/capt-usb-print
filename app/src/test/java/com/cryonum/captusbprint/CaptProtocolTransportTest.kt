@@ -105,7 +105,7 @@ class CaptProtocolTransportTest {
     }
 
     @Test fun controlErrorByteIsCheckedWithoutAssigningMeaningToOpaqueSecondByte() {
-        val commands = listOf(P.SET_POWER_DOWN, P.SET_JOB_INFO2, P.GO_OFFLINE, P.GO_ONLINE,
+        val commands = listOf(P.SET_JOB_INFO2, P.GO_OFFLINE, P.GO_ONLINE,
             P.DISCARD_DATA, P.CLEAR_MIS_PRINT, P.CLEAR_ERROR, P.START_PRINT, P.RELEASE_UNIT)
         for (command in commands) {
             CaptCommandAcks.requireAccepted(command, CaptFrame.encode(command, byteArrayOf(0, 0x7f)))
@@ -119,6 +119,25 @@ class CaptProtocolTransportTest {
         CaptCommandAcks.requireAccepted(P.RESERVE_UNIT, hex("A0 A2 08 00 8C 00 00 00"))
         assertThrows(IllegalArgumentException::class.java) {
             P.parseReservedJob(hex("A0 A2 08 00 8C 00 00 00"))
+        }
+    }
+
+    @Test fun capturedPowerDownReplyIsPreservedWithoutClaimingPrintAcceptance() {
+        val trace = CaptProtocolTrace()
+        trace.reserved(1)
+        trace.reply(P.SET_POWER_DOWN, hex("BA E0 06 00 80 00"))
+        val snapshot = trace.snapshot()
+        assertEquals(0x80, snapshot["powerDownResponseWord"])
+        assertEquals(false, snapshot["endAcknowledged"])
+        assertEquals(false, snapshot["releaseAcknowledged"])
+        assertNull(snapshot["printerConfirmedPages"])
+        assertEquals(false, events(trace).last()["printAcceptance"])
+        assertEquals(true, events(trace).last()["requiresExtendedStateCheck"])
+        assertThrows(IllegalArgumentException::class.java) {
+            trace.reply(P.SET_POWER_DOWN, hex("BA E0 06 00 80"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            trace.reply(P.SET_POWER_DOWN, hex("BA E0 08 00 80 00 00 00"))
         }
     }
 

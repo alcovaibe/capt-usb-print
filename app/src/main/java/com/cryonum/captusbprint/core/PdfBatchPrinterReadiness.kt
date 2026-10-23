@@ -2,11 +2,10 @@ package com.cryonum.captusbprint.core
 
 import java.util.Locale
 
-/**
- * Read-only pre-reservation gate specific to the new PDF batch pilot.
- * Previous owner diagnostic captured BasicStatus 0x88 (IM_DATA_BUSY and
- * ERROR_BIT) while ReserveUnit returned 0x8C on every subsequent attempt.
- * We do not claim to repair or fully decode that engine state.
+/** Candidate flag interpretation used only by read-only diagnostic assessment.
+ * This byte mask cannot establish the semantics of a SHORT_UNVERIFIED reply.
+ * LBP2900 job admission uses CaptDocumentPreflight's Extended/Input policy.
+ * Historical ReserveUnit error bytes have a separate command contract.
  */
 object PdfBatchPrinterReadiness {
     private const val NOT_READY = 0x02
@@ -19,7 +18,7 @@ object PdfBatchPrinterReadiness {
         require(statusByte in 0..255)
         if ((statusByte and blockingBits) == 0) return null
         val hex = String.format(Locale.ROOT, "%02X", statusByte)
-        return "GetBasicStatus=0x$hex: готовность по ответу CAPT не подтверждена. " +
-            "ReserveUnit не отправлялся. Проверь состояние принтера; автоматического сброса нет."
+        return "GetBasicStatus=0x$hex: возможные блокирующие флаги; " +
+            "для короткого ответа их смысл не подтверждён."
     }
 }

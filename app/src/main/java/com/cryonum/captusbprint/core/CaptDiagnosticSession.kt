@@ -100,7 +100,7 @@ class CaptDiagnosticSession(
             assessment == "INPUT_STATUS_PENDING" -> "Принтер продолжает запрашивать дополнительный статус. Готовность не подтверждена."
             infoUsable != true -> "Проверка завершена, но параметры передачи не подтверждены."
             assessment == "NO_KNOWN_BLOCKERS" -> "Диагностика завершена: известных признаков блокировки не обнаружено. Это не проверка печати."
-            else -> "Диагностика завершена. Данных для оценки готовности недостаточно."
+            else -> "Принтер ответил на диагностику. Готовность к печати не подтверждена."
         }
         return CaptDiagnosticResult(summary, outcome, linkedMapOf(
             "sessionSchemaVersion" to 1, "sessionId" to id,

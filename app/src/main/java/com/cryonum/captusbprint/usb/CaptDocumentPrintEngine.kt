@@ -22,7 +22,7 @@ import com.cryonum.captusbprint.document.OfflinePdfHiscoaPreparation
 /**
  * Stage C: bounded disk-prepared A4 document sheets in ONE
  * observed LBP2900 CAPT job. Derives the control sequence from the accepted
- * Stage B two-sheet engine but does not change that implementation.
+ * Stage B two-sheet engine, with shared LBP2900 startup admission.
  *
  * No speculative pipelining: next descriptor follows confirmation of previous
  * shipped/completed counters. No replay, power cycle or recovery on 0x8C.
@@ -144,7 +144,10 @@ internal object CaptDocumentPrintEngine {
                     query(CaptJobProtocol.RESERVE_UNIT, CaptJobProtocol.reserveRequest()))
                 protocol.reserved(jobId)
                 note("ReserveUnit once; JobID present")
+                stage = "CONFIGURING_JOB"
                 query(CaptJobProtocol.SET_POWER_DOWN, CaptJobProtocol.powerDownSettings())
+                CaptDocumentPreflight.afterPowerDown(
+                    { query(it) }, ::guard, now, pause, ::note)
                 query(CaptJobProtocol.SET_JOB_INFO2,
                     CaptJobProtocol.jobInfo(jobId, CaptJobProtocol.START_FLAG))
                 current = safeState()
@@ -255,6 +258,8 @@ internal object CaptDocumentPrintEngine {
             return CaptTestPrintResult(
                 outcome,
                 if ((confirmedPages ?: 0) > 0) "CAPT подтвердил $confirmedPages лист(а); дальнейший исход задания не подтверждён. Автоматического повтора нет."
+                else if (stage == "CONFIGURING_JOB" || stage.startsWith("RESERVING"))
+                    "Подготовка задания остановлена; данные страницы не отправлены. Подробности сохранены в JSON."
                 else if (uncertain) "Печать документа не подтверждена; возможен частичный выпуск листов. Не повторяйте задание автоматически."
                 else "Задание не отправлено: ${error.message ?: error.javaClass.simpleName}",
                 stage, bytesSent, null, confirmedPages, lastFrame, trace,
