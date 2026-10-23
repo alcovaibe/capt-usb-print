@@ -26,9 +26,6 @@
     <string name="probe_capt_failed">Запрос CAPT не выполнен: %1$s</string>
     <string name="probe_capt_unknown_error">неизвестная ошибка</string>
     <string name="refresh">Обновить список USB</string>
-    <string name="report_label">Технические подробности</string>
-    <string name="show_report">Показать подробности</string>
-    <string name="hide_report">Скрыть подробности</string>
     <string name="share_report">Поделиться JSON-ответом</string>
     <string name="share_title">Поделиться JSON-отчётом</string>
     <string name="permission_request">Запросить доступ USB</string>

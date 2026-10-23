@@ -16,9 +16,7 @@ import android.os.Looper
 import android.os.Build
 import android.view.WindowInsets
 import android.util.TypedValue
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -48,9 +46,6 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var status: TextView
     private lateinit var devices: LinearLayout
-    private lateinit var reportView: TextView
-    private lateinit var reportToggle: Button
-    private var reportExpanded = false
     private var currentReport: String = ""
     private var lastSnapshot: UsbSnapshot? = null
     private val diagnosticEvents = mutableListOf<Map<String, Any?>>()
@@ -129,22 +124,6 @@ class MainActivity : Activity() {
         content.addView(button(getString(R.string.share_report)) { shareReport() })
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(devices)
-        content.addView(text(getString(R.string.report_label)).apply { textSize = 19f })
-        reportToggle = button(getString(R.string.show_report)) {
-            reportExpanded = !reportExpanded
-            reportView.visibility = if (reportExpanded) View.VISIBLE else View.GONE
-            reportToggle.text = getString(
-                if (reportExpanded) R.string.hide_report else R.string.show_report
-            )
-        }
-        content.addView(reportToggle)
-        reportView = text("").apply {
-            textSize = 12f
-            typeface = Typeface.MONOSPACE
-            setHorizontallyScrolling(false)
-            visibility = View.GONE
-        }
-        content.addView(reportView)
         val scrolling = ScrollView(this).apply {
             isFillViewport = true
             addView(content)
@@ -239,7 +218,6 @@ class MainActivity : Activity() {
                     lastSnapshot = null
                     currentReport = "Diagnostic scan failed: " + reason +
                         "\nNo print commands were sent.\n"
-                    reportView.text = currentReport
                     recordEvent("UsbScan", "failed", reason)
                 }
             }
@@ -257,7 +235,6 @@ class MainActivity : Activity() {
         } else {
             PermissionEvents.outcome
         }
-        reportView.text = currentReport
         saveDiagnosticSnapshot()
         devices.removeAllViews()
         if (snapshot.devices.isEmpty()) {
@@ -380,7 +357,6 @@ class MainActivity : Activity() {
                         "${step["action"]}: ${step["reportText"] ?: step["summary"] ?: step["reason"]}"
                     }.orEmpty()
                 currentReport += "\n" + message + "\n" + details + "\n"
-                reportView.text = currentReport
                 status.text = message
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
             }
@@ -426,7 +402,6 @@ class MainActivity : Activity() {
                 recordEvent("PrepareTestPage", if (prepared.isSuccess) "success" else "failed",
                     details, decoded = metrics, reportLine = details)
                 currentReport += "\n" + details + "\n"
-                reportView.text = currentReport
                 status.text = details
             }
         }
@@ -452,7 +427,6 @@ class MainActivity : Activity() {
                     "sentPrintDataBytes=${result.sentPrintDataBytes}; " +
                     "printerCompletedCounter=${result.printerConfirmedPages ?: "unavailable"}; $last"
                 currentReport += "\n" + detail + "\n"
-                reportView.text = currentReport
                 recordEvent("PrintTestPage", result.outcome, result.summary,
                     result.lastStatusFrameHex,
                     mapOf<String, Any?>(
@@ -501,7 +475,6 @@ class MainActivity : Activity() {
                     "confirmedPages=${result.printerConfirmedPages ?: "unavailable"}; " +
                     result.trace.lastOrNull().orEmpty()
                 currentReport += "\n" + detail + "\n"
-                reportView.text = currentReport
                 recordEvent("PrintTwoTestPages", result.outcome, result.summary,
                     result.lastStatusFrameHex,
                     mapOf<String, Any?>(
