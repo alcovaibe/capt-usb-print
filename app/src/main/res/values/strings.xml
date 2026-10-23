@@ -95,6 +95,8 @@
     <string name="failure_busy">USB занят другой операцией</string>
     <string name="failure_timeout">Принтер не ответил за отведённое время</string>
     <string name="failure_printer">Принтер сообщил ошибку или занятость; код состояния сохранён</string>
+    <string name="failure_status_conflict">Ответы состояния CAPT противоречат друг другу. Печатные данные не отправлены. Отправьте JSON задания из CAPT USB Print</string>
+    <string name="failure_status_invalid">Получен неполный или некорректный ответ состояния CAPT. Печатные данные не отправлены. Отправьте JSON задания из CAPT USB Print</string>
     <string name="failure_interrupted">Процесс или служба прерваны</string>
     <string name="failure_history">Не удалось прочитать историю; состояние печати неизвестно</string>
     <string name="failure_preparation">Ошибка подготовки, памяти или приватного хранилища</string>

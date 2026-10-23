@@ -191,7 +191,11 @@ class CaptPrintService : PrintService() {
                     }
                     QueuePhase.CANCELLED -> handle.job.cancel()
                     QueuePhase.OUTCOME_UNKNOWN -> handle.job.fail(getString(R.string.system_outcome_unknown))
-                    else -> handle.job.fail(getString(R.string.system_print_failed))
+                    else -> handle.job.fail(getString(when (record.failure) {
+                        "CAPT_STATUS_CONFLICT" -> R.string.failure_status_conflict
+                        "CAPT_STATUS_INVALID" -> R.string.failure_status_invalid
+                        else -> R.string.system_print_failed
+                    }))
                 }
                 SystemPrintDiagnostics.record(this, "JOB_" + record.phase.name, queueId = id, error = record.failure)
                 jobs.remove(handle.job.id)

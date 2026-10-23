@@ -22,7 +22,8 @@ data class CaptTestPrintResult(
     val compressedSha256: String?,
     val printerConfirmedPages: Int?,
     val lastStatusFrameHex: String?,
-    val trace: List<String>
+    val trace: List<String>,
+    val failureCode: String? = null
 )
 
 /**

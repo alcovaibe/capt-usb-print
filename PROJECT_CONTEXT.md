@@ -1,6 +1,26 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-23. Current work: **Stage D Android PrintService**, from owner-merged Stage C PR #25 (`main` merge `130c158f8288db17110ef9bfe433140302917f68`). Main CI 123 passed, including permanent signing and API 36 in-place upgrade. C acceptance remains conditional by owner instruction, not new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. D code is implemented in PR #26; final-HEAD CI is the review gate there. The owner explicitly authorized public visibility of this repository on 2026-10-23 to use free standard GitHub-hosted runners; this supersedes earlier private-repository-only instructions. Signing credentials and app document/diagnostic data remain private. HONOR system routing/printing remains unconfirmed. Historical notes are retained; latest checkpoint is at the end.
+Updated: 2026-10-23. Latest checkpoint: **bounded document CAPT preflight reconciliation**
+from merged Stage D `main` `57a643dce995` / signed build 133. The owner's HONOR
+system job reached our service, imported and prepared its PDF, then stopped
+before ReserveUnit with the exact basic reply `A0 E0 06 00 88 00`, zero print
+bytes. A subsequent 11-page system job stopped at the same gate. The owner
+recalls a power cycle but this is not instrumented proof of post-cycle state.
+System routing/intake is now physically observed; physical system printing and
+Stage D acceptance remain open. Raw owner reports are not committed.
+
+This branch adds bounded Basic/Extended/Input status reconciliation and paired
+raw preflight trace, preserving the `0x88` stop. Persistent contradictory replies
+become `CAPT_STATUS_CONFLICT`; malformed replies become `CAPT_STATUS_INVALID`.
+Only status reads are repeated, with a 5-second polling budget (in addition to
+bounded USB query latency) and 21-sample cap. No reservation retry, reset,
+recovery or replay is introduced. See `docs/CAPT-PREFLIGHT-STATUS.md` for audit,
+limits and the single-sheet follow-up after a signed build. Local manual-only
+sharing guards and whitespace checks passed. Gradle could not download locally
+(network unreachable); build/lint/unit/emulator results must come from PR CI.
+This is not a verified repair for ReserveUnit `0x8C` or sustained `0x88`.
+
+Historical checkpoint before the build-133 hardware reports: Current work: **Stage D Android PrintService**, from owner-merged Stage C PR #25 (`main` merge `130c158f8288db17110ef9bfe433140302917f68`). Main CI 123 passed, including permanent signing and API 36 in-place upgrade. C acceptance remains conditional by owner instruction, not new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. D code is implemented in PR #26; final-HEAD CI is the review gate there. The owner explicitly authorized public visibility of this repository on 2026-10-23 to use free standard GitHub-hosted runners; this supersedes earlier private-repository-only instructions. Signing credentials and app document/diagnostic data remain private. HONOR system routing/printing remains unconfirmed. Historical notes are retained; latest checkpoint is at the end.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.

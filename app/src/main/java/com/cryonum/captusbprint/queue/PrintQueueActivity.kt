@@ -108,6 +108,8 @@ class PrintQueueActivity : Activity() {
         "USB_PERMISSION" -> R.string.failure_permission
         "USB_BUSY" -> R.string.failure_busy
         "USB_TIMEOUT" -> R.string.failure_timeout
+        "CAPT_STATUS_CONFLICT" -> R.string.failure_status_conflict
+        "CAPT_STATUS_INVALID" -> R.string.failure_status_invalid
         "PRINTER_STATUS", "PRINTER_ERROR" -> R.string.failure_printer
         "PROCESS_INTERRUPTED", "SERVICE_INTERRUPTED" -> R.string.failure_interrupted
         "HISTORY_UNREADABLE" -> R.string.failure_history

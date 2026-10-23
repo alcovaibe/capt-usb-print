@@ -41,6 +41,7 @@ class PdfBatchEngineTest {
         var completed = 2
         var offline = false
         var basic = 1
+        var inputPending = false
         var refuseReserve = false
         var stalledPage = 0
         var disconnectOnPage = 0
@@ -56,7 +57,14 @@ class PdfBatchEngineTest {
                 P.GET_PRINTER_INFO -> return info.copyOf()
                 P.GET_BASIC_STATUS -> {
                     onBasic()
-                    return hex("A0 E0 06 00 01 00").also { it[4] = basic.toByte() }
+                    return hex("A0 E0 06 00 01 00").also {
+                        it[4] = basic.toByte()
+                        if (inputPending) it[5] = 2
+                    }
+                }
+                P.GET_INPUT_STATUS -> {
+                    inputPending = false
+                    return hex("A1 A0 16 00 00 10 C0 00 00 00 00 00 00 00 96 00 FD 00 00 00 00 00")
                 }
                 P.RESERVE_UNIT -> return if (refuseReserve) hex("A0 A2 08 00 8C 00 00 00")
                     else hex("A0 A2 08 00 00 00 2A 00")
@@ -76,6 +84,7 @@ class PdfBatchEngineTest {
                 }
                 P.GET_EXTENDED_STATUS -> return observed.copyOf().also {
                     it[4] = if (offline) 0x11 else 1
+                    it[5] = if (inputPending) 0x8a.toByte() else 0x88.toByte()
                     it[8] = bufferSlots.toByte()
                     if (descriptors > 0 && decoded == noPaperOnPage && noPaperOnPage > 0) it[14] = 0
                     for (offset in listOf(18, 38)) { it[offset] = decoded.toByte(); it[offset + 1] = 0 }
@@ -158,11 +167,37 @@ class PdfBatchEngineTest {
         assertTrue(printer.closed)
     }
 
-    @Test fun capturedBusyStatusStopsBeforeReserve() {
+    @Test fun persistentCapturedConflictStopsBeforeReserveAndRetainsBothReplies() {
         val printer = Printer().apply { basic = 0x88 }
         val result = run(printer)
         assertEquals("failed_before_print_commands", result.outcome)
-        assertTrue(result.lastStatusFrameHex!!.contains("88"))
+        assertEquals("CAPT_STATUS_CONFLICT", result.failureCode)
+        assertTrue(result.trace.any { it.contains("A0 E0 06 00 88 00") })
+        assertTrue(result.trace.any { it.contains("A8 A0 38 00 01 88") })
+        assertEquals(21, printer.commands.count { it == P.GET_BASIC_STATUS })
+        assertFalse(printer.commands.contains(P.RESERVE_UNIT))
+        assertTrue(printer.commands.all { it == P.GET_PRINTER_INFO ||
+            it == P.GET_BASIC_STATUS || it == P.GET_EXTENDED_STATUS })
+        assertEquals(0, result.sentPrintDataBytes.toInt())
+        assertEquals(0, printer.descriptors)
+        assertTrue(printer.closed)
+    }
+
+    @Test fun inputStatusIsSettledBeforeExactlyOneReservation() {
+        val printer = Printer().apply { inputPending = true }
+        val result = run(printer, pages = 1)
+        assertEquals(result.trace.joinToString("\n"), "printer_counter_confirmed", result.outcome)
+        assertTrue(printer.commands.indexOf(P.GET_INPUT_STATUS) < printer.commands.indexOf(P.RESERVE_UNIT))
+        assertEquals(2, printer.commands.count { it == P.GET_BASIC_STATUS })
+        assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
+        assertEquals(listOf(1), printer.starts)
+    }
+
+    @Test fun cancellationDuringReadOnlyReconciliationNeverReserves() {
+        var stop = false
+        val printer = Printer().apply { onBasic = { stop = true } }
+        val result = run(printer, cancelled = { stop })
+        assertEquals("failed_before_print_commands", result.outcome)
         assertFalse(printer.commands.contains(P.RESERVE_UNIT))
         assertEquals(0, printer.descriptors)
         assertTrue(printer.closed)
