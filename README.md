@@ -22,13 +22,40 @@ The general engine retains the accepted portrait CAPT descriptor: landscape is a
 
 Private history is bounded to 50 jobs and reports to 24; JSON records settings, app/device versions, CAPT state and confirmed counters, excluding document names/URIs/content/raster/hashes/serials. Sharing is explicit. Preview/settings survive screen recreation; queued jobs own independent private source copies.
 
-**Acceptance distinction:** the owner authorized conditional release/print success to finish code. Actual hardware evidence remains separate PDF sheets on build 105 and accepted Stage A/B. New queue, image output, landscape and MagicOS screen-off behavior are not reported as physically observed. Stage D PrintService is a separate next implementation.
+**Acceptance distinction:** the owner authorized conditional release/print success to finish code. Actual hardware evidence remains separate PDF sheets on build 105 and accepted Stage A/B. New queue, image output, landscape and MagicOS screen-off behavior are not reported as physically observed. Stage D PrintService is under verification below; its hardware acceptance remains open.
+
+## Stage D: Android system printing (under verification)
+
+The Android PrintService advertises one stable Canon LBP2900 USB slot and the
+existing A4 / 600 dpi / monochrome / simplex profile. Enable CAPT USB Print through
+the app's system-print settings button, grant USB access on the main screen, then
+select the Canon from an application's Android Print dialog. Missing/ambiguous USB
+devices or permissions block an unstarted job with a setup message.
+
+System PDFs enter the same bounded queue and serial worker as direct documents.
+Their existing point scale, margins and layout are preserved; the app's FIT inset
+is not applied again. Original-versus-reduced PDF page selections are resolved
+once, with ambiguous mappings rejected. One layer expands collated copies.
+PrintDocument pipes are read off the main thread with a 64 MiB / 30-second bound,
+cancellation and shared disk quotas. PrintJob APIs stay on the main thread.
+
+Disabling/disconnecting the service cancels its work without cancelling unrelated
+direct jobs. Tagged interrupted jobs are reconciled without automatic replay.
+Printer-confirmed completion, cancellation before printing and uncertain USB
+outcomes remain distinct. Queue history exposes a separate explicit system JSON
+share button, with no document labels, URIs, content or serials.
+
+Automated build/raster/framework checks and final-HEAD CI are tracked in
+[PR #26](https://github.com/alcovaibe/capt-usb-print/pull/26). Actual routing/printing from HONOR
+Documents and another Android print source is not yet confirmed; Stage D hardware
+acceptance remains open. No new CAPT command, reset, retry or signing change is
+introduced.
 
 ## Signed releases and upgrade compatibility
 
-Private signed prereleases: [Releases](https://github.com/alcovaibe/capt-usb-print/releases). Future installed **signed** versions upgrade in place via the ordinary Android APK installer, keeping app settings. Signing certificate and `applicationId=com.cryonum.captusbprint` are permanently pinned. `versionCode` increases for each GitHub Actions release build.
+Public signed prereleases: [Releases](https://github.com/alcovaibe/capt-usb-print/releases). The owner authorized public repository visibility on 2026-10-23 so standard GitHub-hosted CI can run without consuming the private-repository minute allowance. Public visibility is confirmed in GitHub metadata and Settings. Source, history, PRs, release APKs and Actions logs are readable by everyone; signing credentials and on-device document/diagnostic data remain private. Future installed **signed** versions upgrade in place via the ordinary Android APK installer, keeping app settings. Signing certificate and `applicationId=com.cryonum.captusbprint` are permanently pinned. `versionCode` increases for each GitHub Actions release build.
 
-The previous A1 diagnostic prerelease is a **debug app** using `com.cryonum.captusbprint.debug`; it cannot upgrade into a signed release. Install the first permanently signed A2 APK as a separate app, then all newer signed A2+ builds can install over it. There is no automatic in-app updater (private GitHub release requires authorization and the diagnostic app deliberately has no INTERNET permission).
+The previous A1 diagnostic prerelease is a **debug app** using `com.cryonum.captusbprint.debug`; it cannot upgrade into a signed release. Install the first permanently signed A2 APK as a separate app, then all newer signed A2+ builds can install over it. There is no automatic in-app updater; download a signed APK from Releases and install it with Android's ordinary installer. The app deliberately has no INTERNET permission.
 
 **Owner-controlled signing setup is complete.** The repository secret `ANDROID_SIGNING` is configured, and signed build 33 passed the signature, package/version, prior-release and Android 16 in-place-upgrade checks before publication. Keep *two separate encrypted backups* of `CAPT_USB_Print_SIGNING_BACKUP.zip` from the conversation; it contains the private key backup and secret JSON. Do **not** commit, send publicly, upload to Releases or share that backup. Losing the private key means losing the ability to install later APKs as compatible upgrades.
 

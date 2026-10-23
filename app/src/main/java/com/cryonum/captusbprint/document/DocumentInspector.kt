@@ -93,7 +93,7 @@ object DocumentInspector {
         }
     }
 
-    private fun inspectPdf(file: File, bytes: Long): DocumentOverview {
+    internal fun inspectPdf(file: File, bytes: Long): DocumentOverview {
         val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
         val renderer = try {
             PdfRenderer(descriptor)

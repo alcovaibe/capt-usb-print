@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.ParcelFileDescriptor
 import android.system.Os
 import android.util.AtomicFile
 import com.cryonum.captusbprint.BuildConfig
@@ -11,8 +12,12 @@ import com.cryonum.captusbprint.FirstPdfPrintAttempt
 import com.cryonum.captusbprint.core.DiagnosticJson
 import com.cryonum.captusbprint.core.HiscoaNative
 import com.cryonum.captusbprint.core.JobSpecification
+import com.cryonum.captusbprint.core.DocumentLayout
 import com.cryonum.captusbprint.document.DocumentSession
+import com.cryonum.captusbprint.document.DocumentInspector
+import com.cryonum.captusbprint.document.SystemSpoolReader
 import com.cryonum.captusbprint.document.StoredCaptPage
+import com.cryonum.captusbprint.printservice.SystemPrintRequest
 import com.cryonum.captusbprint.usb.CaptDocumentPrintEngine
 import com.cryonum.captusbprint.usb.CaptTestPrintResult
 import org.json.JSONObject
@@ -32,10 +37,13 @@ internal object PrintQueueRuntime {
     private val main = Handler(Looper.getMainLooper())
     private var initialized = false
     private val allocations = HashMap<Long, Long>()
+    private val intakes = HashSet<Long>()
+    private var cancelVersion = 0L
     private var orphanBytes = 0L
     private lateinit var app: Context
     private data class Work(val source: DocumentSession, val plan: JobSpecification,
-                            val deviceKey: String, val directory: File)
+                            val deviceKey: String, val directory: File,
+                            val systemMetadata: Map<String, Any?>? = null)
     private fun root() = File(app.noBackupFilesDir, "print-queue").apply { mkdirs() }
     private fun history() = File(app.noBackupFilesDir, "print-history.json")
 
@@ -90,12 +98,14 @@ internal object PrintQueueRuntime {
     @Synchronized fun isPaused() = queue.paused
     @Synchronized fun hasRunnableWork() = queue.hasRunnableWork()
     @Synchronized fun hasWork() = queue.snapshot().any { !it.phase.terminal }
+    @Synchronized fun hasRoom() = queue.snapshot().count { !it.phase.terminal } + intakes.size < 4
+    @Synchronized fun cancelGeneration() = cancelVersion
 
     /** Worker-thread only; caller retains its preview source and owns no queue files. */
     @Synchronized fun enqueue(context: Context, source: DocumentSession,
         plan: JobSpecification, deviceKey: String): Long {
         initialize(context)
-        check(queue.snapshot().count { !it.phase.terminal } < 4) { "Queue full" }
+        check(hasRoom()) { "Queue full" }
         require(plan.pageIndices.all { it in 0 until source.overview.pageCount })
         val id = ids.incrementAndGet()
         val directory = File(root(), id.toString()).apply { check(mkdir()) }
@@ -115,6 +125,59 @@ internal object PrintQueueRuntime {
             throw error
         }
     }
+
+    /** Own the delivered PDF directly, sharing the same quota/FIFO; no content URI or second copy. */
+    fun enqueueSystem(context: Context, descriptor: ParcelFileDescriptor, request: SystemPrintRequest,
+                      deviceKey: String, cancelled: () -> Boolean): Long {
+        var id: Long? = null
+        var directory: File? = null
+        var source: DocumentSession? = null
+        var generation = 0L
+        try {
+            synchronized(this) {
+                initialize(context)
+                check(hasRoom()) { "Queue full" }
+                id = ids.incrementAndGet()
+                directory = File(root(), id.toString()).apply { check(mkdir()) }
+                allocations[id!!] = 0
+                intakes.add(id!!)
+                generation = cancelVersion
+            }
+            val ownedId = id!!
+            val ownedDirectory = directory!!
+            val file = File(ownedDirectory, "source.bin")
+            val bytes = SystemSpoolReader.copy(descriptor, file,
+                { synchronized(this) { reserve(ownedId, it) } },
+                { cancelled() || cancelGeneration() != generation })
+            source = DocumentSession(file, DocumentInspector.inspectPdf(file, bytes))
+            val plan = request.plan(source!!.overview.pageCount)
+            val metadata = request.diagnostic() + mapOf("receivedPdfPages" to source!!.overview.pageCount,
+                "rangeMapping" to request.selection(source!!.overview.pageCount).mode,
+                "spoolPageNumbers" to plan.pageIndices.map { it + 1 })
+            synchronized(this) {
+                if (cancelled() || generation != cancelVersion) throw CancellationException()
+                queue.add(QueueRecord(ownedId, "SYSTEM_PDF", plan.outputPageOrder.size, ready = false))
+                sources[ownedId] = Work(source!!, plan, deviceKey, ownedDirectory, metadata)
+                persist()
+                intakes.remove(ownedId)
+            }
+            return ownedId
+        } catch (error: Throwable) {
+            synchronized(this) {
+                source?.close()
+                id?.let { value ->
+                    intakes.remove(value)
+                    sources.remove(value)
+                    if (directory?.deleteRecursively() == true) allocations.remove(value)
+                    if (queue.snapshot().any { it.id == value && !it.phase.terminal }) {
+                        queue.update(value, QueuePhase.ERROR, failure = "SYSTEM_INTAKE_FAILED")
+                        runCatching { persist() }
+                    }
+                }
+            }
+            throw error
+        } finally { runCatching { descriptor.close() } }
+    }
     private fun reserve(id: Long, extra: Long) {
         require(extra in 0..MAX_DISK_BYTES)
         val used = orphanBytes + allocations.values.sum()
@@ -123,7 +186,7 @@ internal object PrintQueueRuntime {
         }
         allocations[id] = allocations.getValue(id) + extra
     }
-    /** Publish only after the visible caller has successfully requested the foreground service. */
+    /** Publish after the foreground-service request or the durable Android PrintJob tag handoff. */
     @Synchronized fun activate(id: Long) {
         try { queue.activate(id); persist() }
         catch (error: Throwable) {
@@ -150,15 +213,19 @@ internal object PrintQueueRuntime {
             if (it.directory.deleteRecursively()) allocations.remove(id)
         }
     }
-    @Synchronized fun stopServiceJobs() {
-        queue.snapshot().filter { !it.phase.terminal }.forEach {
+    @Synchronized fun stopServiceJobs(directOnly: Boolean = false) {
+        if (!directOnly) cancelVersion++ // Also invalidate in-flight system pipes and pending intake.
+        queue.snapshot().filter { !it.phase.terminal &&
+            (!directOnly || sources[it.id]?.systemMetadata == null) }.forEach {
             queue.cancel(it.id)
             if (it.phase == QueuePhase.QUEUED) cleanup(it.id)
         }
         persist()
     }
-    @Synchronized fun serviceFailure() {
-        queue.snapshot().filter { !it.phase.terminal }.forEach {
+    @Synchronized fun serviceFailure(directOnly: Boolean = false) {
+        if (!directOnly) cancelVersion++
+        queue.snapshot().filter { !it.phase.terminal &&
+            (!directOnly || sources[it.id]?.systemMetadata == null) }.forEach {
             if (it.phase != QueuePhase.QUEUED) queue.cancel(it.id)
             queue.update(it.id, if (it.usbStarted) QueuePhase.OUTCOME_UNKNOWN else QueuePhase.ERROR,
                 failure = "SERVICE_INTERRUPTED")
@@ -173,7 +240,7 @@ internal object PrintQueueRuntime {
         return record to (sources[record.id] ?: error("No owned document source"))
     }
 
-    /** Called only from the foreground service's one serial worker. */
+    /** Called only from the shared serial PrintQueueWorker. */
     fun drain(progress: (QueueRecord) -> Unit) {
         while (true) {
             val (record, work) = take() ?: break
@@ -193,6 +260,7 @@ internal object PrintQueueRuntime {
                     "copies" to work.plan.copies, "requestedSheets" to work.plan.outputPageOrder.size,
                     "orientation" to work.plan.orientation.name, "rotation" to work.plan.contentRotationDegrees,
                     "paper" to "A4", "printerVidPid" to "04A9:2676", "automaticRetry" to false,
+                    "documentLayout" to work.plan.layout.name, "systemPrint" to work.systemMetadata,
                     "failureClass" to failure, "result" to result?.let { mapOf(
                         "outcome" to it.outcome, "stage" to it.stage, "sentPrintDataBytes" to it.sentPrintDataBytes,
                         "printerConfirmedPages" to it.printerConfirmedPages, "lastStatusFrameHex" to it.lastStatusFrameHex,
@@ -210,7 +278,8 @@ internal object PrintQueueRuntime {
                     if (cancelled(id)) throw CancellationException()
                     cache[page] = StoredCaptPage.write(File(work.directory, "page-$page.bin"),
                         produce = { accept -> work.source.forEachPrintBand(page, work.plan.orientation,
-                            work.plan.contentRotationDegrees, { cancelled(id) }, accept) },
+                            work.plan.contentRotationDegrees, { cancelled(id) }, accept,
+                            preservePdfLayout = work.plan.layout == DocumentLayout.ANDROID_PDF) },
                         encode = { pixels, stride, lines, last -> HiscoaNative.encodeBand(pixels, stride, lines, last) },
                         cancelled = { cancelled(id) }, reserve = { synchronized(this) { reserve(id, it) } })
                 }

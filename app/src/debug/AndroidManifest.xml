@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <instrumentation android:name="com.cryonum.captusbprint.StageCRasterSmoke"
         android:targetPackage="${applicationId}" android:label="Offline Stage C renderer checks" />
+    <instrumentation android:name="com.cryonum.captusbprint.StageDPrintSmoke"
+        android:targetPackage="${applicationId}" android:label="Offline system PDF and PrintService checks" />
 </manifest>

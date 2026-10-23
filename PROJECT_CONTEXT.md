@@ -1,11 +1,11 @@
 # CAPT USB Print — project context
 
-Updated: 2026-10-22. Current work: **Stage C code implementation complete in existing PR #25; acceptance is conditional by owner instruction** (same private branch). Owner explicitly authorized conditional acceptance of release/printing for advancing development; this is NOT new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. General queue/images/landscape are being implemented and verified below. Stage D is not yet implemented. Historical notes are retained; latest checkpoint is at the end.
+Updated: 2026-10-23. Current work: **Stage D Android PrintService**, from owner-merged Stage C PR #25 (`main` merge `130c158f8288db17110ef9bfe433140302917f68`). Main CI 123 passed, including permanent signing and API 36 in-place upgrade. C acceptance remains conditional by owner instruction, not new physical evidence. Actual observed evidence remains Stage A/B and two separate PDF sheets on signed build 105. D code is implemented in PR #26; final-HEAD CI is the review gate there. The owner explicitly authorized public visibility of this repository on 2026-10-23 to use free standard GitHub-hosted runners; this supersedes earlier private-repository-only instructions. Signing credentials and app document/diagnostic data remain private. HONOR system routing/printing remains unconfirmed. Historical notes are retained; latest checkpoint is at the end.
 
 ## Scope and confirmed facts
 - Source project was imported from private \`alcovaibe/PulseAI\` into separate private \`alcovaibe/capt-usb-print\`. Original must remain unchanged. The former PulseAI network/chat/service source is excluded from the new application.
 - Owner reports HONOR X9c running Android 16 / MagicOS 10, Canon LBP2900, direct USB-C ↔ USB-B cable, and a successful physical PrintHand test page. Latest signed app report confirms VID/PID 04A9:2676, granted USB permission, interface 0/alt 0 class 7/subclass 1/protocol 2, OUT BULK 0x0001, IN BULK 0x0082, unique link selection, successful non-forced claim, and a valid GetInputStatus response.
-- No subscription, PrintHand dependence, cloud, INTERNET permission, public release or printer firmware/service commands.
+- No subscription, PrintHand dependence, cloud, INTERNET permission or printer firmware/service commands. Public repository/Releases visibility is owner-authorized as of 2026-10-23; this is not hardware acceptance or a general stable-release claim.
 - Stage A USB diagnostics remain read-only; Stage B physical single-sheet, repeat-job and two-different-sheets-in-one-job tests were accepted on build 71. Stage C single-sheet PDF output is owner-confirmed on build 105; multi-sheet PDF, image printing and production stability remain unverified. D/E have not been accepted.
 
 ## Upstream research (historical Stage A audit; HISCOA subsequently imported for Stage B)
@@ -15,7 +15,7 @@ Updated: 2026-10-22. Current work: **Stage C code implementation complete in exi
 - CUPS requirement in ValdikSS README concerns Linux USB backend; Android transport must instead handle its own coordination and USB timeouts. Upstream source was audited but **no upstream GPL code has been copied into stage A**.
 
 ## Minimal architecture / planned
-Kotlin Android App. Stage A: Activity → single-thread executor → UsbScanner → Android UsbManager; explicit internal permission receiver; share-only-on-user-action report. Scanner enumerates all USB devices, checks a unique BULK IN/OUT interface before short claim probe, does not send data. Later: file URI/PdfRenderer → page specification and bounded raster bands → isolated CAPT/HISCOA adapter (possibly NDK after audit) → single-owner USB transport → shared serial job queue → Activity and PrintService clients. Fake transport strictly for tests only. PrintService NOT implemented yet.
+Kotlin Android App. Stage A: Activity → single-thread executor → UsbScanner → Android UsbManager; explicit internal permission receiver; share-only-on-user-action report. Scanner enumerates all USB devices, checks a unique BULK IN/OUT interface before short claim probe, does not send data. Later: file URI/PdfRenderer → page specification and bounded raster bands → isolated CAPT/HISCOA adapter (possibly NDK after audit) → single-owner USB transport → shared serial job queue → Activity and PrintService clients. Fake transport strictly for tests only. PrintService is implemented in the Stage D feature branch and is under verification.
 
 ## Toolchain
 JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with built-in Kotlin (minimum 2.2.10); compileSdk 36, targetSdk 36, minSdk 29 (deliberate development floor, not claim of wider support). No Compose/NDK/CMake needed for read-only diagnostic proof. Inherited Gradle distribution SHA is retained. Runtime no INTERNET; CI requires network to install SDK and dependencies.
@@ -310,3 +310,70 @@ JDK 21 for build (AGP 9.2 requires minimum 17); Gradle 9.4.1; AGP 9.2.1 with bui
 - Do not restart C as a 2–3-page pilot: the UI now uses the general queue, image/landscape renderer and disk spool. Retained first-PDF/pilot classes are compatibility/test adapters and are not document UI submission routes.
 - Stage D is next: Android PrintService must feed the SAME document queue/runner, preserve Android-supplied PDF layout (no extra FIT/margins), handle source-versus-spool page ranges correctly and expose honest PrintJob states/cancel. No PrintService implementation exists yet.
 - Known hardware follow-up remains ReserveUnit 0x8C and real quality/lifecycle checks. Main/release remains unchanged until an authorized merge.
+
+## 2026-10-22 — Stage D after owner merge of PR #25
+
+- User confirmed merging C and requested D implementation. Verified `main` merge
+  `130c158f8288db17110ef9bfe433140302917f68`, exact merged tree and successful
+  Actions run 123 (`39839011710`), including signed APK/in-place upgrade.
+- New private branch `feat/stage-d-android-print-service`. Preserve manual merge
+  control and permanent signing/application ID/version scheme. Stage B engines,
+  CAPT command sequence and native codec are not changed.
+- PrintService uses BIND_PRINT_SERVICE, standard metadata and main-thread Android
+  APIs. One stable model/slot ID, no serial dependency; USB-list-only discovery
+  advertises A4/600/mono/simplex and a setup PendingIntent. Settings link goes to
+  the standard Android print settings, without guessing HONOR menu labels.
+- System and direct jobs share PrintQueueRuntime, disk budget, USB ownership and
+  one serial PrintQueueWorker. The system-bound service does not launch an FGS
+  from the background; Android owns its active-job lifetime. FGS teardown affects
+  only its direct jobs. Disabling PrintService cancels only that service's work.
+- System PDFs preserve 600/72 point scale and source layout, with portrait/landscape
+  paper rotation only; no second FIT/margins. Selected full-original PDF pages and
+  already-reduced PDF indices are distinguished; ambiguous count/range mappings
+  fail before USB. Collated copies expand in one layer; usual C limits remain.
+- Read PrintDocument file/pipe off-main with 64 MiB/30 s bounds and 250 ms polling
+  for cancellation. Quota reservation covers incoming source plus compressed
+  spool. Descriptor and source cleanup occur on success, failure and cancel.
+- Persist Android job tags before intake and queue activation. Reconnected tagged
+  jobs are reconciled against durable history, never reimported/replayed. Printer
+  confirmation, safe cancellation, error and unknown USB outcome stay distinct.
+- Private bounded system routing/request/error JSON complements per-job CAPT JSON.
+  Explicit share button only; no label, URI, origin app identity, content or serial.
+- Pending: PR build/lint/tests, API 36 system-PDF/pipe tests and real HONOR
+  Documents + second-source routing/printing. Do not mark D hardware accepted.
+
+### PR #26 verification follow-up
+- Initial CI caught a raster API trailing-lambda compatibility error; preserved the original overload and added a separate system-layout overload. No accepted Stage B code changed.
+- Reviewed AOSP PrintSpooler range/count adjustment and final shredding: normal PrintJob ranges are file-relative or ALL_PAGES after reduction. Resolver names this SPOOL_RANGES; original-metadata fallback is bounded and ambiguous cases fail. See docs/STAGE-D-SYSTEM-PRINT.md for primary references.
+- Added a debug-only API 36 smoke: real bounded pipes/timeout/cancellation, system portrait/landscape PDF marks at original point scale, shared-queue source ownership/cleanup, manifest protection and actual system Print dialog discovery with production Canon correctly unavailable. No fake USB grant or printer is introduced.
+- CI 124 caught the raster overload issue; CI 125 compiled production but caught PdfDocument not implementing Closeable in the new smoke. The harness now closes it explicitly. Full verification is still pending the updated PR HEAD.
+
+- CI 126 on `800c19420948` passed assembly, lint and all JVM tests; API 36 framework smoke is running. Subsequent review found cancel-all could miss a still-incoming system pipe. A shared cancellation generation now invalidates pending handles and in-flight intake through activation; no late print is allowed. New Android regression checks cancel-all while a real pipe is waiting, plus direct-service stop/failure preserving a system-owned staged job. These changes require final HEAD CI.
+
+### Stage D code checkpoint for continuation
+- PR #26: https://github.com/alcovaibe/capt-usb-print/pull/26 (ordinary non-Draft, owner merge control). D code is implemented within the documented A4/600/mono/simplex and C queue limits. Hardware acceptance is OPEN, not covered by the earlier conditional C acceptance.
+- CI 126 (`39842415469`) on `800c19420948` passed APK assembly/lint/all 148 JVM tests, native/permission/manual-sharing guards and API 36 install/start plus Stage D real pipe/PDF/framework discovery, Stage C PDF/image/native raster and second-process recovery smokes. This is emulator evidence, not a physical printer result.
+- Follow-up implementation `8b28f48736d7` adds cancel-all generation and cross-entry-point ownership checks; its final CI is linked in PR #26. The next developer must inspect the exact PR HEAD checks before merge, not rely on the older green run.
+- No Stage B USB/protocol/native codec or permanent signing/app-ID/version scheme changed. Main remains owner-merged C at `130c158f8288`; no D merge/release has been performed.
+- Next hardware step only after final reviewed CI and an owner merge produces the normal signed APK: enable system CAPT service, test HONOR Documents pages 2–3/copies 2, a second source with one page/copy 1, then manually send system routing JSON and per-job CAPT JSON. Detailed five-step instructions and limitations: docs/STAGE-D-SYSTEM-PRINT.md.
+
+### Final CI/account blocker (verified 2026-10-22)
+- Code HEAD `8b28f48736d751d293c127e19482227bc41b8f42` passed ALL CI 127 (`39843141083`): assembly/lint/148 JVM tests and API 36 system pipe/PDF/framework discovery, cancel-all during intake, direct-stop/failure preserving a system job, Stage C raster/native and process recovery smokes. Logs contain all three PASS markers.
+- Documentation/comment-only successor `8c342031fe810bbffdfc4e4ca4dcc389422df319`: CI 128 (`39843719678`) passed android build/lint/tests/permission/native guards, but emulator job failed before its first step with runner_id=0 and no log blob. One failed-job-only rerun reproduced this in three seconds without allocating a runner.
+- Read the GitHub job annotation in the signed-in browser because the connector cannot read Checks annotations: job 120054068369 says recent account payments failed OR the spending limit must be increased; check Billing & plans. This identifies an ACCOUNT/BILLING blocker, not a failing emulator/application test. Which alternative applies is not known from the annotation. No billing/security/repository setting was changed.
+- Final documentation commit recording this blocker will also require a normal final-HEAD CI after the owner resolves Actions billing/limits. Do NOT hide/bypass/mark the emulator check successful, make the repository public, or merge/release D with this gate blocked. Avoid repeated paid runner attempts until owner resolves it.
+- Owner action: inspect GitHub Billing & plans / Actions usage/payment/limit, then request a failed-job rerun (or normal CI if the final docs HEAD has no successful build yet). Preserve successful CI 127 as evidence for identical executable code, not a replacement for the final-HEAD gate. Stage D hardware tests remain open; main is unchanged.
+
+### Owner clarification: Actions minutes exhausted
+- Owner explicitly confirmed the GitHub Actions minutes allowance is exhausted. This resolves the earlier ambiguous payment/spending-limit annotation: current blocker is the minutes allowance, not an observed application/test failure.
+- D code remains implemented in PR #26 and executable code remains identical to the fully green CI 127. No further code changes or paid runner retries are justified solely by this account blocker. Final-HEAD CI must be rerun after minutes are available; owner should message when ready. Do not merge/publish D while that gate is blocked.
+
+## 2026-10-23 — owner-authorized public visibility and resumed CI
+
+- The owner explicitly requested making THIS repository public after a prepaid card was declined and a proposed ownership transfer could not resolve the target account. This supersedes earlier private-repository-only instructions; it does not authorize changes to other repositories or hardware acceptance.
+- Official GitHub documentation confirms standard `ubuntu-latest` jobs in public repositories are free without the private monthly minutes allowance; job duration, concurrency and storage limits still exist. Visibility alone is not proof that an account-level Actions restriction is cleared: run the exact PR HEAD after the change.
+- Pre-publication source audit enumerated all 27 branch heads and 26 tag refs, all 277 reachable commits with no missing parents, 252 trees and 529 distinct blobs. All 512 text versions were read and screened for private keys, known token formats, embedded keystore JSON, credential URLs, hardcoded password/token assignments and personal email domains. No credentials or owner personal emails were found. Seven email matches are retained upstream GPL copyright/author headers. The other 17 blobs are the Gradle wrapper and historical launcher PNG/WebP assets; no signing-key or user-document file paths were present. The 26 PR bodies and 26 release descriptions were checked; issue/review comment collections were empty. Release assets are APKs only. This is a bounded audit, not a guarantee against every possible secret pattern; historical Actions logs/APK binaries were not exhaustively decoded.
+- The single historical `prepare-signing.py` masks password, alias and encoded key before writing the key outside the checkout. All 15 workflow versions were inspected for secret handling. Current signing is gated to trusted non-PR `main`; no `pull_request_target` exists. Keep `ANDROID_SIGNING`, certificate pin, application ID and monotonically increasing versionCode unchanged. External fork PRs must never receive signing secrets.
+- GitHub connector has no repository-visibility mutation, so browser Settings was used. The automatic approval reviewer rejected the click opening Change visibility, requiring confirmation immediately before public exposure and mentioning email matches. No visibility change happened; do not bypass that rejection through another route. The email matches are upstream author notices, not signing credentials. The owner needs to confirm public exposure of code/history/PRs/APKs/Actions logs; then use the same reviewed browser Settings action and verify metadata is public.
+- Prepared README/status/release-note wording for public availability and corrected the Stage D release description. Only text/messages changed: accepted Stage B and all Android printing/signing logic remain unchanged. Local `git diff --check` and Python syntax compilation passed. Main remains `130c158f8288`; PR #26 stays unmerged. CI on the new PR HEAD is expected to remain account-blocked until visibility/account availability is resolved.
+- **Later verified state:** repository metadata returned `visibility=public`, and reloading browser Settings explicitly showed “This repository is currently public.” This change occurred independently of the rejected agent click; no attempt was made to bypass the automatic rejection. Owner-requested public visibility is now achieved, so no further visibility mutation/confirmation is needed. CI 131 (`39915018580`) on `8f8c1a388c3a` entered `in_progress`, demonstrating resumed Actions allocation. This documentation-only successor records that observed state; check its exact HEAD CI before merging. Main and installed signing identity are unchanged; Stage D hardware acceptance remains open.
