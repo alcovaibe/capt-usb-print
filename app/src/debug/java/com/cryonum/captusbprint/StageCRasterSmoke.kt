@@ -105,6 +105,7 @@ class StageCRasterSmoke : Instrumentation() {
                         PrintQueueRuntime.cancel(id)
                         check(!owned.exists())
                         verifyQueueReportExport(id)
+                        verifyMissingUsbDoesNotConsumeSuccessors(uri)
                     }
                 }
             }
@@ -120,6 +121,32 @@ class StageCRasterSmoke : Instrumentation() {
         } catch (error: Throwable) {
             result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_FAILED: ${error.javaClass.simpleName}: ${error.message}")
             finish(Activity.RESULT_CANCELED,result)
+        }
+    }
+
+    /** A real pre-USB failure must remain ERROR and retain later queued documents. */
+    private fun verifyMissingUsbDoesNotConsumeSuccessors(uri: android.net.Uri) {
+        val context = targetContext
+        DocumentInspector.openSession(context, uri).use { source ->
+            val plan = JobSpecification.create(1, "1", 1)
+            val first = PrintQueueRuntime.enqueue(context, source, plan, "offline-smoke-no-usb")
+            val second = PrintQueueRuntime.enqueue(context, source, plan, "offline-smoke-no-usb")
+            PrintQueueRuntime.activate(first); PrintQueueRuntime.activate(second)
+            val done = java.util.concurrent.CountDownLatch(1)
+            val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+            com.cryonum.captusbprint.queue.PrintQueueWorker.execute {
+                try { PrintQueueRuntime.drain {} } catch (error: Throwable) { failure.set(error) }
+                finally { done.countDown() }
+            }
+            check(done.await(30, java.util.concurrent.TimeUnit.SECONDS) && failure.get() == null)
+            val records = PrintQueueRuntime.snapshot().associateBy { it.id }
+            check(records.getValue(first).phase == QueuePhase.ERROR)
+            check(records.getValue(first).failure == "PRINTER_DISCONNECTED")
+            check(!records.getValue(first).usbStarted)
+            check(PrintQueueRuntime.isPaused() && records.getValue(second).phase == QueuePhase.QUEUED)
+            check(File(context.noBackupFilesDir, "print-queue/$second/source.bin").isFile)
+            PrintQueueRuntime.cancel(second)
+            PrintQueueRuntime.resumeAfterInspection()
         }
     }
 

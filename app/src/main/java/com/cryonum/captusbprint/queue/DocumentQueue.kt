@@ -76,6 +76,7 @@ internal class DocumentQueue {
     @Synchronized fun resumeAfterInspection() {
         check(active == null && records.none { it.phase == QueuePhase.WAITING_PAPER }); paused = false
     }
+    @Synchronized fun pauseForPrinter() { paused = true }
     @Synchronized fun resumePaper(id: Long) {
         check(active == null)
         val at = records.indexOfFirst { it.id == id }

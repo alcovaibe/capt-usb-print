@@ -340,7 +340,10 @@ internal object PrintQueueRuntime {
     @Synchronized private fun cancelled(id: Long) = queue.snapshot().firstOrNull { it.id == id }?.let { it.cancelRequested || it.phase == QueuePhase.CANCELLED } ?: true
     @Synchronized private fun change(id: Long, phase: QueuePhase, confirmed: Int? = null,
         usbStarted: Boolean? = null, failure: String? = null) {
-        queue.update(id, phase, confirmed, usbStarted, failure); persist()
+        queue.update(id, phase, confirmed, usbStarted, failure)
+        if (phase == QueuePhase.ERROR && failure in setOf("PRINTER_DISCONNECTED", "USB_PERMISSION", "USB_BUSY", "PRINTER_CLEAR_REQUIRED"))
+            queue.pauseForPrinter()
+        persist()
     }
     @Synchronized private fun cleanup(id: Long) {
         sources.remove(id)?.let {
