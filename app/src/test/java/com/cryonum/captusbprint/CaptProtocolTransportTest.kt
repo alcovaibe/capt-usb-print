@@ -155,4 +155,21 @@ class CaptProtocolTransportTest {
         assertFalse(DiagnosticJson.stringify(snapshot).contains("SECRET_RASTER"))
         assertFalse(events(trace).any { it["direction"] == "OUT" && it.containsKey("rawHex") })
     }
+    @Test fun directVideoWriteHasItsOwnExchangeAndScalarJobFlagsAreVisible() {
+        val trace = CaptProtocolTrace()
+        trace.begin(P.GET_BASIC_STATUS)
+        trace.reply(P.GET_BASIC_STATUS, short)
+        trace.beginWrite(0xc0a0, 100)
+        trace.transfer("OUT", 0xc0a0, 0, 100, 100)
+        val records = events(trace)
+        assertEquals(1L, records.first()["exchange"])
+        assertEquals(2L, records.last()["exchange"])
+        trace.begin(P.SET_JOB_INFO2)
+        trace.reply(P.SET_JOB_INFO2, CaptFrame.encode(P.SET_JOB_INFO2, byteArrayOf(0, 0)),
+            P.jobInfo(42, P.END_FLAG))
+        assertEquals(6, events(trace).last()["jobFlag"])
+        assertEquals(42, events(trace).last()["jobId"])
+        assertFalse(events(trace).last().containsKey("requestPayload"))
+    }
+
 }

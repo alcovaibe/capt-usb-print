@@ -1,7 +1,6 @@
 package com.cryonum.captusbprint.core
 
 import java.util.ArrayDeque
-import java.util.Locale
 import java.util.UUID
 
 /** Private, bounded wire evidence. Never passed to UI progress or Logcat.
@@ -16,8 +15,18 @@ class CaptProtocolTrace(
         const val HEAD_EVENTS = 24
         const val TAIL_EVENTS = 72
         const val MAX_RAW_BYTES = 1024
-        fun hex(bytes: ByteArray): String =
-            bytes.joinToString(" ") { "%02X".format(Locale.ROOT, it.toInt() and 255) }
+        fun hex(bytes: ByteArray): String {
+            if (bytes.isEmpty()) return ""
+            val digits = "0123456789ABCDEF"
+            val text = CharArray(bytes.size * 3 - 1)
+            bytes.forEachIndexed { index, value ->
+                val byte = value.toInt() and 255
+                text[index * 3] = digits[byte ushr 4]
+                text[index * 3 + 1] = digits[byte and 15]
+                if (index < bytes.lastIndex) text[index * 3 + 2] = ' '
+            }
+            return String(text)
+        }
     }
     private val id = UUID.randomUUID().toString()
     private val head = ArrayList<Map<String, Any?>>()
@@ -35,7 +44,7 @@ class CaptProtocolTrace(
     fun event(name: String, values: Map<String, Any?> = emptyMap()) {
         val item = linkedMapOf<String, Any?>(
             "index" to ++sequence, "exchange" to exchange,
-            "elapsedRealtimeMs" to now(), "phase" to phase(), "event" to name
+            "monotonicMs" to now(), "phase" to phase(), "event" to name
         ).apply { putAll(values) }
         if (head.size < HEAD_EVENTS) head += item
         else {
@@ -47,6 +56,11 @@ class CaptProtocolTrace(
     fun begin(command: Int) {
         exchange++
         event("QUERY", mapOf("command" to command))
+    }
+
+    fun beginWrite(command: Int, bytes: Int) {
+        exchange++
+        event("SEND_FRAME", mapOf("command" to command, "frameBytes" to bytes))
     }
 
     fun transfer(direction: String, command: Int, offset: Int, requested: Int, actual: Int,
@@ -65,8 +79,17 @@ class CaptProtocolTrace(
 
     /** Record the actual reply BEFORE validation so a rejected ACK remains available. */
     fun reply(command: Int, raw: ByteArray, payload: ByteArray = byteArrayOf()) {
-        event("REPLY", mapOf("command" to command, "rawFrameHex" to hex(raw.take(MAX_RAW_BYTES).toByteArray()),
-            "totalBytes" to raw.size, "rawTruncated" to (raw.size > MAX_RAW_BYTES)))
+        event("REPLY", linkedMapOf<String, Any?>("command" to command,
+            "rawFrameHex" to hex(raw.take(MAX_RAW_BYTES).toByteArray()),
+            "totalBytes" to raw.size, "rawTruncated" to (raw.size > MAX_RAW_BYTES)).apply {
+            // Scalar protocol arguments only; never JobInfo strings or OUT payload.
+            if (command == CaptJobProtocol.SET_JOB_INFO2 && payload.size >= 20) {
+                put("jobFlag", payload[16].toInt() and 255)
+                put("jobId", (payload[18].toInt() and 255) or ((payload[19].toInt() and 255) shl 8))
+            }
+            if ((command == CaptJobProtocol.START_PRINT || command == CaptJobProtocol.RELEASE_UNIT) && payload.size == 2)
+                put("pageOrJobId", (payload[0].toInt() and 255) or ((payload[1].toInt() and 255) shl 8))
+        })
         try { CaptCommandAcks.requireAccepted(command, raw) }
         catch (failure: CaptCommandAckFailure) {
             event("COMMAND_REJECTED", mapOf("command" to command, "resultByte" to failure.resultByte))

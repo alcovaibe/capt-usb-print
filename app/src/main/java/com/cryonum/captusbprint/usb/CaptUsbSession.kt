@@ -33,6 +33,7 @@ internal class CaptUsbSession private constructor(
     private val protocol: CaptProtocolTrace
 ) : AutoCloseable {
     private var writingCommand = 0
+    private var queryInProgress = false
     private val channel = object : BulkChannel {
         override fun write(data: ByteArray, offset: Int, length: Int, timeoutMillis: Int): Int {
             val count = connection.bulkTransfer(outEp, data, offset, length, timeoutMillis)
@@ -53,6 +54,7 @@ internal class CaptUsbSession private constructor(
         check(!cancelled()) { "Cancelled before CAPT frame" }
         require(frame.size in 4..65535)
         writingCommand = (frame[0].toInt() and 255) or ((frame[1].toInt() and 255) shl 8)
+        if (!queryInProgress) protocol.beginWrite(writingCommand, frame.size)
         try { writer.writeExactly(frame, timeoutMillis = 15000, perCallTimeoutMillis = 2000) }
         catch (error: Exception) {
             protocol.event("WRITE_FAILED", mapOf("command" to writingCommand,
@@ -65,8 +67,11 @@ internal class CaptUsbSession private constructor(
     /** Query sends one command and reads one exact bounded reply, no transparent retry. */
     fun query(command: Int, body: ByteArray = byteArrayOf()): ByteArray {
         protocol.begin(command)
-        sendOnly(command, body)
-        return CaptReplyReader(channel, protocol, { SystemClock.elapsedRealtime() }, cancelled).read(command)
+        queryInProgress = true
+        try {
+            sendOnly(command, body)
+            return CaptReplyReader(channel, protocol, { SystemClock.elapsedRealtime() }, cancelled).read(command)
+        } finally { queryInProgress = false }
     }
 
     override fun close() {
