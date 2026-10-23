@@ -136,7 +136,7 @@ jobs:
         run: |
           echo "enabled=$PRESENT" >> "$GITHUB_OUTPUT"
           if [ "$PRESENT" != 'true' ]; then
-            echo "::notice::Signed release skipped until owner installs ANDROID_SIGNING secret in private repository Settings."
+            echo "::notice::Signed release skipped until owner installs ANDROID_SIGNING secret in repository Settings."
           fi
 
   signed-release:
