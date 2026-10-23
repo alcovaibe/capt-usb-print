@@ -375,7 +375,11 @@ class MainActivity : Activity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 lastSnapshot?.let { render(it) }
                 val message = if (saved) result.summary else getString(R.string.printer_diagnostics_save_failed)
-                currentReport += "\n" + message + "\n"
+                val details = (result.report["steps"] as? List<*>)?.mapNotNull { it as? Map<*, *> }
+                    ?.joinToString("\n") { step ->
+                        "${step["action"]}: ${step["reportText"] ?: step["summary"] ?: step["reason"]}"
+                    }.orEmpty()
+                currentReport += "\n" + message + "\n" + details + "\n"
                 reportView.text = currentReport
                 status.text = message
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()

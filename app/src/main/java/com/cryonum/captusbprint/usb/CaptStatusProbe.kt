@@ -391,7 +391,7 @@ object CaptStatusProbe {
         val firstCount = try {
             connection.bulkTransfer(endpoint, frame, 0, CAPT_HEADER_BYTES, USB_TIMEOUT_MS)
         } catch (_: Exception) { fail("Ошибка чтения заголовка ответа CAPT.", "read_header") }
-        received = firstCount.coerceIn(0, frame.size)
+        received = firstCount.coerceIn(0, CAPT_HEADER_BYTES)
         if (firstCount != CAPT_HEADER_BYTES) fail(
             "Заголовок CAPT получен не полностью; " + headerDetails(frame, received),
             "read_header", mapOf("transferReturnCode" to firstCount))

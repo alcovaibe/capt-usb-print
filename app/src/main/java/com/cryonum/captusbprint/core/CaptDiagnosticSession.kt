@@ -87,9 +87,13 @@ class CaptDiagnosticSession(
             stopped != null || failed -> "incomplete"
             else -> "completed"
         }
+        val failureReason = (connectionError?.get("message") as? String)
+            ?: steps.firstOrNull { it["outcome"] == "failed" }?.get("summary") as? String
         val summary = when {
             outcome == "cancelled" -> "Диагностика отменена. Собранные результаты сохранены в JSON."
-            outcome == "incomplete" -> "Диагностика выполнена не полностью. Причины и полученные ответы сохранены в JSON."
+            outcome == "incomplete" -> "Диагностика выполнена не полностью" +
+                (failureReason?.let { ": " + it.take(300).trimEnd('.') } ?: "") +
+                ". Полученные ответы и причины пропусков сохранены в JSON."
             assessment == "STATUS_CONFLICT" -> "Ответы принтера противоречат друг другу. Готовность не подтверждена."
             assessment == "ERROR_OR_NOT_READY" -> "Принтер сообщает ошибку или неготовность. Подробности сохранены в JSON."
             assessment == "BUSY" -> "Принтер сообщает занятость. Подробности сохранены в JSON."
