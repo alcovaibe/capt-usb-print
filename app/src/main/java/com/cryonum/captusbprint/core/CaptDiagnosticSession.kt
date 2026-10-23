@@ -170,19 +170,22 @@ class CaptDiagnosticSession(
         val communication = number(e, "engineCommunicationByte") ?: return "UNKNOWN"
         val paper = number(e, "paperAvailabilityByte") ?: return "UNKNOWN"
         val auxiliary = number(e, "auxiliaryByte") ?: return "UNKNOWN"
-        // Same blocking basic bits as document preflight, plus OFFLINE and unknown bits.
-        val basicBlocked = PdfBatchPrinterReadiness.rejection(basic) != null || basic and 0x30 != 0
-        val extendedBlocked = extended and 0xbe != 0 || engine != 0 || communication != 0 || paper != 0x80
+        // Preserve unsupported values without assigning them a hardware-error meaning.
+        if ((basic or extended) and 0x20 != 0 || engine and 0x610e.inv() != 0 ||
+            communication and 0x80 != 0 || auxiliary and 0x79 != 0 ||
+            (number(b, "secondaryByte") ?: 0) and 0xfc != 0 ||
+            (number(e, "secondaryByte") ?: 0) and 0xfc != 0 || paper !in setOf(0, 0x80)) return "UNKNOWN"
+        // Same blocking basic bits as document preflight, plus OFFLINE.
+        val basicBlocked = PdfBatchPrinterReadiness.rejection(basic) != null || basic and 0x10 != 0
+        val extendedBlocked = extended and 0x9e != 0 || engine != 0 || communication != 0 || paper != 0x80
         if (basicBlocked != extendedBlocked && !inputNeeded && auxiliary and 6 == 0) return "STATUS_CONFLICT"
-        if ((basic or extended) and 0xb2 != 0 || engine != 0 || communication != 0 || paper != 0x80)
+        if ((basic or extended) and 0x92 != 0 || engine != 0 || communication != 0 || paper != 0x80)
             return "ERROR_OR_NOT_READY"
         if (inputNeeded) return "INPUT_STATUS_PENDING"
         if ((basic or extended) and 0x0c != 0 || auxiliary and 6 != 0) return "BUSY"
         val counters = listOf("pageDecoding", "pagePrinting", "pageOut", "pageCompleted").map { number(e, it) }
         if (counters.any { it == null }) return "UNKNOWN"
         if (counters.distinct().size != 1 || number(e, "pageReceived")?.let { it != counters[0] } == true) return "BUSY"
-        if (auxiliary and 0x79 != 0 || (number(b, "secondaryByte") ?: 0) and 0xfc != 0 ||
-            (number(e, "secondaryByte") ?: 0) and 0xfc != 0) return "UNKNOWN"
         return "NO_KNOWN_BLOCKERS"
     }
 

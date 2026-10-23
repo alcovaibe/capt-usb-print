@@ -103,6 +103,11 @@ class CaptDiagnosticSessionTest {
     @Test fun shortExtendedStatusDoesNotClaimReadiness() {
         assertEquals("UNKNOWN", Fixture().run { reply(it, counters = false) }.report["assessment"])
     }
+    @Test fun unsupportedStatusBitsRemainUnknownRatherThanInventingAnError() {
+        val result = Fixture().run { reply(it, basic = 0x61, extended = 0x61) }
+        assertEquals("UNKNOWN", result.report["assessment"])
+        assertFalse(result.summary.contains("ошибку"))
+    }
     @Test fun ownershipFailureProducesWholeSessionWithSkippedCommands() {
         val session = CaptDiagnosticSession("blocked", { "time" }, { 0 }, {}, { false }, emptyMap())
         val result = session.collect { throw CaptDiagnosticException("busy", stage = "ownership") }

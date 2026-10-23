@@ -21,6 +21,8 @@ internal object PrinterDiagnostics {
     fun run(context: Context, row: UsbRow, cancelled: () -> Boolean,
         progress: (String) -> Unit): CaptDiagnosticResult {
         val facts = linkedMapOf<String, Any?>(
+            "app" to mapOf("versionName" to BuildConfig.VERSION_NAME,
+                "versionCode" to BuildConfig.VERSION_CODE, "sourceRevision" to BuildConfig.SOURCE_REVISION),
             "android" to linkedMapOf("apiLevel" to Build.VERSION.SDK_INT,
                 "release" to Build.VERSION.RELEASE, "manufacturer" to Build.MANUFACTURER,
                 "model" to Build.MODEL, "osBuild" to Build.DISPLAY,

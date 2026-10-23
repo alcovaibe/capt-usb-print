@@ -149,6 +149,7 @@ class StageCRasterSmoke : Instrumentation() {
             check(restored["sessionId"] == result.report["sessionId"])
             check((restored["steps"] as List<*>).size == 4)
             check((restored["context"] as Map<*, *>).containsKey("android"))
+            check(((restored["context"] as Map<*, *>)["app"] as Map<*, *>)["sourceRevision"] == BuildConfig.SOURCE_REVISION)
             check(JSONObject(file.readText()).getJSONObject("historyPolicy").getBoolean("wholeSessionEviction"))
             // Bound both bytes and event count without cutting the steps from retained sessions.
             val large = (1..40).map { n -> mapOf("eventId" to "large-$n",
