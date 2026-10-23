@@ -1,0 +1,7 @@
+[versions]
+core = "1.19.1"
+junit = "4.13.2"
+
+[libraries]
+androidx-core = { group = "androidx.core", name = "core", version.ref = "core" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
