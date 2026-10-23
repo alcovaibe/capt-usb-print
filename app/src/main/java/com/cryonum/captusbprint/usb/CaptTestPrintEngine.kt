@@ -5,7 +5,8 @@ import com.cryonum.captusbprint.core.CaptProtocolTrace
 import com.cryonum.captusbprint.core.CaptCommandAckFailure
 import com.cryonum.captusbprint.core.CaptReplyReadFailure
 import android.os.SystemClock
-import com.cryonum.captusbprint.core.CaptBasicStatusParser
+import com.cryonum.captusbprint.core.CaptDocumentPreflight
+import com.cryonum.captusbprint.core.CaptPreflightFailure
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
 import com.cryonum.captusbprint.core.CaptJobProtocol
@@ -135,17 +136,9 @@ object CaptTestPrintEngine {
                 val chunkSize = info.safeChunkBytes ?: error("No safe chunk limit")
                 check(chunkSize in 64..0xFF00) { "Unusable CAPT chunk size" }
                 note("GetPrinterInfo: Blk=${info.blockSize}; Buf=${info.bufferSize}; chunk=$chunkSize")
-                var status = safeState()
-                check(CaptPageCounterProgress.hasNoOutstandingPage(status)) {
-                    "Printer's page stage counters disagree; refusing an outstanding page/job"
-                }
-                if ((status.secondaryByte and 0x02) != 0) {
-                    query(CaptJobProtocol.GET_INPUT_STATUS)
-                    status = safeState()
-                    check((status.secondaryByte and 0x02) == 0) {
-                        "Input status change has not cleared"
-                    }
-                }
+                var status = CaptDocumentPreflight.awaitReady(
+                    { query(it) }, ::guard, { SystemClock.elapsedRealtime() },
+                    { Thread.sleep(it) }, ::note)
                 stage = "RESERVING"
                 note("ReserveUnit")
                 sideEffectsStarted = true
@@ -153,7 +146,10 @@ object CaptTestPrintEngine {
                     query(CaptJobProtocol.RESERVE_UNIT, CaptJobProtocol.reserveRequest()))
                 protocol.reserved(jobId)
                 note("CAPT unit reserved; JobID present")
+                stage = "CONFIGURING_JOB"
                 query(CaptJobProtocol.SET_POWER_DOWN, CaptJobProtocol.powerDownSettings())
+                CaptDocumentPreflight.afterPowerDown(
+                    { query(it) }, ::guard, { SystemClock.elapsedRealtime() }, { Thread.sleep(it) }, ::note)
                 query(CaptJobProtocol.SET_JOB_INFO2,
                     CaptJobProtocol.jobInfo(jobId, CaptJobProtocol.START_FLAG))
                 // LBP2900 uses the LBP3000 job prologue. OFFLINE is expected in
@@ -248,9 +244,12 @@ object CaptTestPrintEngine {
             val outcome = if (uncertain) "unknown_after_print_command" else "failed_before_print_commands"
             note("Stopped at $stage: ${error.javaClass.simpleName}: ${error.message ?: "no details"}; no automatic resend or recovery")
             return CaptTestPrintResult(outcome,
-                if (uncertain) "Печать не подтверждена; исход неизвестен. Повтор автоматически запрещён."
+                if (stage == "CONFIGURING_JOB" || stage.startsWith("RESERVING"))
+                    "Подготовка задания остановлена; данные страницы не отправлены. Подробности сохранены в JSON."
+                else if (uncertain) "Печать не подтверждена; исход неизвестен. Повтор автоматически запрещён."
                 else "Задание не отправлено: ${error.message ?: error.javaClass.simpleName}",
                 stage, bytesSent, shaHex, pages, lastFrame, trace, failureCode = when (error) {
+                    is CaptPreflightFailure -> error.code
                     is CaptCommandAckFailure -> "CAPT_COMMAND_REJECTED"
                     is CaptReplyReadFailure -> "CAPT_TRANSPORT_INVALID"
                     else -> null
