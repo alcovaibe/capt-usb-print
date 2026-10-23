@@ -1,5 +1,5 @@
 [versions]
-core = "1.19.1"
+core = "1.16.0"
 junit = "4.13.2"
 
 [libraries]
