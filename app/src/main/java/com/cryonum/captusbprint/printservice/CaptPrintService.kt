@@ -227,8 +227,10 @@ class CaptPrintService : PrintService() {
         if (jobs.values.any { it.queueId != null }) scheduleDrain()
     }
     override fun onRequestCancelPrintJob(printJob: PrintJob) {
-        val handle = jobs[printJob.id]
-        if (handle == null) { reconcile(printJob); return }
+        val handle = jobs[printJob.id] ?: Handle(printJob, null).also {
+            it.queueId = printJob.tag?.removePrefix(QUEUE_TAG)?.toLongOrNull()
+            jobs[printJob.id] = it
+        }
         handle.cancelled.set(true)
         handle.queueId?.let { PrintQueueRuntime.cancel(it) }
         if (!handle.importing && handle.queueId == null) { printJob.cancel(); jobs.remove(printJob.id) }
