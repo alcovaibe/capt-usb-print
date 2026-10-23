@@ -2,8 +2,8 @@ package com.cryonum.captusbprint.usb
 
 import android.content.Context
 import android.os.SystemClock
-import com.cryonum.captusbprint.core.CaptBasicStatusParser
-import com.cryonum.captusbprint.core.PdfBatchPrinterReadiness
+import com.cryonum.captusbprint.core.CaptDocumentPreflight
+import com.cryonum.captusbprint.core.CaptPreflightFailure
 import com.cryonum.captusbprint.core.CaptExtendedStatus
 import com.cryonum.captusbprint.core.CaptExtendedStatusParser
 import com.cryonum.captusbprint.core.CaptJobProtocol
@@ -127,21 +127,8 @@ internal object CaptDocumentPrintEngine {
                 val chunkSize = info.safeChunkBytes ?: error("Missing printer chunk limit")
                 check(chunkSize in 64..0xFF00)
                 note("Printer Info: Blk=${info.blockSize}; Buf=${info.bufferSize}; chunk=$chunkSize")
-                var current = safeState()
-                check(CaptPageCounterProgress.hasNoOutstandingPage(current)) { "Pending page before document batch" }
-                if ((current.secondaryByte and 0x02) != 0) {
-                    query(CaptJobProtocol.GET_INPUT_STATUS)
-                    current = safeState()
-                    check((current.secondaryByte and 0x02) == 0) { "Pending input status change" }
-                }
-
-                // The previous owner's captured 0x88 BasicStatus preceded
-                // repeated ReserveUnit 0x8C failures across ALL print engines.
-                // This read-only query is an extra fail-closed gate for the
-                // unverified batch experiment, not an automatic repair.
-                val basic = CaptBasicStatusParser.parse(query(CaptJobProtocol.GET_BASIC_STATUS))
-                PdfBatchPrinterReadiness.rejection(basic.statusByte)?.let { error(it) }
-                note("Read-only GetBasicStatus preflight passed")
+                var current = CaptDocumentPreflight.awaitReady(
+                    { query(it) }, ::guard, now, pause, ::note)
                 stage = "RESERVING_ONE_JOB"
                 sideEffectsStarted = true
                 val jobId = CaptJobProtocol.parseReservedJob(
@@ -256,7 +243,8 @@ internal object CaptDocumentPrintEngine {
                 outcome,
                 if (uncertain) "Печать документа не подтверждена; возможен частичный выпуск листов. Не повторяйте задание автоматически."
                 else "Задание не отправлено: ${error.message ?: error.javaClass.simpleName}",
-                stage, bytesSent, null, confirmedPages, lastFrame, trace
+                stage, bytesSent, null, confirmedPages, lastFrame, trace,
+                failureCode = (error as? CaptPreflightFailure)?.code
             )
         }
     }

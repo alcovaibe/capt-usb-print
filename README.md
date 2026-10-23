@@ -2,7 +2,7 @@
 
 Independent offline Android CAPT prototype for the owner's HONOR X9c (Android API 36) and Canon LBP2900. No PrintHand dependency or app-side INTERNET permission. Other Android devices and printers are not claimed supported.
 
-**Verified on the owner's hardware:** Stage A USB diagnostics; Stage B A4/600-dpi test sheets, repeated separate jobs and two distinct sheets in one CAPT job (signed build 71). On signed build 105 the owner printed actual PDF pages 1 and 2 as two separate jobs after a printer power cycle. Stage C code completion is in PR #25 with owner-authorized conditional acceptance. General queue, image and landscape code are described below; intermittent ReserveUnit `0x8C` remains unresolved. Physical confirmation of the new paths and PrintService integration are separate.
+**Verified on the owner's hardware:** Stage A USB diagnostics; Stage B A4/600-dpi test sheets, repeated separate jobs and two distinct sheets in one CAPT job (signed build 71). On signed build 105 the owner printed actual PDF pages 1 and 2 as two separate jobs after a printer power cycle. Stage C PR #25 and Stage D PR #26 are merged; Stage C retains owner-authorized conditional acceptance. General queue, image and landscape code are described below; intermittent ReserveUnit `0x8C` remains unresolved. Physical confirmation of the new paths and PrintService integration are separate.
 
 ## Hardware and bounded diagnostic
 On HONOR BRP-NX1: API 36, measured 4096-byte page; Canon LBP2900 04A9:2676, interface 0 / class 7/1/2, BULK OUT 0x01 and IN 0x82, permission and guarded claim verified. Manual CAPT GetBasicStatus / GetExtendedStatus / GetInputStatus / GetPrinterInfo responses are tracked in private JSON. Device-list monitoring itself does not send CAPT commands; diagnostics exclude document content and printer serial numbers.
@@ -46,10 +46,22 @@ outcomes remain distinct. Queue history exposes a separate explicit system JSON
 share button, with no document labels, URIs, content or serials.
 
 Automated build/raster/framework checks and final-HEAD CI are tracked in
-[PR #26](https://github.com/alcovaibe/capt-usb-print/pull/26). Actual routing/printing from HONOR
-Documents and another Android print source is not yet confirmed; Stage D hardware
-acceptance remains open. No new CAPT command, reset, retry or signing change is
+[PR #26](https://github.com/alcovaibe/capt-usb-print/pull/26). Build-133 reports now confirm HONOR Documents routing, PDF intake and preparation.
+Printing stopped before ReserveUnit at BasicStatus `0x88`; no system sheet or
+second-source acceptance is confirmed. Stage D hardware acceptance remains open. No new CAPT command, reset, retry or signing change is
 introduced.
+
+### Document CAPT preflight
+
+Before reservation the shared document runner reconciles Basic/Extended status,
+reads InputStatus when either reply requests it, and polls transient states with
+a 5-second polling budget and at most 21 samples. Each USB query has its own
+finite transport timeout. No status gate is bypassed. A persistent basic/extended
+mismatch stops as `CAPT_STATUS_CONFLICT`; malformed status stops as
+`CAPT_STATUS_INVALID`. Both raw status replies are retained in the explicit per-job
+JSON, with distinct messages in queue/system printing. Only read-only status
+queries repeat. This does not claim a fix for sustained `0x88` or ReserveUnit
+`0x8C`. See [preflight investigation](docs/CAPT-PREFLIGHT-STATUS.md).
 
 ## Signed releases and upgrade compatibility
 
