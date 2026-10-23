@@ -50,6 +50,11 @@ internal class StoredCaptPage private constructor(
     companion object {
         private const val MAGIC = 0x43505431
         private const val MAX_BAND_BYTES = 620 * 64 * 2 + 64
+        fun open(file: File, compressedBytes: Int): StoredCaptPage {
+            require(compressedBytes in 1..OfflinePdfHiscoaPreparation.MAX_COMPRESSED_PAGE_BYTES)
+            check(file.isFile && file.length() <= OfflinePdfHiscoaPreparation.MAX_COMPRESSED_PAGE_BYTES + 452L)
+            return StoredCaptPage(file, compressedBytes)
+        }
         fun write(file: File, produce: ((Int, ByteArray) -> Unit) -> Unit,
                   encode: (ByteArray, Int, Int, Boolean) -> ByteArray,
                   cancelled: () -> Boolean, reserve: (Long) -> Unit): StoredCaptPage {

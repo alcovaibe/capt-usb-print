@@ -19,7 +19,7 @@ class CaptPrintService : PrintService() {
     private val jobs = LinkedHashMap<PrintJobId, Handle>()
     private var connected = false
     private var drainScheduled = false
-    private class Handle(val job: PrintJob, val request: SystemPrintRequest) {
+    private class Handle(val job: PrintJob, val request: SystemPrintRequest?) {
         val generation = PrintQueueRuntime.cancelGeneration()
         val cancelled = AtomicBoolean(false)
         var importing = false
@@ -82,7 +82,11 @@ class CaptPrintService : PrintService() {
         when (record?.phase) {
             QueuePhase.COUNTER_CONFIRMED -> { if (!job.isStarted) job.start(); job.complete() }
             QueuePhase.CANCELLED -> job.cancel()
-            else -> {
+            else -> if (record != null && !record.phase.terminal && PrintQueueRuntime.owns(record.id)) {
+                // Retained paper-out sources stay blocked; only the queue's Continue action resumes them.
+                jobs[job.id] = Handle(job, null).apply { queueId = record.id }
+                updateJobs()
+            } else {
                 if (record != null && !record.phase.terminal) PrintQueueRuntime.cancel(record.id)
                 job.fail(getString(R.string.system_interrupted))
             }
@@ -92,6 +96,7 @@ class CaptPrintService : PrintService() {
     }
 
     private fun block(handle: Handle, reason: Int) {
+        if (handle.job.isQueued) handle.job.start()
         if (handle.job.isStarted) handle.job.block(getString(reason))
         else if (handle.job.isBlocked) handle.job.setStatus(getString(reason))
     }
@@ -112,7 +117,7 @@ class CaptPrintService : PrintService() {
             val deviceKey = device.deviceName
             intake.execute {
                 val outcome = runCatching {
-                    PrintQueueRuntime.enqueueSystem(applicationContext, input, handle.request,
+                    PrintQueueRuntime.enqueueSystem(applicationContext, input, requireNotNull(handle.request),
                         deviceKey) { handle.cancelled.get() || handle.generation != PrintQueueRuntime.cancelGeneration() }
                 }
                 main.post {
@@ -182,7 +187,10 @@ class CaptPrintService : PrintService() {
             }
             val id = handle.queueId
             if (id == null) { begin(handle); return@forEach }
-            val record = records[id] ?: return@forEach
+            val record = records[id]
+            if (record == null) {
+                handle.job.cancel(); jobs.remove(handle.job.id); return@forEach
+            }
             if (record.phase.terminal) {
                 when (record.phase) {
                     QueuePhase.COUNTER_CONFIRMED -> {
@@ -199,6 +207,9 @@ class CaptPrintService : PrintService() {
                 }
                 SystemPrintDiagnostics.record(this, "JOB_" + record.phase.name, queueId = id, error = record.failure)
                 jobs.remove(handle.job.id)
+            } else if (record.phase == QueuePhase.WAITING_PAPER) {
+                handle.job.setProgress(record.confirmed.toFloat() / record.sheets)
+                block(handle, R.string.queue_waiting_paper_system)
             } else if (PrintQueueRuntime.isPaused() && record.phase == QueuePhase.QUEUED) {
                 block(handle, R.string.system_queue_paused)
             } else {
@@ -231,7 +242,10 @@ class CaptPrintService : PrintService() {
         PrintQueueRuntime.removeListener(listener)
         jobs.values.forEach { handle ->
             handle.cancelled.set(true)
-            handle.queueId?.let { runCatching { PrintQueueRuntime.cancel(it) } }
+            handle.queueId?.let { id ->
+                if (PrintQueueRuntime.snapshot().firstOrNull { it.id == id }?.phase != QueuePhase.WAITING_PAPER)
+                    runCatching { PrintQueueRuntime.cancel(id) }
+            }
         }
         jobs.clear()
         SystemPrintDiagnostics.record(this, "SERVICE_DISCONNECTED")

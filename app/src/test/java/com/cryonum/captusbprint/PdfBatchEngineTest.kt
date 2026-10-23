@@ -1,5 +1,8 @@
 package com.cryonum.captusbprint
 
+import com.cryonum.captusbprint.core.DocumentContinuation
+import com.cryonum.captusbprint.core.JobSpecification
+import com.cryonum.captusbprint.document.PreparedCaptPage
 import com.cryonum.captusbprint.core.CaptFrame
 import com.cryonum.captusbprint.core.CaptJobProtocol as P
 import com.cryonum.captusbprint.core.CaptTestPage
@@ -54,11 +57,14 @@ class PdfBatchEngineTest {
         var stalledPage = 0
         var disconnectOnPage = 0
         var noPaperOnPage = 0
+        var rejectedPaperOnPage = 0
         var rejectEnd = false
         var rejectAck: Int? = null
         var bufferSlots = 15
         var drainOnStart = false
         var onExtended: () -> Unit = {}
+        var onVideo: () -> Unit = {}
+        var deliveryAfterRelease = 0
 
         override fun query(command: Int, payload: ByteArray): ByteArray {
             commands.add(command)
@@ -85,7 +91,7 @@ class PdfBatchEngineTest {
                     powerConfigured = true
                     return CaptFrame.encode(command, byteArrayOf(powerDownResult.toByte(), 0))
                 }
-                P.DISCARD_DATA, P.CLEAR_MIS_PRINT, P.CLEAR_ERROR, P.RELEASE_UNIT -> Unit
+                P.DISCARD_DATA, P.CLEAR_MIS_PRINT, P.CLEAR_ERROR, P.RELEASE_UNIT, P.SET_LED_STATUS -> Unit
                 P.START_PRINT -> {
                     val number = payload[0].toInt() and 255
                     starts.add(number)
@@ -99,7 +105,11 @@ class PdfBatchEngineTest {
                         if (preflightFault || (setupFault && powerConfigured)) it[16] = 1
                         it[5] = if (inputPending) 0x8a.toByte() else 0x88.toByte()
                         it[8] = bufferSlots.toByte()
+                        if (commands.contains(P.RELEASE_UNIT) && deliveryAfterRelease-- > 0) it[12] = 4
                         if (descriptors > 0 && decoded == noPaperOnPage && noPaperOnPage > 0) it[14] = 0
+                        if (descriptors > 0 && decoded == rejectedPaperOnPage && rejectedPaperOnPage > 0) {
+                            it[4] = 0x16; it[13] = 0x40; it[14] = 0
+                        }
                         for (offset in listOf(18, 38)) { it[offset] = decoded.toByte(); it[offset + 1] = 0 }
                         for (offset in listOf(20, 22, 24)) { it[offset] = completed.toByte(); it[offset + 1] = 0 }
                     }
@@ -118,6 +128,7 @@ class PdfBatchEngineTest {
                 decoded = descriptors
             } else {
                 assertEquals(0xC0A0, command)
+                onVideo()
                 if (descriptors == disconnectOnPage) throw IOException("USB disconnected during frame")
             }
         }
@@ -242,7 +253,7 @@ class PdfBatchEngineTest {
         var stop = false
         val printer = Printer().apply { onExtended = { stop = true } }
         val result = run(printer, cancelled = { stop })
-        assertEquals("failed_before_print_commands", result.outcome)
+        assertEquals("cancelled", result.outcome)
         assertFalse(printer.commands.contains(P.RESERVE_UNIT))
         assertEquals(0, printer.descriptors)
         assertTrue(printer.closed)
@@ -270,16 +281,83 @@ class PdfBatchEngineTest {
         assertEquals(0, printer.descriptors)
     }
 
-    @Test fun cancellationAfterFirstConfirmationNeverSubmitsSecondPage() {
+    @Test fun cancellationAfterFirstConfirmationAbortsAndReleasesTheKnownLiveJob() {
         val printer = Printer()
         var stop = false
         val result = run(printer, cancelled = { stop }, checkpoint = { stop = true })
-        assertEquals(result.trace.joinToString("\n"), "unknown_after_print_command", result.outcome)
+        assertEquals(result.trace.joinToString("\n"), "cancelled", result.outcome)
         assertEquals(1, result.printerConfirmedPages)
         assertEquals(1, printer.descriptors)
         assertEquals(listOf(1), printer.starts)
-        assertFalse(printer.commands.contains(P.RELEASE_UNIT))
+        assertEquals(listOf(1, 4), printer.flags)
+        assertEquals(listOf(P.SET_LED_STATUS, P.SET_JOB_INFO2, P.RELEASE_UNIT, P.GET_EXTENDED_STATUS),
+            printer.commands.takeLast(4))
+        assertEquals(true, result.protocolDiagnostics["abortAcknowledged"])
+        assertEquals(true, result.protocolDiagnostics["releaseAcknowledged"])
         assertTrue(printer.closed)
+    }
+
+    @Test fun cancellationAfterLastConfirmationUsesNormalEndAndRelease() {
+        val printer = Printer(); var stop = false
+        val result = run(printer, pages = 1, cancelled = { stop }, checkpoint = { stop = true })
+        assertEquals("cancelled", result.outcome)
+        assertEquals(listOf(1, 6), printer.flags)
+        assertEquals(true, result.protocolDiagnostics["releaseAcknowledged"])
+        assertEquals(false, result.protocolDiagnostics["abortAcknowledged"])
+    }
+
+    @Test fun rejectedCancellationDoesNotPretendThePrinterIsClearedOrGuessARelease() {
+        for (command in listOf(P.SET_LED_STATUS, P.SET_JOB_INFO2, P.RELEASE_UNIT)) {
+            val printer = Printer(); var stop = false
+            val result = run(printer, cancelled = { stop }, checkpoint = {
+                printer.rejectAck = command; stop = true
+            })
+            assertEquals("unknown_after_print_command", result.outcome)
+            assertEquals("PRINTER_CLEAR_REQUIRED", result.failureCode)
+            assertEquals(false, result.protocolDiagnostics["releaseAcknowledged"])
+            assertEquals(command, printer.commands.last())
+            assertEquals(1, printer.commands.count { it == P.RESERVE_UNIT })
+        }
+    }
+
+    @Test fun confirmedRejectedPaperSheetPausesWithoutThirdPageAndKeepsTheFirstCheckpoint() {
+        val printer = Printer().apply { rejectedPaperOnPage = 2 }
+        val result = run(printer)
+        assertEquals(result.trace.joinToString("\n"), "waiting_for_paper", result.outcome)
+        assertEquals("PAPER_OUT", result.failureCode)
+        assertEquals(1, result.printerConfirmedPages)
+        assertEquals(listOf(1), printer.starts)
+        assertEquals(2, printer.descriptors)
+        assertEquals(listOf(1, 2, 4), printer.flags)
+        assertEquals(true, result.protocolDiagnostics["releaseAcknowledged"])
+    }
+
+    @Test fun softCancelBetweenWholeVideoFramesCleansButAPartialWriteNeverAddsCommands() {
+        var stop = false
+        val clean = Printer()
+        val result = run(clean, cancelled = { stop }, progress = {
+            if (it.contains("sent strip 1/110")) stop = true
+        })
+        assertEquals("cancelled", result.outcome)
+        assertTrue(result.sentPrintDataBytes > 0)
+        assertTrue(clean.starts.isEmpty())
+        assertEquals(listOf(1, 4), clean.flags)
+        assertEquals(true, result.protocolDiagnostics["releaseAcknowledged"])
+        stop = false
+        val partial = Printer().apply { disconnectOnPage = 1; onVideo = { stop = true } }
+        val unsafe = run(partial, cancelled = { stop })
+        assertEquals("unknown_after_print_command", unsafe.outcome)
+        assertEquals(listOf(1), partial.flags)
+        assertFalse(partial.commands.contains(P.RELEASE_UNIT))
+    }
+
+    @Test fun cancellationWaitsForPhysicalDeliveryBeforeAllowingAnotherJob() {
+        val printer = Printer().apply { deliveryAfterRelease = 3 }
+        var stop = false
+        val result = run(printer, cancelled = { stop }, checkpoint = { stop = true })
+        assertEquals("cancelled", result.outcome)
+        val release = printer.commands.indexOf(P.RELEASE_UNIT)
+        assertEquals(List(4) { P.GET_EXTENDED_STATUS }, printer.commands.drop(release + 1))
     }
 
     @Test fun unconfirmedSecondPageTimesOutWithoutThirdPageOrResend() {
@@ -360,8 +438,39 @@ class PdfBatchEngineTest {
 
     @Test fun cancelBeforeOpenDoesNotClaimUsbOrSendAnything() {
         val printer = Printer()
-        assertEquals("failed_before_print_commands", run(printer, cancelled = { true }).outcome)
+        assertEquals("cancelled", run(printer, cancelled = { true }).outcome)
         assertTrue(printer.commands.isEmpty())
         assertFalse(printer.closed) // never opened
+    }
+    @Test fun manualPaperContinuationPreservesRangesAndCopiesButRestartsLocalCaptPageNumbering() {
+        val plan = JobSpecification.create(11, "2,5,9", 2)
+        fun sheets(order: List<Int>, observed: MutableList<Int>) = order.map { source ->
+            object : PreparedCaptPage by sheet {
+                override fun descriptorFrame(): ByteArray {
+                    observed += source + 1
+                    return sheet.descriptorFrame()
+                }
+            }
+        }
+        fun segment(printer: Printer, order: List<Int>, seen: MutableList<Int>): CaptTestPrintResult {
+            var ms = 0L
+            return CaptDocumentPrintEngine.runPrepared(sheets(order, seen), { false },
+                openSession = { printer }, now = { ms }, pause = { ms += it })
+        }
+        val seen = ArrayList<Int>()
+        val first = segment(Printer().apply { rejectedPaperOnPage = 2 },
+            DocumentContinuation.remaining(plan, 0), seen)
+        assertEquals("waiting_for_paper", first.outcome)
+        assertEquals(1, first.printerConfirmedPages)
+        assertEquals(listOf(2, 5), seen) // Sheet 5 was announced but rejected, never StartPrint'd.
+        seen.clear()
+        val next = Printer()
+        val second = segment(next, DocumentContinuation.remaining(plan, first.printerConfirmedPages!!), seen)
+        assertEquals(second.trace.joinToString("\n"), "printer_counter_confirmed", second.outcome)
+        assertEquals(listOf(5, 9, 2, 5, 9), seen)
+        assertEquals(listOf(1, 2, 3, 4, 5), next.starts)
+        assertEquals(6, DocumentContinuation.totalConfirmed(1, second.printerConfirmedPages, 6))
+        assertThrows(IllegalArgumentException::class.java) { DocumentContinuation.remaining(plan, 6) }
+        assertThrows(IllegalArgumentException::class.java) { DocumentContinuation.totalConfirmed(1, 6, 6) }
     }
 }

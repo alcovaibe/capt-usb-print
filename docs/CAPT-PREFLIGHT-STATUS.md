@@ -1,3 +1,9 @@
+> Historical preflight investigation. The latest hardware and queue/cancellation
+> work is recorded in [PRINT-QUEUE-RECOVERY.md](PRINT-QUEUE-RECOVERY.md) and
+> [LBP2900-STARTUP-CONTRACT.md](LBP2900-STARTUP-CONTRACT.md). Build 147 has
+> owner-confirmed multi-page/system printing; that does not validate the new
+> recovery commands on hardware.
+
 # Build-133 CAPT preflight investigation
 
 > Historical checkpoint, superseded by [LBP2900-STARTUP-CONTRACT.md](LBP2900-STARTUP-CONTRACT.md)

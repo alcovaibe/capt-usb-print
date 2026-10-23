@@ -1,6 +1,42 @@
 # CAPT USB Print — project context
 
-Latest startup correction (2026-10-23), baseline main 34af4653324d / signed build
+Current queue/cancel/paper recovery work (2026-10-23), based on main
+`69d10642874d0d6bdd411d4dc0d73b8fc526aa1d`, signed build 147:
+
+- **Physical acceptance reported by owner:** 11-page HONOR Documents job,
+  screenshot, selected document page and a test sheet printed. Supplied queue
+  JSON confirms the system job's 11 counter checkpoints and two single-sheet
+  image jobs, all with acknowledged END/Release. Inter-page delays of 1–30 s
+  are owner-observed; performance is not changed by this work.
+- Separate cancelled test (JobID=4) sent 23,044 print bytes and StartPrint(1),
+  then user cancellation at 15:51:46 stopped polling without END/Release.
+  Owner says that physical sheet did print. After reconnect, three image jobs
+  and another test got ReserveUnit `8C` with no valid JobID and no raster.
+  Owner confirms power off/on restored printing. This supports retained job
+  state as a hypothesis; it does not establish the complete meaning of `8C`
+  or make short GetBasicStatus `88` the same failure.
+- New implementation: all test/PDF/document paths share aligned soft-cancel
+  cleanup for the **current live known JobID**, ACK checks, and a durable
+  reservation ledger. Explicit clear deletes queue records and separately
+  verifies printer clearing with the pinned error-clear order and one fresh
+  Reserve/Release probe, with no raster/job START. Never reuse stored JobIDs.
+- Recognized, unaccepted paper-out sheets pause with private prepared pages.
+  Continue is manual, validates the spool, clears/checks reported readiness,
+  and starts a new segment at the next confirmed physical output position,
+  preserving ranges/collated copies. Unknown boundaries/partial writes never
+  get a Continue action. A paused released segment survives process restart;
+  queued/in-flight interrupted attempts still never auto-resume.
+- See [PRINT-QUEUE-RECOVERY.md](docs/PRINT-QUEUE-RECOVERY.md). New cancel/clear/
+  paper commands are source-based and fixture-tested, **not yet hardware
+  accepted** on this LBP2900. In particular upstream ABORT flag=4 is itself
+  described as unconfirmed in the protocol notes. Final-head CI must pass
+  before review; no merge or signed release is authorized by this work.
+
+The checkpoint above supersedes old claims below that build-147 system
+printing is unverified or that cancellation must always leave a job open.
+
+
+Historical PR-30 startup correction (2026-10-23), baseline main 34af4653324d / signed build
 144: fresh hardware proves ReserveUnit returned JobID=1, then PR 29's new
 SetPowerDown ACK validator aborted on `BA E0 06 00 80 00` before any page data.
 This is a software regression, not proof of a hardware fault. Document jobs

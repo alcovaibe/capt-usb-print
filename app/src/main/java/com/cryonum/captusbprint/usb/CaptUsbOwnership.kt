@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal object CaptUsbOwnership {
     private var occupied = false
 
+    @Synchronized fun isOccupied() = occupied
+
     @Synchronized
     fun acquire(): Lease {
         check(!occupied) { "Canon USB interface is in use by another operation" }

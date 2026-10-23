@@ -98,7 +98,9 @@ claim exact wire equivalence with upstream. A later single-variable capture
 with the official driver would be needed before changing that payload.
 
 ReserveUnit's Error byte is also now required to be exactly zero, as documented
-and as checked in pinned `capt_reserve_unit`; the previous high-bit-only mask
+by the protocol table. The pinned C `capt_reserve_unit` actually checks only
+bit 0x80; the earlier wording claiming it checked exact zero was incorrect.
+The Android exact-zero policy is intentionally stricter: a high-bit-only mask
 could accept a nonzero low error code together with a nonzero JobID. Its opaque
 second byte remains uninterpreted. This is a source-backed contract correction,
 not a claim that such a low error code occurred in the owner's reports.

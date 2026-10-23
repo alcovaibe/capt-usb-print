@@ -201,7 +201,9 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         scanGeneration += 1
-        worker.shutdownNow()
+        testPrintCancelled.set(true)
+        diagnosticCancelled.set(true)
+        worker.shutdown() // Let an aligned print session acknowledge cancel/release.
         super.onDestroy()
     }
 

@@ -37,6 +37,8 @@ class CaptProtocolTrace(
     private var reservedJob: Int? = null
     private var endAcknowledged = false
     private var releaseAcknowledged = false
+    private var abortAcknowledged = false
+    var lifecycle: ((Map<String, Any?>) -> Unit)? = null
     private var confirmedPages: Int? = null
     private var powerDownResponseWord: Int? = null
 
@@ -104,15 +106,23 @@ class CaptProtocolTrace(
             throw failure
         }
         when (command) {
-            CaptJobProtocol.SET_JOB_INFO2 -> if (payload.size > 16 &&
-                (payload[16].toInt() and 255) == CaptJobProtocol.END_FLAG) endAcknowledged = true
+            CaptJobProtocol.SET_JOB_INFO2 -> if (payload.size > 16) {
+                when (payload[16].toInt() and 255) {
+                    CaptJobProtocol.END_FLAG -> endAcknowledged = true
+                    CaptJobProtocol.ABORT_FLAG -> abortAcknowledged = true
+                }
+            }
             CaptJobProtocol.RELEASE_UNIT -> releaseAcknowledged = true
         }
+        if (command == CaptJobProtocol.SET_JOB_INFO2 || command == CaptJobProtocol.RELEASE_UNIT)
+            lifecycle?.invoke(snapshot())
     }
 
     fun reserved(jobId: Int) {
         reservedJob = jobId
+        endAcknowledged = false; abortAcknowledged = false; releaseAcknowledged = false
         event("RESERVATION_CONFIRMED", mapOf("jobId" to jobId))
+        lifecycle?.invoke(snapshot())
     }
 
     fun pagesConfirmed(pages: Int) {
@@ -123,7 +133,8 @@ class CaptProtocolTrace(
     fun snapshot(): Map<String, Any?> = linkedMapOf(
         "schemaVersion" to 1, "sessionId" to id, "context" to metadata,
         "lastPhase" to phase(), "reservedJobId" to reservedJob,
-        "endAcknowledged" to endAcknowledged, "releaseAcknowledged" to releaseAcknowledged,
+        "endAcknowledged" to endAcknowledged, "abortAcknowledged" to abortAcknowledged,
+        "releaseAcknowledged" to releaseAcknowledged,
         "printerConfirmedPages" to confirmedPages, "powerDownResponseWord" to powerDownResponseWord,
         "totalEvents" to sequence, "omittedEvents" to (sequence - head.size - tail.size),
         "events" to (head.toList() + tail.toList()),

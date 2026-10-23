@@ -67,6 +67,10 @@ internal object QueueReportBundle {
                 writer.write(report(FirstPdfPrintAttempt.reportFile(context), "latestPdfPrint") ?: "null")
                 writer.write(",\"usbDiagnostics\":")
                 writer.write(report(File(context.filesDir, "capt-diagnostic-latest.json"), "usbDiagnostics") ?: "null")
+                writer.write(",\"printerMaintenance\":")
+                writer.write(report(com.cryonum.captusbprint.usb.CaptPrinterMaintenance.file(context), "printerMaintenance") ?: "null")
+                writer.write(",\"printerReservation\":")
+                writer.write(report(com.cryonum.captusbprint.usb.CaptPrinterStateStore.file(context), "printerReservation") ?: "null")
                 writer.write(",\"jobs\":[")
                 var separator = ""
                 records.forEach { record ->

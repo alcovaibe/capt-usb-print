@@ -81,4 +81,46 @@ class StageCQueueTest {
         q.restore(listOf(job(1).copy(phase = QueuePhase.ERROR)), wasPaused = true)
         assertTrue(q.paused)
     }
+    @Test fun paperOutReleasesWorkerButOnlyExplicitContinuationResumesTheSameOutputPosition() {
+        val q = DocumentQueue(); q.add(job(1)); q.add(job(2)); q.next()
+        q.update(1, QueuePhase.WAITING_PRINTER)
+        q.update(1, QueuePhase.TRANSMITTING, usbStarted = true)
+        q.update(1, QueuePhase.WAITING_CONFIRMATION, 3)
+        q.update(1, QueuePhase.WAITING_PAPER, 3, failure = "PAPER_OUT")
+        assertTrue(q.paused); assertNull(q.next())
+        assertThrows(IllegalStateException::class.java) { q.resumeAfterInspection() }
+        q.resumePaper(1)
+        assertEquals(1L, q.next()!!.id)
+        assertEquals(3, q.snapshot().first().confirmed)
+        q.update(1, QueuePhase.WAITING_PRINTER)
+        q.update(1, QueuePhase.TRANSMITTING)
+        assertThrows(IllegalArgumentException::class.java) { q.update(1, QueuePhase.WAITING_CONFIRMATION, 1) }
+        q.update(1, QueuePhase.WAITING_CONFIRMATION, 10)
+        q.update(1, QueuePhase.COUNTER_CONFIRMED, 10)
+        assertEquals(2L, q.next()!!.id)
+    }
+    @Test fun restartRetainsOnlyValidatedPaperPauseAndNeverStartsItAutomatically() {
+        val q = DocumentQueue()
+        q.restore(listOf(job(1).copy(phase = QueuePhase.WAITING_PAPER, usbStarted = true, confirmed = 2),
+            job(2).copy(phase = QueuePhase.WAITING_PAPER, usbStarted = true, confirmed = 3)), resumable = setOf(1))
+        assertEquals(QueuePhase.WAITING_PAPER, q.snapshot()[0].phase)
+        assertEquals(QueuePhase.OUTCOME_UNKNOWN, q.snapshot()[1].phase)
+        assertFalse(q.hasRunnableWork()); assertNull(q.next())
+        q.cancel(1)
+        assertEquals(QueuePhase.CANCELLED, q.snapshot()[0].phase)
+        q.clearTerminal()
+        assertTrue(q.snapshot().isEmpty()); assertFalse(q.paused)
+    }
+    @Test fun cleanCancellationDoesNotPauseSuccessorsButCannotClearAnActiveOwner() {
+        val q = DocumentQueue(); q.add(job(1)); q.add(job(2)); q.next()
+        q.update(1, QueuePhase.WAITING_PRINTER)
+        q.update(1, QueuePhase.TRANSMITTING, usbStarted = true)
+        q.update(1, QueuePhase.WAITING_CONFIRMATION, 1)
+        q.cancel(1); q.cancel(2)
+        assertThrows(IllegalStateException::class.java) { q.clearTerminal() }
+        assertTrue(q.snapshot()[0].cancelRequested)
+        q.update(1, QueuePhase.CANCELLED, 1)
+        assertFalse(q.paused)
+        q.clearTerminal(); assertTrue(q.snapshot().isEmpty())
+    }
 }
