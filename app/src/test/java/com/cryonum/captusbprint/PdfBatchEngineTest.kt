@@ -64,6 +64,7 @@ class PdfBatchEngineTest {
         var drainOnStart = false
         var onExtended: () -> Unit = {}
         var onVideo: () -> Unit = {}
+        var onJobFlag: (Int) -> Unit = {}
         var deliveryAfterRelease = 0
 
         override fun query(command: Int, payload: ByteArray): ByteArray {
@@ -84,6 +85,7 @@ class PdfBatchEngineTest {
                 P.GO_ONLINE -> { offline = false; startupEnded = true; decoded = 0; completed = 0 }
                 P.SET_JOB_INFO2 -> {
                     flags.add(payload[16].toInt())
+                    onJobFlag(payload[16].toInt())
                     assertEquals(if (capturedStartup) 1 else 42, payload[18].toInt())
                     if (rejectEnd && payload[16].toInt() == 6) throw IOException("Uncertain end reply")
                 }
@@ -304,6 +306,16 @@ class PdfBatchEngineTest {
         assertEquals(listOf(1, 6), printer.flags)
         assertEquals(true, result.protocolDiagnostics["releaseAcknowledged"])
         assertEquals(false, result.protocolDiagnostics["abortAcknowledged"])
+    }
+
+    @Test fun cancellationAfterAnAcknowledgedEndDoesNotSendTheEndCommandTwice() {
+        var stop = false
+        val printer = Printer().apply { onJobFlag = { if (it == 6) stop = true } }
+        val result = run(printer, pages = 1, cancelled = { stop })
+        assertEquals("cancelled", result.outcome)
+        assertEquals(listOf(1, 6), printer.flags)
+        assertEquals(1, printer.commands.count { it == P.RELEASE_UNIT })
+        assertEquals(true, result.protocolDiagnostics["releaseAcknowledged"])
     }
 
     @Test fun rejectedCancellationDoesNotPretendThePrinterIsClearedOrGuessARelease() {

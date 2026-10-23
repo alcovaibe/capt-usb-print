@@ -49,7 +49,8 @@ Only acknowledged cleanup and settled delivery produce `cancelled`. A partial
 write, missing/malformed reply, hard thread interrupt, rejected cleanup or
 delivery timeout produces uncertainty and pauses successors. No cleanup is
 appended to an exchange whose alignment is unknown. No automatic print replay.
-An already accepted sheet may still exit after Cancel.
+An already accepted sheet may still exit after Cancel. Already acknowledged
+END is not sent twice if cancellation arrives just before Release.
 
 `CaptPrinterStateStore` atomically records reservation/END/ABORT/Release evidence
 before further commands. Stored JobIDs are evidence only: they are **never**
@@ -115,6 +116,9 @@ then starts a new CAPT segment containing `outputPageOrder.drop(confirmed)`.
 Global confirmation is `confirmedBeforeAttempt + segmentConfirmed`; local
 StartPrint numbering restarts at 1 after reset. Selected ranges and collated
 copies keep their original physical output order. No confirmed prefix is resent.
+Only normal document/system queue jobs retain a resumable spool; standalone
+experimental test/PDF pilot actions stop with a paper message and require a
+new explicit action rather than promising a nonexistent queue Continue button.
 
 These fields report engine/input readiness, **not proven physical tray
 presence**. LBP3000 source notes about no tray sensor/physical Go button are

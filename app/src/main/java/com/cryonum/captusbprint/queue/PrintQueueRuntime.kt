@@ -302,9 +302,11 @@ internal object PrintQueueRuntime {
         persist()
     }
     fun continuePaper(id: Long) {
+        var validated = false
         try {
             val work = synchronized(this) { sources[id] ?: error("RESUME_SOURCE_MISSING") }
             work.prepared!!.values.forEach { it.validate { cancelled(id) } }
+            validated = true
             val result = CaptPrinterMaintenance.run(app)
             synchronized(this) {
                 maintenanceFailure = result.failure ?: if (!result.paperReady) "PAPER_NOT_READY" else null
@@ -317,8 +319,10 @@ internal object PrintQueueRuntime {
         } catch (_: CancellationException) { /* User cancelled the paused job. */ }
         catch (_: Throwable) {
             synchronized(this) {
-                if (queue.snapshot().any { it.id == id && it.phase == QueuePhase.WAITING_PAPER }) {
-                    queue.update(id, QueuePhase.ERROR, failure = "RESUME_SOURCE_INVALID")
+                maintenanceFailure = if (validated) "CONTINUATION_STATE_FAILED" else "RESUME_SOURCE_INVALID"
+                val phase = queue.snapshot().firstOrNull { it.id == id }?.phase
+                if ((!validated && phase == QueuePhase.WAITING_PAPER) || phase == QueuePhase.QUEUED) {
+                    queue.update(id, QueuePhase.ERROR, failure = maintenanceFailure)
                     cleanup(id); persist()
                 }
             }
@@ -421,10 +425,11 @@ internal object PrintQueueRuntime {
                 writeWork(work, record.confirmed, false) // Invalidate old resume intent before a new USB segment.
                 if (cancelled(id)) throw CancellationException()
                 change(id, QueuePhase.WAITING_PRINTER)
+                val deviceKey = CaptPrinterMaintenance.deviceKey(app)
                 report("USB_ATTEMPT_STARTED") // Hard precondition before any stateful USB operation.
                 change(id, QueuePhase.TRANSMITTING, usbStarted = true)
                 usb = true
-                result = CaptDocumentPrintEngine.run(app, CaptPrinterMaintenance.deviceKey(app),
+                result = CaptDocumentPrintEngine.run(app, deviceKey,
                     DocumentContinuation.remaining(work.plan, record.confirmed).map { cache.getValue(it) }, { cancelled(id) },
                     progress = { stage ->
                         val phase = if (stage.contains("counters agree")) QueuePhase.WAITING_CONFIRMATION
@@ -461,7 +466,7 @@ internal object PrintQueueRuntime {
                 report(final.name)
                 change(id, final, result!!.printerConfirmedPages, failure = failure)
             } catch (error: Throwable) {
-                failure = error.javaClass.simpleName
+                failure = error.message?.takeIf { it.matches(Regex("[A-Z_]{1,64}")) } ?: error.javaClass.simpleName
                 val phase = if (usb) QueuePhase.OUTCOME_UNKNOWN
                             else if (error is CancellationException) QueuePhase.CANCELLED else QueuePhase.ERROR
                 runCatching { report(phase.name) }

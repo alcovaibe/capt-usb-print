@@ -104,7 +104,13 @@ class CaptPrintService : PrintService() {
         if (handle.cancelled.get() || handle.importing || handle.queueId != null) return
         val device = CanonUsbAvailability.grantedDevice(this)
         if (device == null) { block(handle, CanonUsbAvailability.reason(this)); return }
-        if (PrintQueueRuntime.isPaused()) { block(handle, R.string.system_queue_paused); return }
+        if (PrintQueueRuntime.isPaused()) {
+            block(handle, when (PrintQueueRuntime.maintenanceState()) {
+                "REQUIRED" -> R.string.queue_clear_required
+                "BUSY" -> R.string.queue_clear_busy
+                else -> R.string.system_queue_paused
+            }); return
+        }
         if (!PrintQueueRuntime.hasRoom()) { block(handle, R.string.system_queue_full); return }
         var descriptor: android.os.ParcelFileDescriptor? = null
         try {

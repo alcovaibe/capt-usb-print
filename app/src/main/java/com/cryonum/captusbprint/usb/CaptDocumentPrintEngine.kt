@@ -302,9 +302,11 @@ internal object CaptDocumentPrintEngine {
                             val id = ownedJob
                             if (id != null) {
                                 if (confirmedPages == totalPages) {
-                                    query(CaptJobProtocol.SET_JOB_INFO2,
-                                        CaptJobProtocol.jobInfo(id, CaptJobProtocol.END_FLAG))
-                                    query(CaptJobProtocol.RELEASE_UNIT, CaptJobProtocol.pageNumber(id))
+                                    if (protocol.snapshot()["endAcknowledged"] != true)
+                                        query(CaptJobProtocol.SET_JOB_INFO2,
+                                            CaptJobProtocol.jobInfo(id, CaptJobProtocol.END_FLAG))
+                                    if (protocol.snapshot()["releaseAcknowledged"] != true)
+                                        query(CaptJobProtocol.RELEASE_UNIT, CaptJobProtocol.pageNumber(id))
                                 } else CaptPrinterRecovery.cancelOwned(::query, id, jobStarted)
                                 val deadline = now() + WAIT_READY_MS
                                 var samples = 0
@@ -346,7 +348,7 @@ internal object CaptDocumentPrintEngine {
             note("Stopped at $stage: ${error.javaClass.simpleName}: ${error.message ?: "no details"}; no automatic retry or recovery")
             return CaptTestPrintResult(
                 outcome,
-                if (outcome == "waiting_for_paper") "Загрузите бумагу. Подтверждено ${confirmedPages ?: 0} лист(а). Продолжение — по кнопке в очереди."
+                if (outcome == "waiting_for_paper") "Бумага закончилась. Отправка остановлена; подтверждено ${confirmedPages ?: 0} лист(а). Загрузите бумагу."
                 else if (outcome == "cancelled") "Задание отменено. Уже принятый лист может выйти."
                 else if ((confirmedPages ?: 0) > 0) "CAPT подтвердил $confirmedPages лист(а); дальнейший исход задания не подтверждён. Автоматического повтора нет."
                 else if (stage == "CONFIGURING_JOB" || stage.startsWith("RESERVING"))
