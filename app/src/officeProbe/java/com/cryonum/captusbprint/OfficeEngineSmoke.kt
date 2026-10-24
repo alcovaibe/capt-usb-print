@@ -31,6 +31,8 @@ class OfficeEngineSmoke : Instrumentation() {
         val directory = File(context.cacheDir, "office-engine-probe").apply { mkdirs() }
         try {
             waitForIdleSync()
+            val report = File(context.filesDir, "office-probe-results.json")
+            check(!report.exists() || report.delete())
             // Same asset layout as pinned upstream Android Viewer; no downloaded user content.
             unpack(context.assets, "unpack", File(context.applicationInfo.dataDir))
             activity = startActivitySync(Intent(context, MainActivity::class.java).apply {
@@ -55,6 +57,7 @@ class OfficeEngineSmoke : Instrumentation() {
                     }
                     stage = "export-$name"
                     val pdf = File(directory, "$name.pdf")
+                    check(!pdf.exists() || pdf.delete()) // A failed saveAs must never reuse an old PDF.
                     document.saveAs(pdf.toURI().toASCIIString(), "pdf", "")
                     check(pdf.isFile && pdf.length() in 1..DocumentInspector.MAX_SOURCE_BYTES)
                     stage = "validate-$name"
@@ -79,7 +82,7 @@ class OfficeEngineSmoke : Instrumentation() {
                     }
                 } finally { document.destroy() }
             }
-            File(context.filesDir, "office-probe-results.json").writeText(JSONObject()
+            report.writeText(JSONObject()
                 .put("sourceCommit", "8221e31b3ac356a1623c672912a3d2b492f7e3d1")
                 .put("syntheticOnly", true).put("hardwarePrintTest", false)
                 .put("conversions", observations).toString())
