@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.res.AssetManager
 import android.os.Bundle
 import com.cryonum.captusbprint.document.DocumentInspector
+import com.cryonum.captusbprint.document.StoredCaptPage
+import com.cryonum.captusbprint.core.HiscoaNative
 import org.json.JSONArray
 import org.json.JSONObject
 import org.libreoffice.kit.Document
@@ -61,7 +63,17 @@ class OfficeEngineSmoke : Instrumentation() {
                         else check(prepared.overview.pageCount >= 3)
                         check(prepared.preparedPdfLayout != null)
                         val preview = prepared.renderPreparedPrintPreview(0) { false }
-                        preview.recycle()
+                        try {
+                            val pixels = IntArray(preview.width * preview.height)
+                            preview.getPixels(pixels, 0, preview.width, 0, 0, preview.width, preview.height)
+                            check(pixels.any { it == android.graphics.Color.BLACK })
+                        } finally { preview.recycle() }
+                        val spool = File(directory, "$name.capt")
+                        StoredCaptPage.write(spool,
+                            produce = { accept -> prepared.forEachPrintBand(0,
+                                prepared.preparedPdfLayout.orientations[0], 0, { false }, accept) },
+                            encode = { bytes, stride, lines, last -> HiscoaNative.encodeBand(bytes, stride, lines, last) },
+                            cancelled = { false }, reserve = {}).validate { false }
                         observations.put(JSONObject().put("format", name.substringAfterLast('.'))
                             .put("pdfPages", prepared.overview.pageCount).put("pdfBytes", pdf.length())
                     }
