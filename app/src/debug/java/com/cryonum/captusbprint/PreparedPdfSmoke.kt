@@ -104,13 +104,14 @@ class PreparedPdfSmoke : Instrumentation() {
     }
 
     private fun makePdf(file: File, sizes: List<Pair<Int, Int>>) {
-        PdfDocument().use { pdf ->
+        val pdf = PdfDocument()
+        try {
             sizes.forEachIndexed { index, (width, height) ->
                 val page = pdf.startPage(PdfDocument.PageInfo.Builder(width, height, index + 1).create())
                 page.canvas.drawRect(20f, 30f, 100f, 70f, Paint().apply { color = Color.BLACK })
                 pdf.finishPage(page)
             }
             file.outputStream().use { pdf.writeTo(it) }
-        }
+        } finally { pdf.close() }
     }
 }
