@@ -13,6 +13,8 @@ import android.media.ExifInterface
 import android.os.ParcelFileDescriptor
 import com.cryonum.captusbprint.core.Orientation
 import com.cryonum.captusbprint.core.CaptTestPage
+import com.cryonum.captusbprint.core.JobSpecification
+import com.cryonum.captusbprint.core.DocumentLayout
 import java.util.concurrent.CancellationException
 import java.io.Closeable
 import java.io.File
@@ -46,9 +48,26 @@ object PreviewGeometry {
  */
 class DocumentSession internal constructor(
     private val source: File,
-    val overview: DocumentOverview
+    val overview: DocumentOverview,
+    val preparedPdfLayout: PreparedPdfLayout? = null
 ) : Closeable {
     @Volatile private var closed = false
+
+    init {
+        require(preparedPdfLayout == null || (overview.format == DocumentFormat.PDF &&
+            preparedPdfLayout.orientations.size == overview.pageCount))
+    }
+
+    internal fun validatePlan(plan: JobSpecification) {
+        check(!closed)
+        if (preparedPdfLayout == null) require(plan.layout != DocumentLayout.PREPARED_PDF)
+        else {
+            require(plan.layout == DocumentLayout.PREPARED_PDF && plan.contentRotationDegrees == 0)
+            require(plan.pageOrientations.keys == plan.pageIndices.toSet())
+            require(plan.pageIndices.all { it in preparedPdfLayout.orientations.indices &&
+                plan.orientationForPage(it) == preparedPdfLayout.orientations[it] })
+        }
+    }
 
     fun renderPreview(
         pageIndex: Int,
@@ -58,6 +77,7 @@ class DocumentSession internal constructor(
         contentRotationDegrees: Int = 0
     ): Bitmap {
         check(!closed) { "Document preview source already closed" }
+        require(preparedPdfLayout == null) { "Use the final PRINT-mode PDF preview" }
         require(pageIndex in 0 until overview.pageCount)
         require(maxWidth in 1..1600 && maxHeight in 1..2200)
         require(contentRotationDegrees == 0 || contentRotationDegrees == 90)
@@ -163,6 +183,7 @@ class DocumentSession internal constructor(
         consumer: (startLine: Int, packedBand: ByteArray) -> Unit
     ) {
         check(!closed) { "Document source closed" }
+        require(preparedPdfLayout == null) { "Prepared PDF cannot use the legacy FIT pilot" }
         require(overview.format == DocumentFormat.PDF) { "Only PDF is supported by this offline band prototype" }
         require(pageIndex in 0 until overview.pageCount && (rotation == 0 || rotation == 90))
         val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -227,7 +248,7 @@ class DocumentSession internal constructor(
                 }
             } }
             check(copy.length() == overview.copiedBytes)
-            return DocumentSession(copy, overview)
+            return DocumentSession(copy, overview, preparedPdfLayout)
         } catch (error: Throwable) { copy.delete(); throw error }
     }
 
@@ -240,8 +261,10 @@ class DocumentSession internal constructor(
         cancelled: () -> Boolean, consumer: (Int, ByteArray) -> Unit,
         preservePdfLayout: Boolean) {
         check(!closed)
-        require(!preservePdfLayout || (overview.format == DocumentFormat.PDF && rotation == 0))
         require(pageIndex in 0 until overview.pageCount)
+        val preserve = preservePdfLayout || preparedPdfLayout != null
+        require(!preserve || (overview.format == DocumentFormat.PDF && rotation == 0))
+        if (preparedPdfLayout != null) require(orientation == preparedPdfLayout.orientations[pageIndex])
         if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
         fun emit(width: Int, height: Int, draw: (Bitmap, Rect, Matrix) -> Unit) {
             val bitmap = Bitmap.createBitmap(4960, 64, Bitmap.Config.ARGB_8888)
@@ -253,7 +276,7 @@ class DocumentSession internal constructor(
                     val lines = minOf(64, 7016 - y)
                     bitmap.eraseColor(Color.WHITE)
                     val matrix = Matrix().apply {
-                        setValues(if (preservePdfLayout) SystemPdfGeometry.matrix(width, height, orientation, y)
+                        setValues(if (preserve) SystemPdfGeometry.matrix(width, height, orientation, y)
                             else PrintRasterGeometry.matrix(width, height, orientation, rotation, y))
                     }
                     draw(bitmap, Rect(0, 0, 4960, lines), matrix)
@@ -325,6 +348,9 @@ class DocumentSession internal constructor(
         }
         return Bitmap.createBitmap(pixels, size.first, size.second, Bitmap.Config.ARGB_8888)
     }
+
+    fun renderPreparedPrintPreview(pageIndex: Int, cancelled: () -> Boolean): Bitmap =
+        renderPrintPreview(pageIndex, requireNotNull(preparedPdfLayout).orientations[pageIndex], 0, cancelled)
 
     /** Affine source-to-A4 mapping, identical for PDF and decoded image content.
      * 90 degrees clockwise: (x,y) -> (H-y,x), then FIT into target.

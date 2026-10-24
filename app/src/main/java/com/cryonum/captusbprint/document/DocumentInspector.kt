@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.util.concurrent.CancellationException
 
 data class DocumentOverview(
     val format: DocumentFormat,
@@ -28,7 +29,7 @@ data class DocumentOverview(
  * A bounded temporary copy permits non-seekable providers with PdfRenderer.
  */
 object DocumentInspector {
-    const val MAX_SOURCE_BYTES = 64L * 1024L * 1024L
+    const val MAX_SOURCE_BYTES = PrivateDocumentImport.MAX_BYTES
     private const val MAX_DIMENSION = 50_000
     private const val MAX_IMAGE_PIXELS = 150_000_000L
 
@@ -39,55 +40,40 @@ object DocumentInspector {
      * Keep one validated, bounded private copy for page-by-page previews.
      * Caller must close the returned session when replacing or leaving a file.
      */
-    fun openSession(context: Context, uri: Uri): DocumentSession {
+    fun openSession(context: Context, uri: Uri, cancelled: () -> Boolean = { false }): DocumentSession {
+        fun checkCancelled() {
+            if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+        }
+        checkCancelled()
         require(uri.scheme == "content") { "Only user-granted content URI is supported" }
         val reportedSize = context.contentResolver.query(uri,
             arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
         }
-        require(reportedSize == null || reportedSize in 0..MAX_SOURCE_BYTES) {
-            "Document exceeds the inspection size limit"
-        }
+        checkCancelled()
+        if (reportedSize != null && reportedSize > MAX_SOURCE_BYTES)
+            throw PrivateDocumentImport.Failure(PrivateDocumentImport.Reason.TOO_LARGE)
 
         val directory = File(context.cacheDir, "stage-c-inspection").apply {
             if (!exists() && !mkdirs()) throw IOException("Private temp directory unavailable")
         }
-        val temp = File.createTempFile("incoming-", ".bin", directory)
+        val temp = PrivateDocumentImport.copy(directory,
+            { context.contentResolver.openInputStream(uri) }, { cancelled() },
+            { StatFs(directory.absolutePath).availableBytes })
         try {
-            val available = StatFs(directory.absolutePath).availableBytes
-            require(available >= 8L * 1024L * 1024L) { "Insufficient local space" }
-            var total = 0L
-            val source = context.contentResolver.openInputStream(uri)
-                ?: throw IOException("Document provider supplied no data")
-            source.use { input ->
-                temp.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        if (Thread.currentThread().isInterrupted) {
-                            throw IOException("Inspection interrupted")
-                        }
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        if (n == 0) throw IOException("Document provider returned no data")
-                        require(total + n <= MAX_SOURCE_BYTES) {
-                            "Document exceeds the inspection size limit"
-                        }
-                        output.write(buffer, 0, n)
-                        total += n
-                    }
-                }
-            }
-            require(total > 0) { "Empty document" }
+            checkCancelled()
+            val total = temp.length()
             val header = ByteArray(8)
             val read = FileInputStream(temp).use { it.read(header) }
             val format = DocumentSignature.detect(header.copyOf(maxOf(0, read)))
-                ?: throw IllegalArgumentException("Unsupported or invalid PDF/JPEG/PNG")
+                ?: throw PrivateDocumentImport.Failure(PrivateDocumentImport.Reason.UNSUPPORTED)
             val overview = when (format) {
                 DocumentFormat.PDF -> inspectPdf(temp, total)
                 DocumentFormat.JPEG, DocumentFormat.PNG -> inspectImage(temp, format, total)
             }
+            checkCancelled()
             return DocumentSession(temp, overview)
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             temp.delete()
             throw error
         }
@@ -108,6 +94,41 @@ object DocumentInspector {
                     page.height, "points", null, bytes)
             }
         }
+    }
+
+    /**
+     * Backend handoff for a final private PDF. Copies bytes, validates EVERY A4 page,
+     * and captures the layout before it can reach preview/queue. Does not convert Office.
+     * The caller continues to own readyPdf; this session owns a separate bounded copy.
+     */
+    internal fun openPreparedPdf(context: Context, readyPdf: File,
+                                 cancelled: () -> Boolean = { false }): DocumentSession {
+        val privateRoot = File(context.applicationInfo.dataDir).canonicalFile.toPath()
+        require(readyPdf.canonicalFile.toPath().startsWith(privateRoot)) { "PRIVATE_PDF_REQUIRED" }
+        val directory = File(context.cacheDir, "stage-c-inspection").apply {
+            if (!exists() && !mkdirs()) throw IOException("Private temp directory unavailable")
+        }
+        val temp = PrivateDocumentImport.copy(directory, { readyPdf.inputStream() },
+            { cancelled() }, { StatFs(directory.absolutePath).availableBytes })
+        var complete = false
+        try {
+            val descriptor = ParcelFileDescriptor.open(temp, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = try { PdfRenderer(descriptor) } catch (error: Throwable) {
+                descriptor.close(); throw error
+            }
+            val sizes = renderer.use { pdf ->
+                require(pdf.pageCount in 1..1000) { "PREPARED_PDF_PAGE_LIMIT" }
+                (0 until pdf.pageCount).map { index ->
+                    if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+                    pdf.openPage(index).use { it.width to it.height }
+                }
+            }
+            val layout = PreparedPdfLayout.fromPageSizes(sizes)
+            if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+            val overview = DocumentOverview(DocumentFormat.PDF, sizes.size, sizes[0].first,
+                sizes[0].second, "points", null, temp.length())
+            return DocumentSession(temp, overview, layout).also { complete = true }
+        } finally { if (!complete) temp.delete() }
     }
 
     private fun inspectImage(file: File, format: DocumentFormat, bytes: Long): DocumentOverview {

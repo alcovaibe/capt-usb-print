@@ -1,0 +1,137 @@
+name: LibreOffice Android source build probe
+on:
+  pull_request:
+    paths:
+      - 'config/office/**'
+      - 'tools/office/**'
+      - '.github/workflows/office-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    name: LibreOffice source ${{ matrix.abi }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    concurrency:
+      group: office-native-${{ github.event.pull_request.number || github.ref }}-${{ matrix.abi }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: capt
+          persist-credentials: false
+      - uses: actions/cache@v4
+        id: package
+        with:
+          path: native-output
+          key: office-native-v1-${{ runner.os }}-${{ matrix.abi }}-${{ hashFiles('capt/config/office/**', 'capt/tools/office/**') }}
+      - uses: actions/setup-java@v4
+        if: steps.package.outputs.cache-hit != 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        if: steps.package.outputs.cache-hit != 'true'
+        with:
+          packages: 'platform-tools'
+      - name: Free unused runner toolchains
+        if: steps.package.outputs.cache-hit != 'true'
+        run: bash capt/tools/free-runner-disk.sh
+      - name: Install upstream build prerequisites
+        if: steps.package.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ant autoconf automake bison build-essential flex gperf libfontconfig1-dev libkrb5-dev libnss3-dev libservlet-api-java libxml2-utils libxslt1-dev meson nasm ninja-build python3-dev xsltproc zip
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+      - uses: actions/checkout@v4
+        if: steps.package.outputs.cache-hit != 'true'
+        with:
+          repository: LibreOffice/core
+          ref: 8221e31b3ac356a1623c672912a3d2b492f7e3d1
+          path: libreoffice
+          persist-credentials: false
+      - name: Build pinned upstream engine and inventory resources
+        if: steps.package.outputs.cache-hit != 'true'
+        run: |
+          bash capt/tools/office/build-libreoffice.sh libreoffice '${{ matrix.abi }}'
+          mkdir -p native-output
+          cp libreoffice/capt-office-${{ matrix.abi }}.tar.gz native-output/
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: libreoffice-native-${{ matrix.abi }}
+          path: native-output/capt-office-${{ matrix.abi }}.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+  conversion-probe:
+    name: LibreOffice synthetic conversion API ${{ matrix.api }}
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 36]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: libreoffice-native-x86_64
+          path: engine-archive
+      - name: Unpack this run's pinned native build
+        run: |
+          mkdir office-engine
+          tar -xzf engine-archive/capt-office-x86_64.tar.gz -C office-engine
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Build opt-in probe APK without network permission
+        run: |
+          sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+          bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" :app:assembleDebug :app:lintDebug
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions app/build/outputs/apk/debug/app-debug.apk > probe-permissions.txt
+          if grep -F 'android.permission.INTERNET' probe-permissions.txt; then exit 1; fi
+      - name: Free unused runner toolchains
+        run: bash tools/free-runner-disk.sh
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 2048M
+          pre-emulator-launch-script: bash tools/prepare-emulator.sh
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -partition-size 2048
+          disable-animations: true
+          script: |
+            adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
+            adb install app/build/outputs/apk/debug/app-debug.apk
+            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.OfficeEngineSmoke | tee office-engine-smoke.txt
+            grep -F 'CAPT_OFFICE_ENGINE_CONVERSION_SMOKE_PASSED' office-engine-smoke.txt
+            adb exec-out run-as com.cryonum.captusbprint.debug cat files/office-probe-results.json > office-probe-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: office-conversion-probe-api-${{ matrix.api }}
+          path: |
+            office-engine-smoke.txt
+            office-probe-results.json
+          if-no-files-found: ignore
+          retention-days: 7

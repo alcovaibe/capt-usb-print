@@ -84,6 +84,14 @@
     <string name="document_pick">Выбрать PDF / JPEG / PNG</string>
     <string name="document_pick_hint">Выбери локальный файл.</string>
     <string name="document_loading">Открываем документ…</string>
+    <string name="document_cancel_import">Отменить открытие</string>
+    <string name="document_import_cancelled">Открытие отменено.</string>
+    <string name="document_import_too_large">Файл превышает предел 64 МиБ.</string>
+    <string name="document_import_no_space">Недостаточно свободного места. Для открытия нужен запас не менее 8 МиБ сверх размера файла.</string>
+    <string name="document_import_empty">Выбран пустой файл.</string>
+    <string name="document_import_no_data">Источник файла не передал данные. Попробуй сохранить файл на устройстве и открыть снова.</string>
+    <string name="document_import_timed_out">Источник файла отвечает слишком долго. Попробуй открыть локальную копию.</string>
+    <string name="document_import_unsupported">Содержимое файла не соответствует поддерживаемым PDF, JPEG или PNG. Word и Excel пока не поддерживаются внутри приложения.</string>
     <string name="document_pages">Страницы: например 1–3, 5, 8</string>
     <string name="document_all_pages">Все страницы</string>
     <string name="document_copies">Копии (1–20), комплектами</string>

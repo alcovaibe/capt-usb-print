@@ -7,7 +7,7 @@ package com.cryonum.captusbprint.core
  */
 enum class Orientation { PORTRAIT, LANDSCAPE }
 enum class Paper { A4 }
-enum class DocumentLayout { APP_FIT, ANDROID_PDF }
+enum class DocumentLayout { APP_FIT, ANDROID_PDF, PREPARED_PDF }
 
 @ConsistentCopyVisibility
 data class JobSpecification private constructor(
@@ -16,10 +16,16 @@ data class JobSpecification private constructor(
     val orientation: Orientation,
     val contentRotationDegrees: Int,
     val paper: Paper,
-    val layout: DocumentLayout = DocumentLayout.APP_FIT
+    val layout: DocumentLayout = DocumentLayout.APP_FIT,
+    val pageOrientations: Map<Int, Orientation> = emptyMap()
 ) {
     val outputPageOrder: List<Int>
         get() = List(copies) { pageIndices }.flatten() // collated copies
+
+    fun orientationForPage(index: Int): Orientation {
+        require(index in pageIndices)
+        return if (layout == DocumentLayout.PREPARED_PDF) pageOrientations.getValue(index) else orientation
+    }
 
     companion object {
         const val MAX_SOURCE_PAGES = 1000
@@ -28,10 +34,25 @@ data class JobSpecification private constructor(
 
         /** Private prepared-spool metadata only; pages are revalidated before any USB operation. */
         internal fun restorePrepared(indices: List<Int>, copies: Int, orientation: Orientation,
-                                     rotation: Int, layout: DocumentLayout): JobSpecification {
+                                     rotation: Int, layout: DocumentLayout,
+                                     pageOrientations: Map<Int, Orientation> = emptyMap()): JobSpecification {
             val validated = systemPdf(MAX_SOURCE_PAGES, indices, copies, orientation)
             require(rotation == 0 || rotation == 90)
-            return JobSpecification(validated.pageIndices, copies, orientation, rotation, Paper.A4, layout)
+            if (layout == DocumentLayout.PREPARED_PDF) {
+                require(rotation == 0 && pageOrientations.keys == indices.toSet())
+                require(pageOrientations.getValue(indices.first()) == orientation)
+            } else require(pageOrientations.isEmpty())
+            return JobSpecification(validated.pageIndices, copies, orientation, rotation, Paper.A4, layout,
+                java.util.Collections.unmodifiableMap(pageOrientations.toMap()))
+        }
+
+        /** Page selection/copies of one final PDF. Original per-page orientations are immutable. */
+        fun preparedPdf(orientations: List<Orientation>, pages: String, copies: Int): JobSpecification {
+            val validated = create(orientations.size, pages, copies)
+            val selected = validated.pageIndices.associateWith { orientations[it] }
+            return JobSpecification(validated.pageIndices, copies, selected.getValue(validated.pageIndices.first()),
+                0, Paper.A4, DocumentLayout.PREPARED_PDF,
+                java.util.Collections.unmodifiableMap(selected))
         }
 
         /** System PDF already includes the originating application's layout and page selection. */
