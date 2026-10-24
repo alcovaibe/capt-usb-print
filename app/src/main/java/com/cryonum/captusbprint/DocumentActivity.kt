@@ -25,6 +25,7 @@ import com.cryonum.captusbprint.queue.PrintQueueService
 import com.cryonum.captusbprint.usb.UsbDeviceProfiles
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Normal documents use the foreground queue; the explicit one-sheet PDF pilot is cancellable. */
@@ -39,6 +40,7 @@ class DocumentActivity : Activity() {
     private lateinit var preview: DocumentPreviewPanel
     private lateinit var print: Button
     private lateinit var pick: Button
+    private lateinit var cancelImport: Button
     private lateinit var printActions: LinearLayout
     private lateinit var testPrint: Button
     private lateinit var cancelTestPrint: Button
@@ -52,6 +54,7 @@ class DocumentActivity : Activity() {
     @Volatile private var previewGeneration = 0
     private var previewReady = false
     private var copying = false
+    private var importing = false
     private var visible = false
     private var restoring: Bundle? = null
 
@@ -74,6 +77,18 @@ class DocumentActivity : Activity() {
             }
         }
         layout.addView(pick)
+        cancelImport = Button(this).apply {
+            setText(R.string.document_cancel_import)
+            visibility = View.GONE
+            setOnClickListener {
+                ++generation; ++previewGeneration
+                importing = false; sourceUri = null; restoring = null
+                preview.showError(getString(R.string.document_import_cancelled))
+                message.setText(R.string.document_import_cancelled)
+                updatePrintActions()
+            }
+        }
+        layout.addView(cancelImport)
         layout.addView(Button(this).apply {
             setText(R.string.queue_title)
             setOnClickListener { startActivity(Intent(this@DocumentActivity, PrintQueueActivity::class.java)) }
@@ -171,16 +186,21 @@ class DocumentActivity : Activity() {
         ++previewGeneration
         previewReady = false
         val old = session; session = null
+        importing = true
         updatePrintActions()
         preview.clearImage(); bitmap?.recycle(); bitmap = null
         preview.setLoading(); message.setText(R.string.document_loading)
         worker.execute {
             old?.close()
-            val result = runCatching { DocumentInspector.openSession(applicationContext, uri) }
+            val result = runCatching { DocumentInspector.openSession(applicationContext, uri) {
+                request != generation
+            } }
             runOnUiThread {
                 if (isDestroyed || isFinishing || request != generation) {
                     result.getOrNull()?.close(); return@runOnUiThread
                 }
+                importing = false
+                updatePrintActions()
                 result.fold({ source ->
                     session = source
                     val meta = source.overview
@@ -194,8 +214,12 @@ class DocumentActivity : Activity() {
                     (orientation.getChildAt(choice) as RadioButton).isChecked = true
                     rotation.isChecked = saved?.getBoolean("rotation") ?: getPreferences(MODE_PRIVATE).getBoolean("rotation", false)
                     requestPreview((saved?.getInt("page") ?: 0).coerceIn(0, meta.pageCount-1))
-                }, { message.setText(if (it is SecurityException) R.string.document_access_failed
-                                     else R.string.document_open_failed) })
+                }, {
+                    sourceUri = null
+                    val text = getString(importFailure(it))
+                    message.text = text
+                    preview.showError(text)
+                })
             }
         }
     }
@@ -237,11 +261,28 @@ class DocumentActivity : Activity() {
         contentRotationDegrees = if (rotation.isChecked) 90 else 0)
 
     private fun updatePrintActions() {
+        cancelImport.visibility = if (importing) View.VISIBLE else View.GONE
         printActions.visibility = if (session != null) View.VISIBLE else View.GONE
         print.isEnabled = previewReady && !copying
         testPrint.visibility = if (session?.overview?.format == DocumentFormat.PDF) View.VISIBLE else View.GONE
         testPrint.isEnabled = previewReady && !copying
         cancelTestPrint.visibility = if (testRunning) View.VISIBLE else View.GONE
+    }
+
+    /** Fixed localized messages only; never display provider exception text or a source URI. */
+    private fun importFailure(error: Throwable): Int = when (error) {
+        is SecurityException -> R.string.document_access_failed
+        is CancellationException -> R.string.document_import_cancelled
+        is PrivateDocumentImport.Failure -> when (error.reason) {
+            PrivateDocumentImport.Reason.TOO_LARGE -> R.string.document_import_too_large
+            PrivateDocumentImport.Reason.NO_SPACE -> R.string.document_import_no_space
+            PrivateDocumentImport.Reason.EMPTY -> R.string.document_import_empty
+            PrivateDocumentImport.Reason.NO_DATA -> R.string.document_import_no_data
+            PrivateDocumentImport.Reason.TIMED_OUT -> R.string.document_import_timed_out
+            PrivateDocumentImport.Reason.UNSUPPORTED -> R.string.document_import_unsupported
+            else -> R.string.document_open_failed
+        }
+        else -> R.string.document_open_failed
     }
 
     /** Restore the previously owner-tested one-sheet pilot, without changing either CAPT engine. */

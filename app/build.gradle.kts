@@ -6,7 +6,7 @@ val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH")
 
 android {
     namespace = "com.cryonum.captusbprint"
-    compileSdk = 37
+    compileSdk = 36
     ndkVersion = "27.2.12479018"
     externalNativeBuild {
         cmake {
