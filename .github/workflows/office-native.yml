@@ -1,0 +1,53 @@
+name: LibreOffice Android source build probe
+on:
+  pull_request:
+    paths:
+      - 'config/office/**'
+      - 'tools/office/**'
+      - '.github/workflows/office-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    name: LibreOffice source ${{ matrix.abi }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: capt
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Free unused runner toolchains
+        run: bash capt/tools/free-runner-disk.sh
+      - name: Install upstream build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ant autoconf automake bison build-essential flex gperf libfontconfig1-dev libkrb5-dev libnss3-dev libservlet-api-java libxml2-utils libxslt1-dev meson nasm ninja-build python3-dev xsltproc zip
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+      - uses: actions/checkout@v4
+        with:
+          repository: LibreOffice/core
+          ref: 8221e31b3ac356a1623c672912a3d2b492f7e3d1
+          path: libreoffice
+          persist-credentials: false
+      - name: Build pinned upstream engine and inventory resources
+        run: bash capt/tools/office/build-libreoffice.sh libreoffice '${{ matrix.abi }}'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: libreoffice-native-${{ matrix.abi }}
+          path: libreoffice/capt-office-${{ matrix.abi }}.tar.gz
+          retention-days: 7
+          if-no-files-found: error
