@@ -29,6 +29,11 @@ cp capt-office-patch.json capt-office-package/
 cp "$lock" capt-office-package/source-lock.json
 mkdir -p capt-office-package/licenses
 find . -maxdepth 1 -type f -name 'COPYING*' -exec cp '{}' capt-office-package/licenses/ \;
+for notice_file in instdir/LICENSE instdir/NOTICE; do
+  if [[ -f "$notice_file" ]]; then
+    cp "$notice_file" capt-office-package/licenses/
+  fi
+done
 for notice_dir in instdir/share/readme instdir/share/license readlicense_oo/license; do
   if [[ -d "$notice_dir" ]]; then
     mkdir -p "capt-office-package/licenses/$notice_dir"
