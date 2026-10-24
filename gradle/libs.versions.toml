@@ -1,7 +1,14 @@
 [versions]
-core = "1.16.0"
+agp = "9.4.1"
+compileSdk = "37"
+targetSdk = "36"
+minSdk = "29"
+core = "1.19.1"
 junit = "4.13.2"
 
 [libraries]
 androidx-core = { group = "androidx.core", name = "core", version.ref = "core" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }

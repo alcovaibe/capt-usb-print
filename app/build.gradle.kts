@@ -1,12 +1,12 @@
 plugins {
-    id("com.android.application")
+    alias(libs.plugins.android.application)
 }
 
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
 
 android {
     namespace = "com.cryonum.captusbprint"
-    compileSdk = 37
+    compileSdk = libs.versions.compileSdk.get().toInt()
     ndkVersion = "27.2.12479018"
     externalNativeBuild {
         cmake {
@@ -17,11 +17,11 @@ android {
 
     defaultConfig {
         applicationId = "com.cryonum.captusbprint"
-        minSdk = 29
+        minSdk = libs.versions.minSdk.get().toInt()
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
-        targetSdk = 36
+        targetSdk = libs.versions.targetSdk.get().toInt()
         // The GitHub Actions run number is monotonically increasing for private CI APKs.
         // Local debug builds are deliberately not a stable upgrade channel.
         val ciRunNumber = providers.environmentVariable("GITHUB_RUN_NUMBER")
