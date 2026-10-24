@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation android:name="com.cryonum.captusbprint.PreparedPdfSmoke"
+        android:targetPackage="${applicationId}" android:label="Final mixed-A4 PDF layout checks without USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeIntakeSmoke"
         android:targetPackage="${applicationId}" android:label="Office rejection and private import cleanup checks" />
     <instrumentation android:name="com.cryonum.captusbprint.StageCRasterSmoke"

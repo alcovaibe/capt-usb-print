@@ -3,6 +3,8 @@ plugins {
 }
 
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
+// Explicit CI-only engine probe; ordinary debug/release APKs do not gain Office dependencies.
+val officeEngineDir = providers.gradleProperty("officeEngineDir").orNull?.let { file(it) }
 
 android {
     namespace = "com.cryonum.captusbprint"
@@ -64,6 +66,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig = true }
+    if (officeEngineDir != null) {
+        require(file("${officeEngineDir}/jniLibs/x86_64/liblo-native-code.so").isFile) {
+            "Pinned x86_64 Office probe package missing"
+        }
+        sourceSets.getByName("debug") {
+            java.srcDir("src/officeProbe/java")
+            java.srcDir("${officeEngineDir}/java-bootstrap/org/libreoffice/kit")
+            assets.srcDir("${officeEngineDir}/assets")
+            assets.srcDir("${officeEngineDir}/assets_strippedUI")
+            jniLibs.srcDir("${officeEngineDir}/jniLibs")
+            manifest.srcFile("src/officeProbe/AndroidManifest.xml")
+        }
+    }
 }
 
 dependencies {

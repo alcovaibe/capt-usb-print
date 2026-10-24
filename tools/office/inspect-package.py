@@ -24,8 +24,10 @@ def main():
     files = {}
     for file in sorted(args.package.rglob('*')):
         if file.is_file():
+            with file.open('rb') as content:
+                digest = hashlib.file_digest(content, 'sha256').hexdigest()
             files[str(file.relative_to(args.package))] = {
-                'bytes': file.stat().st_size, 'sha256': hashlib.sha256(file.read_bytes()).hexdigest()}
+                'bytes': file.stat().st_size, 'sha256': digest}
     metadata = {'abi': args.abi, 'uncompressedBytes': sum(f['bytes'] for f in files.values()),
         'runtimeRenderingVerified': False, 'files': files}
     (args.package / 'inventory.json').write_text(json.dumps(metadata, indent=2) + '\n')

@@ -39,6 +39,12 @@ def main():
         '            comphelper::makePropertyValue(u"UpdateDocMode"_ustr, '
         'sal_Int16(document::UpdateDocMode::NO_UPDATE)),')
     path.write_text(text)
+    # The same explicit servlet classpath is used by F-Droid for this pinned upstream.
+    hsqldb = args.source / 'external/hsqldb/ExternalProject_hsqldb.mk'
+    build = hsqldb.read_text()
+    hsqldb.write_text(replace_once(build, '\t\t$(ICECREAM_RUN) "$(ANT)" \\\n',
+        '\t\tCLASSPATH=/usr/share/java/servlet-api.jar \\\n'
+        '\t\t$(ICECREAM_RUN) "$(ANT)" \\\n'))
     # These source hashes identify the precise local adaptation, not user documents.
     (args.source / 'capt-office-patch.json').write_text(json.dumps({
         'path': 'desktop/source/lib/init.cxx',

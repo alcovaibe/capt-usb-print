@@ -96,6 +96,41 @@ object DocumentInspector {
         }
     }
 
+    /**
+     * Backend handoff for a final private PDF. Copies bytes, validates EVERY A4 page,
+     * and captures the layout before it can reach preview/queue. Does not convert Office.
+     * The caller continues to own readyPdf; this session owns a separate bounded copy.
+     */
+    internal fun openPreparedPdf(context: Context, readyPdf: File,
+                                 cancelled: () -> Boolean = { false }): DocumentSession {
+        val privateRoot = File(context.applicationInfo.dataDir).canonicalFile.toPath()
+        require(readyPdf.canonicalFile.toPath().startsWith(privateRoot)) { "PRIVATE_PDF_REQUIRED" }
+        val directory = File(context.cacheDir, "stage-c-inspection").apply {
+            if (!exists() && !mkdirs()) throw IOException("Private temp directory unavailable")
+        }
+        val temp = PrivateDocumentImport.copy(directory, { readyPdf.inputStream() },
+            { cancelled() }, { StatFs(directory.absolutePath).availableBytes })
+        var complete = false
+        try {
+            val descriptor = ParcelFileDescriptor.open(temp, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = try { PdfRenderer(descriptor) } catch (error: Throwable) {
+                descriptor.close(); throw error
+            }
+            val sizes = renderer.use { pdf ->
+                require(pdf.pageCount in 1..1000) { "PREPARED_PDF_PAGE_LIMIT" }
+                (0 until pdf.pageCount).map { index ->
+                    if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+                    pdf.openPage(index).use { it.width to it.height }
+                }
+            }
+            val layout = PreparedPdfLayout.fromPageSizes(sizes)
+            if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+            val overview = DocumentOverview(DocumentFormat.PDF, sizes.size, sizes[0].first,
+                sizes[0].second, "points", null, temp.length())
+            return DocumentSession(temp, overview, layout).also { complete = true }
+        } finally { if (!complete) temp.delete() }
+    }
+
     private fun inspectImage(file: File, format: DocumentFormat, bytes: Long): DocumentOverview {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         FileInputStream(file).use { BitmapFactory.decodeStream(it, null, bounds) }

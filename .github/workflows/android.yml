@@ -135,6 +135,8 @@ jobs:
             adb shell am instrument -w -e verifyRecovery true com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_STAGE_C_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_QUEUE_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
+            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.PreparedPdfSmoke | tee /tmp/capt-prepared-smoke.txt
+            grep -F 'CAPT_PREPARED_PDF_LAYOUT_SMOKE_PASSED' /tmp/capt-prepared-smoke.txt
 
   signing-availability:
     name: Owner signing configuration
