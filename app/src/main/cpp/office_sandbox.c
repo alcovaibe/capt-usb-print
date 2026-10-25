@@ -142,9 +142,12 @@ static int ancestor(capt_broker *b, const char *path) {
 }
 static void deny_resource(capt_broker *b,int op,const char *path) {
     /* Fixed categories only: never retain a document path in diagnostics. */
-    const char *prefix[]={"/.cache","/.config","/tmp","/proc","/dev","/sys","/storage","/sdcard","/data/fonts","/data/app","/data/user","/data/data","/etc"};
+    const char *prefix[]={"/.cache","/.config","/tmp","/proc","/dev","/sys","/storage","/sdcard","/data/fonts","/data/app","/data/user","/data/data","/etc","/usr","/home","/data/local","/data/misc","/data/dalvik-cache","/mnt","/run","/var","/lib","/vendor","/product","/odm","/system_ext","/data"};
     int kind=99;
+    if(!strcmp(path,"/"))kind=90;
     for(size_t i=0;i<sizeof(prefix)/sizeof(prefix[0]);++i)if(beneath(path,prefix[i])){kind=(int)i+1;break;}
+    const char *devices[]={"/dev/pmsg0","/dev/__properties__","/dev/ashmem","/dev/zero","/dev/binder","/dev/socket","/dev/log"};
+    for(size_t i=0;i<sizeof(devices)/sizeof(devices[0]);++i)if(beneath(path,devices[i])){kind=(int)i+31;break;}
     int expected=0;atomic_compare_exchange_strong(&b->denied,&expected,op*100+kind);
 }
 static int check_leaf(int dir,const char *leaf,int missing) {
@@ -277,7 +280,7 @@ capt_broker *capt_broker_start(const char *root,const char *apk,const char *libr
     if (!add_root(b,root,READ|WRITE,0,1) || !realpath(root,b->job) ||
         !add_root(b,apk,READ,1,1) || !add_root(b,libraries,READ,0,0)) goto failed;
     /* Immutable OS runtime resources. None is an app/user document directory. */
-    const char *system[]={"/system","/apex","/vendor","/product","/odm"};
+    const char *system[]={"/system","/apex","/vendor","/product","/odm","/system_ext"};
     for (size_t i=0;i<sizeof(system)/sizeof(system[0]);++i) if (!add_root(b,system[i],READ,0,0)) goto failed;
     /* Android's /etc alias points into immutable /system, not a host's /etc. */
     char etc[PATH_MAX];
