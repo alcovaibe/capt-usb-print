@@ -50,6 +50,7 @@ internal abstract class OfficePreviewActivity : Activity() {
     private lateinit var retry: Button
     private var bitmap: Bitmap? = null
     private var metadata: OfficePreviewMetadata? = null
+    private var lastFailure: OfficeFailure? = null
     private var names = emptyList<String>()
     private val selected = sortedSetOf<Int>()
     private var initialAll = true
@@ -206,7 +207,7 @@ internal abstract class OfficePreviewActivity : Activity() {
     }
     private fun reprepare(clearRange: Boolean = true) {
         if (!::preparation.isInitialized || enqueuing) return
-        invalidatePreview(); metadata = null; loading = true
+        invalidatePreview(); metadata = null; lastFailure = null; loading = true
         if (clearRange) { muted = true; range.setText(""); muted = false; page = 0; restored = null }
         if (officeKind.spreadsheet && !initialAll && selected.isEmpty()) {
             preparation.cancel(); token = preparation.version; loading = false
@@ -273,7 +274,7 @@ internal abstract class OfficePreviewActivity : Activity() {
                 }, { showFailure(it); enqueuing = false; updateActions() })
             }.show()
     }
-    private fun showFailure(code: OfficeFailure) { message.setText(OfficePreviewMessages.resource(code)); preview.showError(message.text.toString()) }
+    private fun showFailure(code: OfficeFailure) { lastFailure = code; message.setText(OfficePreviewMessages.resource(code)); preview.showError(message.text.toString()) }
     override fun onStart() { super.onStart(); visible = true; updateActions() }
     override fun onStop() { visible = false; super.onStop() }
     override fun onSaveInstanceState(out: Bundle) {
@@ -292,6 +293,6 @@ internal abstract class OfficePreviewActivity : Activity() {
         check(previewReady && acknowledge.isChecked && plan().pageIndices.first() == page)
         preparation.enqueueHeld(token,range.text.toString(),plan().copies,"offline-office-ui-no-usb",success,failure)
     }
-    internal data class Snapshot(val version: Long,val ready: Boolean,val page: Int,val pages: Int,val sheets: List<Int>,val fit: Boolean)
-    internal fun snapshot() = Snapshot(token,previewReady,page,metadata?.pageCount ?: 0,selected.toList(),fit.isChecked)
+    internal data class Snapshot(val version: Long,val ready: Boolean,val page: Int,val pages: Int,val sheets: List<Int>,val fit: Boolean,val failure: OfficeFailure?,val loading: Boolean)
+    internal fun snapshot() = Snapshot(token,previewReady,page,metadata?.pageCount ?: 0,selected.toList(),fit.isChecked,lastFailure,loading)
 }

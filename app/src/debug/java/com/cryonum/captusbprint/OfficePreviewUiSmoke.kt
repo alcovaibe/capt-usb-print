@@ -104,7 +104,8 @@ class OfficePreviewUiSmoke : Instrumentation() {
             result.putString("stream","CAPT_OFFICE_PREVIEW_UI_PASSED (fake renderer; sheets/fit/pages/held copy/recreate/cleanup; no USB)")
             resultCode=Activity.RESULT_OK
         } catch (error: Throwable) {
-            result.putString("stream","OFFICE_PREVIEW_UI_FAILED:$stage:${error.javaClass.simpleName}")
+            val state = runCatching { snapshot() }.getOrNull()
+            result.putString("stream","OFFICE_PREVIEW_UI_FAILED:$stage:${error.javaClass.simpleName}:ready=${state?.ready}:pages=${state?.pages}:loading=${state?.loading}:failure=${state?.failure?.name}")
         } finally {
             held?.let { PrintQueueRuntime.cancel(it) }
             ui { activity?.takeIf { !it.isDestroyed }?.finish() }
