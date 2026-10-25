@@ -158,6 +158,7 @@ jobs:
             office-engine-crash.txt
             probe-dex.txt
             office-probe-apk-size.json
+            office-formula-policy.json
             office-worker-*.txt
             office-worker-results.json
             office-native-ui-*.txt

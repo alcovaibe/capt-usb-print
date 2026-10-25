@@ -70,6 +70,7 @@ android {
     sourceSets.getByName("debug") {
         // AGP 9 built-in Kotlin ignores extra Kotlin roots registered as Java.
         kotlin.directories += "src/officeProbe/java"
+        java.srcDir("src/officeProbe/java")
         java.srcDir("src/officeProbe/upstream")
     }
     if (officeEngineDir != null) {

@@ -31,7 +31,7 @@ def main():
     args = parser.parse_args()
     report = json.loads(args.report.read_text())
     assert report['syntheticOnly'] is True and report['hardwarePrintTest'] is False
-    assert report['workerProcesses'] == 16 and len(report['conversions']) == 16
+    assert report['workerProcesses'] == 18 and len(report['conversions']) == 18
     expected = {}
     for row in report['conversions']:
         assert row['format'] in ('docx', 'doc', 'xls', 'xlsx')
@@ -75,6 +75,7 @@ def main():
     for kind in ('docx', 'doc'):
         name = f'{kind}-saved-all.pdf'
         check_word(texts[name], word_images[name])
+    formula_policy = {}
     for kind in ('xls', 'xlsx'):
         wide = texts[f'{kind}-fit-2.pdf']
         assert len(wide) == 1
@@ -94,7 +95,18 @@ def main():
         assert 'Сводка' in subset[0] and re.search(r'КОНЕЦ\s*3', subset[-1])
         assert len(subset) == len(texts[f'{kind}-fit-1.pdf']) + len(long)
         assert len(all_pages) == len(subset) + len(wide)
-    print('CAPT_OFFICE_FIT_PDF_CONTENT_PASSED (16 synthetic PDFs; Word breaks/headers/PAGE/image; Excel right edge/dates/results/order; no USB)')
+        probe = ' '.join(' '.join(texts[f'{kind}-saved-1.pdf']).split())
+        correct = bool(re.search(r'50[.,]00',probe) and re.search(r'80[.,]00',probe))
+        cached = bool(re.search(r'[-−]12[\s,\u00a0]*345[.,]00',probe)
+                      and re.search(r'[-−]12[\s,\u00a0]*346[.,]00',probe))
+        assert correct != cached, 'Unexpected synthetic formula-cache result; inspect PDF'
+        assert 'B4*C4' not in probe and 'SUM(D4:D5)' not in probe
+        formula_policy[kind] = 'recalculated' if correct else 'saved_cache'
+    Path('office-formula-policy.json').write_text(json.dumps({
+        'syntheticOnly': True, 'observedSimpleMultiplyAndSum': formula_policy,
+        'allFunctionsOrWorkbooksVerified': False, 'hardwarePrintTest': False},indent=2)+'\n')
+    print(f'CAPT_OFFICE_FORMULA_CACHE_OBSERVED {json.dumps(formula_policy,sort_keys=True)} (two simple synthetic formulas only)')
+    print('CAPT_OFFICE_FIT_PDF_CONTENT_PASSED (18 synthetic PDFs; Word breaks/headers/PAGE/image; Excel right edge/dates/results/order/cache probes; no USB)')
 
 
 if __name__ == '__main__':

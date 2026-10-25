@@ -105,9 +105,12 @@ class OfficeWorkerSmoke : Instrumentation() {
                     check(convert(kind, listOf(2, 0), true) == fitted[0] + fitted[2])
                     // A new job with fit disabled uses the untouched original, not mutated native state.
                     convert(kind, listOf(1), false, 3)
+                    // Wrong saved results, unchanged formula expressions: observe real import policy.
+                    source.writeBytes(OfficeSyntheticFormulaCache.stale(kind.extension,source.readBytes()))
+                    convert(kind, listOf(0), false, 1)
                 }
             }
-            check(pids.size == 16)
+            check(pids.size == 18)
             report.writeText(JSONObject().put("syntheticOnly", true).put("hardwarePrintTest", false)
                 .put("workerProcesses", pids.size).put("conversions", observations).toString())
             result.putString("stream", "CAPT_OFFICE_WORKER_CONVERSION_PASSED (synthetic, no USB)")
