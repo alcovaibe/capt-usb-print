@@ -1,10 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name=".OfficePreviewTestActivity" android:exported="false" />
+        <service android:name=".OfficePreviewTestWorkerService" android:exported="false"
+            android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeAdmissionWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeFaultWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
     </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficePreviewUiSmoke"
+        android:targetPackage="${applicationId}" android:label="Synthetic Office UI lifecycle without USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeWorkerLifecycleSmoke"
         android:targetPackage="${applicationId}" android:label="Synthetic worker lifecycle checks without USB" />
     <instrumentation android:name="com.cryonum.captusbprint.PreparedPdfSmoke"

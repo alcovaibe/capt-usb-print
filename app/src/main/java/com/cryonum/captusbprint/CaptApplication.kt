@@ -13,6 +13,7 @@ class CaptApplication : Application() {
         File(cacheDir, "stage-c-inspection").deleteRecursively()
         // Office work is never resumed after its owning UI process has died.
         File(noBackupFilesDir, "office-work").deleteRecursively()
+        File(noBackupFilesDir, "office-ui").deleteRecursively()
         runCatching { PrintQueueRuntime.initialize(this) }
     }
 }

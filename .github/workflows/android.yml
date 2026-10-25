@@ -56,6 +56,8 @@ jobs:
         run: bash tools/check-private-import.sh
       - name: Check bounded Office containers on host
         run: bash tools/check-office-admission.sh
+      - name: Check latest prepared document ownership and cancellation
+        run: bash tools/check-latest-preparation.sh
       - name: Check Office worker resource observation on host
         run: bash tools/check-office-work-budget.sh
       - name: Verify native probe fails on process crash and timeout
@@ -131,6 +133,8 @@ jobs:
             adb install pr-apk/app-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
             bash tools/run-office-worker-smoke.sh lifecycle
+            timeout 180 adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.OfficePreviewUiSmoke | tee /tmp/capt-office-ui.txt
+            grep -F 'CAPT_OFFICE_PREVIEW_UI_PASSED' /tmp/capt-office-ui.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.OfficeIntakeSmoke | tee /tmp/capt-office-intake.txt
             grep -F 'CAPT_OFFICE_REJECTION_CLEANUP_PASSED' /tmp/capt-office-intake.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageDPrintSmoke | tee /tmp/capt-system-smoke.txt

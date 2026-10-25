@@ -1,0 +1,26 @@
+<resources>
+    <string name="office_title">Документ Word / Excel</string>
+    <string name="office_internal_fixture">Внутренняя проверка: встроенный тестовый документ. Пользовательское открытие Office ещё выключено.</string>
+    <string name="office_all_sheets">Выбрать все листы</string>
+    <string name="office_fit_width">Вписать таблицу по ширине A4</string>
+    <string name="office_retry">Подготовить заново</string>
+    <string name="office_select_sheet">Выберите хотя бы один лист книги.</string>
+    <string name="office_ready">Готово страниц: %1$d</string>
+    <string name="office_original_layout">Поля и ориентация сохраняются в подготовленном PDF.</string>
+    <string name="office_page_geometry">A4 · %1$s · раскладка предпросмотра и печати совпадает</string>
+    <string name="office_compatibility">LibreOffice может заменить отсутствующие шрифты и иначе обработать поля и формулы. Абсолютное совпадение с Microsoft Office не проверено. Сверьте предпросмотр с ожидаемым результатом. Для чрезвычайно широких таблиц режим вписывания имеет ограничения.</string>
+    <string name="office_reviewed">Я проверил предпросмотр и учитываю ограничения</string>
+    <string name="office_print_confirm">В общую очередь будет добавлено %1$d листов, копий: %2$d. Используется показанный готовый PDF A4. Начать печать?</string>
+    <string name="office_error_password">Документ зашифрован. Ввод пароля пока не поддерживается.</string>
+    <string name="office_error_corrupt">Повреждённый документ или некорректная структура Office.</string>
+    <string name="office_error_unsupported">Этот вариант Office пока не поддерживается. Возможны макросы, вложенные объекты или внешние связи.</string>
+    <string name="office_error_limit">Документ превышает допустимый размер, сложность или бюджет ресурсов.</string>
+    <string name="office_error_time">Подготовка заняла слишком много времени и остановлена.</string>
+    <string name="office_error_layout">Движок не поддерживает требуемую раскладку этого документа на A4.</string>
+    <string name="office_error_engine">Локальный движок Office недоступен в этой сборке.</string>
+    <string name="office_error_busy">Другая подготовка Office ещё завершается. Повторите подготовку.</string>
+    <string name="office_error_crash">Процесс Office завершился во время подготовки. Документ не отправлен на принтер.</string>
+    <string name="office_error_pdf">Движок не подготовил корректный многостраничный PDF A4. Документ не отправлен на принтер.</string>
+    <string name="office_error_cleanup">Не удалось надёжно проверить ресурсы или завершение процесса. Печать не запущена.</string>
+    <string name="office_error_failed">Не удалось подготовить документ Office. Документ не отправлен на принтер.</string>
+</resources>
