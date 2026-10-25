@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <service android:name=".OfficeFileLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
+        <service android:name=".OfficeCpuLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
+        <service android:name=".OfficeAddressLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <activity android:name=".OfficePreviewTestActivity" android:exported="false" />
         <service android:name=".OfficePreviewTestWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
@@ -8,6 +11,8 @@
         <service android:name=".OfficeFaultWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
     </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeKernelLimitsSmoke"
+        android:targetPackage="${applicationId}" android:label="Kernel limits in disposable workers, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficePreviewUiSmoke"
         android:targetPackage="${applicationId}" android:label="Synthetic Office UI lifecycle without USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeWorkerLifecycleSmoke"

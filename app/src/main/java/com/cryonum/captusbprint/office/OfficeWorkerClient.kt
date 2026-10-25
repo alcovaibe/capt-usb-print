@@ -139,7 +139,6 @@ internal object OfficeWorkerClient {
             try {
                 if (cancelled() || Thread.currentThread().isInterrupted)
                     throw OfficeConversionFailure(OfficeFailure.CANCELLED)
-                if (options.fitWidth) throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_LAYOUT)
                 val appRoot = File(context.applicationInfo.dataDir).canonicalFile.toPath()
                 if (!source.canonicalFile.toPath().startsWith(appRoot) || !source.isFile ||
                     source.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
@@ -203,6 +202,9 @@ internal object OfficeWorkerClient {
                 Thread.currentThread().interrupt()
                 throw OfficeConversionFailure(OfficeFailure.CANCELLED)
             } catch (error: OfficeConversionFailure) {
+                val limit = if (error.reason == OfficeFailure.WORKER_CRASHED)
+                    runCatching { OfficeKernelLimits.event(directory) }.getOrNull() else null
+                if (limit != null) throw OfficeConversionFailure(limit)
                 throw error
             } catch (_: IOException) {
                 throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)

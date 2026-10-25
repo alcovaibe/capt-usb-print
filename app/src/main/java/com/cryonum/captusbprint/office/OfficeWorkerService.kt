@@ -59,6 +59,7 @@ open class OfficeWorkerService : Service() {
         try {
             val directory = OfficeWorkerProtocol.directory(this, id)
             check(directory.isDirectory)
+            installKernelLimits(directory)
             val imported = PrivateDocumentImport.copy(directory,
                 { ParcelFileDescriptor.AutoCloseInputStream(source) }, { false }, { directory.usableSpace })
             val input = File(directory, "source.${options.kind.extension}")
@@ -74,6 +75,8 @@ open class OfficeWorkerService : Service() {
         }
         report(callback, id, failure, sheets)
     }
+
+    internal open fun installKernelLimits(directory: File) = OfficeKernelLimits.install(this,directory)
 
     internal open fun validateInput(input: File, options: OfficeOptions) {
         val actual = OfficeAdmission.inspect(input) { Thread.currentThread().isInterrupted }

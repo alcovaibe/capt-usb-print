@@ -7,6 +7,14 @@ case "${1:-conversion}" in
     entry=OfficeWorkerSmoke
     marker=CAPT_OFFICE_WORKER_CONVERSION_PASSED
     prefix=office-worker ;;
+  ui)
+    entry=OfficePreviewUiSmoke
+    marker=CAPT_OFFICE_PREVIEW_UI_PASSED
+    prefix=office-ui ;;
+  kernel)
+    entry=OfficeKernelLimitsSmoke
+    marker=CAPT_OFFICE_KERNEL_LIMITS_PASSED
+    prefix=office-kernel ;;
   lifecycle)
     entry=OfficeWorkerLifecycleSmoke
     marker=CAPT_OFFICE_WORKER_LIFECYCLE_PASSED
