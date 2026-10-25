@@ -11,7 +11,7 @@ internal object OfficeSandbox {
     init { System.loadLibrary("capt_office_sandbox") }
     class Broker(private val handle: Long, val descriptor: ParcelFileDescriptor) : Closeable {
         fun attach(pid: Int) = attachNative(handle, pid)
-        fun denied() = deniedNative(handle)
+        fun diagnostic() = deniedNative(handle)
         override fun close() {
             try { descriptor.close() } finally { stopNative(handle) }
         }
@@ -33,6 +33,6 @@ internal object OfficeSandbox {
     private external fun startNative(directory: String, apk: String, libraries: String): LongArray?
     private external fun stopNative(handle: Long)
     private external fun attachNative(handle: Long, pid: Int)
-    private external fun deniedNative(handle: Long): Boolean
+    private external fun deniedNative(handle: Long): Int
     private external fun installNative(socket: Int, directory: String): Int
 }

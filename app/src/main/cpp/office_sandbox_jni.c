@@ -34,9 +34,9 @@ JNIEXPORT void JNICALL Java_com_cryonum_captusbprint_office_OfficeSandbox_attach
   (JNIEnv *env,jobject self,jlong handle,jint pid) {
     (void)env;(void)self;capt_broker_set_worker((capt_broker *)(uintptr_t)handle,pid);
 }
-JNIEXPORT jboolean JNICALL Java_com_cryonum_captusbprint_office_OfficeSandbox_deniedNative
+JNIEXPORT jint JNICALL Java_com_cryonum_captusbprint_office_OfficeSandbox_deniedNative
   (JNIEnv *env,jobject self,jlong handle) {
-    (void)env;(void)self;return capt_broker_denied((capt_broker *)(uintptr_t)handle)?JNI_TRUE:JNI_FALSE;
+    (void)env;(void)self;return capt_broker_denied((capt_broker *)(uintptr_t)handle);
 }
 JNIEXPORT jint JNICALL Java_com_cryonum_captusbprint_office_OfficeSandbox_installNative
   (JNIEnv *env,jobject self,jint socket_fd,jstring directory) {

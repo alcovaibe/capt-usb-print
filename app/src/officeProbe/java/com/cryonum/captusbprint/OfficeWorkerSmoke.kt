@@ -116,7 +116,7 @@ class OfficeWorkerSmoke : Instrumentation() {
             result.putString("stream", "CAPT_OFFICE_WORKER_CONVERSION_PASSED (synthetic, no USB)")
             outcome = Activity.RESULT_OK
         } catch (error: Throwable) {
-            result.putString("stream", "OFFICE_WORKER_CONVERSION_FAILED:$stage:${(error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName}")
+            result.putString("stream", "OFFICE_WORKER_CONVERSION_FAILED:$stage:${(error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName}:category=${(error as? OfficeConversionFailure)?.sandboxCategory ?: 0}")
         } finally { source.delete(); spool.delete() }
         finish(outcome, result)
     }

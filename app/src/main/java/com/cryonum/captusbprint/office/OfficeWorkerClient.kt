@@ -248,6 +248,7 @@ internal object OfficeWorkerClient {
                         stopped = processStopped()
                     }
                     var finalFailure: OfficeFailure? = null
+                    var sandboxCategory = 0
                     if (preserve && stopped && unbound) {
                         // Native background threads can still write after the success callback.
                         // Only a stopped process makes the last workspace measurement stable.
@@ -255,13 +256,14 @@ internal object OfficeWorkerClient {
                         catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
                         catch (_: IOException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
                         catch (_: SecurityException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
-                        if (requireNotNull(broker).denied()) finalFailure = OfficeFailure.EXTERNAL_RESOURCE
+                        sandboxCategory = requireNotNull(broker).diagnostic()
+                        if (sandboxCategory != 0) finalFailure = OfficeFailure.EXTERNAL_RESOURCE
                         if (finalFailure != null) preserve = false
                     }
                     val cleaned = !stopped || (preserve && unbound) || OfficePrivateFiles.deleteTree(directory)
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                     if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
-                    finalFailure?.let { throw OfficeConversionFailure(it) }
+                    finalFailure?.let { throw OfficeConversionFailure(it, sandboxCategory) }
                 } finally {
                     broker?.close(); broker = null
                     if (interrupted) Thread.currentThread().interrupt()

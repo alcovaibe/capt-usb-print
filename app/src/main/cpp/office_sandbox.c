@@ -134,6 +134,13 @@ static int ancestor(capt_broker *b, const char *path) {
     for (int i=0;i<b->count;++i) if (beneath(b->roots[i].path,path)) return 1;
     return 0;
 }
+static void deny_resource(capt_broker *b,int op,const char *path) {
+    /* Fixed categories only: never retain a document path in diagnostics. */
+    const char *prefix[]={"/.cache","/.config","/tmp","/proc","/dev","/sys","/storage","/sdcard","/data/fonts","/data/app","/data/user","/data/data","/etc"};
+    int kind=99;
+    for(size_t i=0;i<sizeof(prefix)/sizeof(prefix[0]);++i)if(beneath(path,prefix[i])){kind=(int)i+1;break;}
+    int expected=0;atomic_compare_exchange_strong(&b->denied,&expected,op*100+kind);
+}
 static int check_leaf(int dir,const char *leaf,int missing) {
     struct stat st;
     if (fstatat(dir,leaf,&st,AT_SYMLINK_NOFOLLOW)) return missing && errno==ENOENT;
@@ -179,11 +186,11 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
             return;
         }
         r->error=errno;
-        if(q->op==OPEN || write_access)atomic_store(&b->denied,1);
+        if(q->op==OPEN || write_access)deny_resource(b,q->op,paths[0]);
         return;
     }
     errno=0; long result=-1;
-    if (!check_leaf(dir,leaf,q->op==OPEN || q->op==MKDIR || q->op==RENAME)) { r->error=errno?errno:EACCES; if(r->error==EACCES)atomic_store(&b->denied,1);close(dir); return; }
+    if (!check_leaf(dir,leaf,q->op==OPEN || q->op==MKDIR || q->op==RENAME)) { r->error=errno?errno:EACCES; if(r->error==EACCES)deny_resource(b,q->op,paths[0]);close(dir); return; }
     switch (q->op) {
         case OPEN: {
             /* No arbitrary device, FIFO or directory outside the allowlist. */
@@ -454,6 +461,14 @@ static void only_socket(int nr,int fd) {
 }
 int capt_sandbox_install(int socket_fd,const char *root) {
     if (broker_socket>=0 || socket_fd<3 || !root || !normalize(root,current_directory)) return 0;
+    /* Fontconfig/ICU/LO must not fall back to the Android passwd home (often
+     * /) or the application's shared cache. All mutable defaults belong here. */
+    const char *variables[]={"HOME","TMPDIR","XDG_CONFIG_HOME","XDG_CACHE_HOME","XDG_DATA_HOME"};
+    const char *parts[]={"home","tmp","config","cache","data"};
+    for(size_t i=0;i<sizeof(variables)/sizeof(variables[0]);++i) {
+        char path[PATH_MAX];int n=snprintf(path,sizeof(path),"%s/%s",root,parts[i]);
+        if(n<0 || n>=(int)sizeof(path) || (mkdir(path,0700) && errno!=EEXIST) || setenv(variables[i],path,1))return 0;
+    }
     /* Hide native/Java stdio before any document is interpreted. */
     int null_fd=open("/dev/null",O_WRONLY|O_CLOEXEC);
     if(null_fd<0 || dup2(null_fd,STDOUT_FILENO)<0 || dup2(null_fd,STDERR_FILENO)<0) { if(null_fd>=0)close(null_fd);return 0; }

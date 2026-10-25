@@ -44,7 +44,7 @@ internal enum class OfficeFailure {
     ENGINE_FAILED, INVALID_RESULT, BUSY, PASSWORD_REQUIRED, UNSUPPORTED_DOCUMENT, CORRUPT_DOCUMENT, DOCUMENT_LIMIT, CPU_LIMIT, FILE_LIMIT, SANDBOX_UNAVAILABLE, EXTERNAL_RESOURCE
 }
 
-internal class OfficeConversionFailure(val reason: OfficeFailure) : IOException(reason.name)
+internal class OfficeConversionFailure(val reason: OfficeFailure, val sandboxCategory: Int = 0) : IOException(reason.name)
 
 /** PDF ownership ends at close; a preview must first make its independent prepared-PDF copy. */
 internal class OfficeConvertedPdf(val file: File, sheets: List<String>, val workerPid: Int,
