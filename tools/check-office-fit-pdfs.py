@@ -9,6 +9,21 @@ import tarfile
 import tempfile
 
 
+def check_word(pages, image_count):
+    pages = [' '.join(page.split()) for page in pages]
+    assert len(pages) == 3 and image_count >= 1
+    for number, page in enumerate(pages, 1):
+        assert 'синтетический тест кириллицы' in page
+        assert re.search(rf'Страница\s+{number}\b', page), 'Word PAGE field/header/footer must survive'
+    for number, title in enumerate(('ПЕРВАЯ СТРАНИЦА', 'ВТОРАЯ СТРАНИЦА', 'ТРЕТЬЯ СТРАНИЦА')):
+        assert title in pages[number], 'Explicit Word page/section break must survive'
+        assert all(title not in page for index, page in enumerate(pages) if index != number)
+    assert 'Полужирный.' in pages[0] and 'Курсив.' in pages[0] and 'Подчёркнутый.' in pages[0]
+    assert 'Первый пункт списка' in pages[0] and 'Маркированный пункт' in pages[0]
+    assert 'Объединённые ячейки' in pages[0] and 'Ячейка 3 3' in pages[0]
+    assert 'Ёж, съешь ещё' in pages[1] and 'Альбомный раздел A4' in pages[2]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('archive', type=Path)
@@ -26,6 +41,7 @@ def main():
         assert name not in expected
         expected[name] = row['pdfPages']
     texts = {}
+    word_images = {}
     with tarfile.open(args.archive, 'r:') as archive:
         members = archive.getmembers()
         assert len(members) == len(expected) + 1
@@ -45,12 +61,20 @@ def main():
                 pdf.write_bytes(content)
                 text = subprocess.run(['pdftotext', '-layout', '-enc', 'UTF-8', str(pdf), '-'],
                     check=True, capture_output=True, text=True, timeout=30).stdout
+                if path.name in ('docx-saved-all.pdf', 'doc-saved-all.pdf'):
+                    images = subprocess.run(['pdfimages', '-list', str(pdf)],
+                        check=True, capture_output=True, text=True, timeout=30).stdout
+                    # Poppler lists page, image number, type. This is image presence, not visual QA.
+                    word_images[path.name] = len(re.findall(r'^\s*\d+\s+\d+\s+image\s', images, re.M))
             pages = text.split('\f')
             assert not pages[-1].strip()
             pages = pages[:-1]
             assert len(pages) == expected[path.name]
             texts[path.name] = pages
     assert set(texts) == set(expected)
+    for kind in ('docx', 'doc'):
+        name = f'{kind}-saved-all.pdf'
+        check_word(texts[name], word_images[name])
     for kind in ('xls', 'xlsx'):
         wide = texts[f'{kind}-fit-2.pdf']
         assert len(wide) == 1
@@ -70,7 +94,7 @@ def main():
         assert 'Сводка' in subset[0] and re.search(r'КОНЕЦ\s*3', subset[-1])
         assert len(subset) == len(texts[f'{kind}-fit-1.pdf']) + len(long)
         assert len(all_pages) == len(subset) + len(wide)
-    print('CAPT_OFFICE_FIT_PDF_CONTENT_PASSED (16 synthetic PDFs, right edge/dates/results/order; no USB)')
+    print('CAPT_OFFICE_FIT_PDF_CONTENT_PASSED (16 synthetic PDFs; Word breaks/headers/PAGE/image; Excel right edge/dates/results/order; no USB)')
 
 
 if __name__ == '__main__':
