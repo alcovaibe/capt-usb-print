@@ -4,10 +4,10 @@
   "channel": "experimental",
   "applicationId": "com.cryonum.captusbprint",
   "release": {
-    "versionCode": 1202,
-    "versionName": "0.1.0-a2.202",
+    "versionCode": 1204,
+    "versionName": "0.1.0-a2.204",
     "minSdk": 29,
-    "releaseUrl": "https://github.com/alcovaibe/capt-usb-print/releases/tag/v0.1.0-a2-signed.build.202",
+    "releaseUrl": "https://github.com/alcovaibe/capt-usb-print/releases/tag/v0.1.0-a2-signed.build.204",
     "notes": {
       "ru": "Новая подписанная сборка CAPT USB Print.",
       "en": "New signed CAPT USB Print build."
