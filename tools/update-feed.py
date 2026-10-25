@@ -32,8 +32,8 @@ def api(endpoint, data=None):
 
 def manifest_from_apk(release, badging, certificate, expected):
     match = re.fullmatch(TAG_PATTERN, release["tag_name"])
-    if not match or release["draft"] or not release["prerelease"]:
-        raise ValueError("Expected published signed experimental release")
+    if not match or release["draft"]:
+        raise ValueError("Expected published signed release")
     build = int(match[1])
     name = f"0.1.0-a2.{build}"
     metadata = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
@@ -47,8 +47,8 @@ def manifest_from_apk(release, badging, certificate, expected):
     return {"schemaVersion": 1, "platform": "android", "channel": "experimental", "applicationId": APPID,
             "release": {"versionCode": int(metadata[2]), "versionName": name, "minSdk": 29,
                         "releaseUrl": url,
-                        "notes": {"ru": "Новая подписанная экспериментальная сборка CAPT USB Print.",
-                                  "en": "New signed experimental CAPT USB Print build."}}}
+                        "notes": {"ru": "Новая подписанная сборка CAPT USB Print.",
+                                  "en": "New signed CAPT USB Print build."}}}
 
 
 def merge_feed(previous, candidate):

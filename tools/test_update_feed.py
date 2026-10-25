@@ -37,8 +37,13 @@ class FeedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             feed.manifest_from_apk(self.release(), bad, "b"*64, "a"*64)
 
+    def test_regular_release_is_accepted(self):
+        release = self.release(); release["prerelease"] = False
+        result = feed.manifest_from_apk(release, self.badging(), "a"*64, "a"*64)
+        self.assertEqual(1150, result["release"]["versionCode"])
+
     def test_unpublished_or_unexpected_channel_is_rejected(self):
-        for key, value in [("draft", True), ("prerelease", False), ("tag_name", "v1.0.0"), ("html_url", "https://evil.example")]:
+        for key, value in [("draft", True), ("tag_name", "v1.0.0"), ("html_url", "https://evil.example")]:
             release = self.release(); release[key] = value
             with self.assertRaises(ValueError):
                 feed.manifest_from_apk(release, self.badging(), "a"*64, "a"*64)

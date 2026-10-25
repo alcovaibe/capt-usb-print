@@ -1,7 +1,7 @@
 name: Publish verified Android update feed
 on:
   workflow_run:
-    workflows: [CAPT USB Print checks and signed prerelease]
+    workflows: [CAPT USB Print checks and signed release]
     types: [completed]
     branches: [main]
   workflow_dispatch:

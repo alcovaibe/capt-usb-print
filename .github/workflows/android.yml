@@ -1,4 +1,4 @@
-name: CAPT USB Print checks and signed prerelease
+name: CAPT USB Print checks and signed release
 on:
   push:
     branches: [main]
