@@ -101,13 +101,16 @@ int main(int argc,char **argv) {
     if(symlink(libs,alias))return 2;
     snprintf(path,sizeof(path),"%s/job/file-link",argv[1]);if(symlink(secret,path))return 2;
     snprintf(path,sizeof(path),"%s/job/dir-link",argv[1]);if(symlink(argv[1],path))return 2;
-    int client=-1,report[2],logger[2];
+    int client=-1,report,logger[2];
     capt_broker *broker=capt_broker_start(job,apk,alias,&client);
-    if(!broker || pipe(report) || socketpair(AF_UNIX,SOCK_DGRAM,0,logger))return 2;
+    snprintf(path,sizeof(path),"%s/job/host-result",argv[1]);report=open(path,O_CREAT|O_RDWR,0600);
+    if(!broker || report<0 || socketpair(AF_UNIX,SOCK_DGRAM,0,logger))return 2;
     pid_t pid=fork();if(pid<0)return 2;
-    if(!pid)child(client,report[1],logger[1],job,secret,apk,library);
-    close(client);close(report[1]);close(logger[1]);
-    int status=0,checks=0;ssize_t count=read(report[0],&checks,sizeof(checks));waitpid(pid,&status,0);
+    if(!pid)child(client,report,logger[1],job,secret,apk,library);
+    close(client);close(logger[1]);
+    int status=0,checks=0;waitpid(pid,&status,0);
+    if(lseek(report,0,SEEK_SET)<0)return 2;
+    ssize_t count=read(report,&checks,sizeof(checks));close(report);
     capt_broker_stop(broker);
     if(count!=sizeof(checks) || !WIFEXITED(status) || WEXITSTATUS(status)) { fprintf(stderr,"SANDBOX_FAILED check=%d status=%d bytes=%zd\n",checks,status,count);return 1; }
     char buffer[32];if(recv(logger[0],buffer,sizeof(buffer),MSG_DONTWAIT)>=0 || errno!=EAGAIN)return 1;

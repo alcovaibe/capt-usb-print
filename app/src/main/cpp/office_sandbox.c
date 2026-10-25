@@ -36,7 +36,7 @@
 enum { OPEN = 1, STAT, ACCESS, READLINK, MKDIR, UNLINK, RENAME, CHMOD, STATFS, CHDIR };
 enum { READ = 1, WRITE = 2, META = 4 };
 #define WIRE_VERSION 1
-#define MAX_ROOTS 16
+#define MAX_ROOTS 24
 typedef struct {
     uint32_t version;
     int op, flags, mode, at[2];
@@ -148,6 +148,8 @@ static void deny_resource(capt_broker *b,int op,const char *path) {
     for(size_t i=0;i<sizeof(prefix)/sizeof(prefix[0]);++i)if(beneath(path,prefix[i])){kind=(int)i+1;break;}
     const char *devices[]={"/dev/pmsg0","/dev/__properties__","/dev/ashmem","/dev/zero","/dev/binder","/dev/socket","/dev/log"};
     for(size_t i=0;i<sizeof(devices)/sizeof(devices[0]);++i)if(beneath(path,devices[i])){kind=(int)i+31;break;}
+    const char *misc[]={"/data/misc/zoneinfo","/data/misc/profiles","/data/misc/apexdata","/data/misc/keychain"};
+    for(size_t i=0;i<sizeof(misc)/sizeof(misc[0]);++i)if(beneath(path,misc[i])){kind=(int)i+41;break;}
     int expected=0;atomic_compare_exchange_strong(&b->denied,&expected,op*100+kind);
 }
 static int check_leaf(int dir,const char *leaf,int missing) {
@@ -201,7 +203,7 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
              * symlink can be a denied external document resource. No content
              * is read here. This does not authorize opening the probed path. */
             struct stat outside;
-            if(!lstat(paths[0],&outside) && (S_ISREG(outside.st_mode) || S_ISLNK(outside.st_mode)))
+            if((q->flags&O_ACCMODE)!=O_WRONLY && !lstat(paths[0],&outside) && (S_ISREG(outside.st_mode) || S_ISLNK(outside.st_mode)))
                 deny_resource(b,q->op,paths[0]);
         } else if(write_access)deny_resource(b,q->op,paths[0]);
         return;
@@ -293,6 +295,9 @@ capt_broker *capt_broker_start(const char *root,const char *apk,const char *libr
     /* Android's /etc alias points into immutable /system, not a host's /etc. */
     char etc[PATH_MAX];
     if(realpath("/etc",etc) && beneath(etc,"/system") && !add_root(b,"/etc",READ,0,0))goto failed;
+    /* OS-maintained public time-zone data; never the rest of /data/misc. */
+    if(!add_root(b,"/data/misc/zoneinfo",READ,0,0) ||
+        !add_root(b,"/data/misc/apexdata/com.android.tzdata",READ,0,0))goto failed;
     if(!add_root(b,"/proc/cpuinfo",READ,1,0) || !add_root(b,"/proc/meminfo",READ,1,0) ||
         !add_root(b,"/sys/devices/system/cpu",READ,0,0))goto failed;
     if (!add_root(b,"/dev/null",READ|WRITE,1,1) || !add_root(b,"/dev/urandom",READ,1,1) ||
@@ -637,7 +642,20 @@ int capt_sandbox_install(int socket_fd,const char *root) {
         if(!end || *end || parsed<3 || parsed>INT_MAX)continue;
         int fd=(int)parsed;
         if(fd==socket_fd)continue;
-        struct stat st;if(fstat(fd,&st)||!S_ISSOCK(st.st_mode))continue;
+        struct stat st;
+        int protected=fstat(fd,&st)!=0;
+        if(!protected)protected=S_ISSOCK(st.st_mode) || S_ISFIFO(st.st_mode) || S_ISCHR(st.st_mode);
+        if(!protected && S_ISREG(st.st_mode)) {
+            int flags=fcntl(fd,F_GETFL);
+            if(flags<0)protected=1;
+            else if((flags&O_ACCMODE)!=O_RDONLY) {
+                char proc[64],target[PATH_MAX];snprintf(proc,sizeof(proc),"/proc/self/fd/%d",fd);
+                ssize_t n=readlink(proc,target,sizeof(target)-1);
+                if(n<=0)protected=1;
+                else { target[n]=0;protected=!beneath(target,root) && strncmp(target,"/memfd:",7) && strncmp(target,"/dev/ashmem/",12); }
+            }
+        }
+        if(!protected)continue;
         const int calls[]={__NR_write,__NR_writev,__NR_close,__NR_dup,__NR_dup3,__NR_fcntl,
 #ifdef __NR_dup2
             __NR_dup2,
