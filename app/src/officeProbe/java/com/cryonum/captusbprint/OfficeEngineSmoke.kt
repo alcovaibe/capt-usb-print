@@ -24,12 +24,15 @@ class OfficeEngineSmoke : Instrumentation() {
 
     override fun onStart() {
         val result = Bundle()
+        val stageFile = File(targetContext.filesDir, "office-probe-stage.txt")
         var stage = "bootstrap"
+        fun mark(value: String) { stage = value; stageFile.writeText(value) }
         var outcome = Activity.RESULT_CANCELED
         var activity: Activity? = null
         val context = targetContext
         val directory = File(context.cacheDir, "office-engine-probe").apply { mkdirs() }
         try {
+            mark("bootstrap")
             waitForIdleSync()
             val report = File(context.filesDir, "office-probe-results.json")
             check(!report.exists() || report.delete())
@@ -38,11 +41,13 @@ class OfficeEngineSmoke : Instrumentation() {
             activity = startActivitySync(Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
+            mark("jni-init")
             LibreOfficeKit.init(activity)
+            mark("jni-handle")
             val office = Office(requireNotNull(LibreOfficeKit.getLibreOfficeKitHandle()))
             val observations = JSONArray()
             for (name in listOf("word.docx", "word.doc", "workbook.xls", "workbook.xlsx")) {
-                stage = "load-$name"
+                mark("load-$name")
                 val input = File(directory, name)
                 context.assets.open("office-fixtures/$name").use { source ->
                     input.outputStream().use { source.copyTo(it) }
@@ -55,12 +60,12 @@ class OfficeEngineSmoke : Instrumentation() {
                         check(document.getParts() == 3)
                         check((0 until 3).map { document.getPartName(it) } == listOf("Сводка", "Широкая", "Длинная"))
                     }
-                    stage = "export-$name"
+                    mark("export-$name")
                     val pdf = File(directory, "$name.pdf")
                     check(!pdf.exists() || pdf.delete()) // A failed saveAs must never reuse an old PDF.
                     document.saveAs(pdf.toURI().toASCIIString(), "pdf", "")
                     check(pdf.isFile && pdf.length() in 1..DocumentInspector.MAX_SOURCE_BYTES)
-                    stage = "validate-$name"
+                    mark("validate-$name")
                     DocumentInspector.openPreparedPdf(context, pdf).use { prepared ->
                         if (!book) check(prepared.overview.pageCount == 3)
                         else check(prepared.overview.pageCount >= 3)
@@ -86,6 +91,7 @@ class OfficeEngineSmoke : Instrumentation() {
                 .put("sourceCommit", "8221e31b3ac356a1623c672912a3d2b492f7e3d1")
                 .put("syntheticOnly", true).put("hardwarePrintTest", false)
                 .put("conversions", observations).toString())
+            mark("complete")
             result.putString("stream", "CAPT_OFFICE_ENGINE_CONVERSION_SMOKE_PASSED (synthetic only)")
             outcome = Activity.RESULT_OK
         } catch (error: Throwable) {

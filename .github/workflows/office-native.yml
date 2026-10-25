@@ -5,6 +5,9 @@ on:
       - 'config/office/**'
       - 'tools/office/**'
       - '.github/workflows/office-native.yml'
+      - 'app/src/officeProbe/**'
+      - 'app/build.gradle.kts'
+      - 'tools/run-office-engine-smoke.sh'
   workflow_dispatch:
 permissions:
   contents: read
@@ -123,9 +126,7 @@ jobs:
           script: |
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
             adb install app/build/outputs/apk/debug/app-debug.apk
-            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.OfficeEngineSmoke | tee office-engine-smoke.txt
-            grep -F 'CAPT_OFFICE_ENGINE_CONVERSION_SMOKE_PASSED' office-engine-smoke.txt
-            adb exec-out run-as com.cryonum.captusbprint.debug cat files/office-probe-results.json > office-probe-results.json
+            bash tools/run-office-engine-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -133,5 +134,7 @@ jobs:
           path: |
             office-engine-smoke.txt
             office-probe-results.json
+            office-probe-stage.txt
+            office-engine-logcat.txt
           if-no-files-found: ignore
           retention-days: 7
