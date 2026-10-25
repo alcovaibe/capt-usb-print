@@ -25,4 +25,6 @@
         android:targetPackage="${applicationId}" android:label="Offline Stage C renderer checks" />
     <instrumentation android:name="com.cryonum.captusbprint.StageDPrintSmoke"
         android:targetPackage="${applicationId}" android:label="Offline system PDF and PrintService checks" />
+    <instrumentation android:name="com.cryonum.captusbprint.UpdateSmoke"
+        android:targetPackage="${applicationId}" android:label="Offline update UI and FileProvider checks" />
 </manifest>

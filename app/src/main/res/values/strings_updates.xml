@@ -1,0 +1,20 @@
+<resources>
+    <string name="updates_check">Проверить обновления</string>
+    <string name="updates_available">Доступна версия %1$s</string>
+    <string name="updates_later">Позже</string>
+    <string name="updates_current">Более новой совместимой сборки нет.</string>
+    <string name="updates_network_error">Не удалось проверить обновления. Проверьте подключение и повторите попытку.</string>
+    <string name="updates_invalid_response">Сервер вернул некорректные данные обновления.</string>
+    <string name="updates_disabled">Сетевые обновления отключены в этой автономной сборке. Новый APK можно установить вручную.</string>
+    <string name="updates_download">Скачать</string>
+    <string name="updates_cancel">Отмена</string>
+    <string name="updates_install">Установить</string>
+    <string name="updates_retry">Повторить</string>
+    <string name="updates_close">Закрыть</string>
+    <string name="updates_downloading">Загрузка APK…</string>
+    <string name="updates_downloading_percent">Загрузка APK: %1$d%%</string>
+    <string name="updates_ready">APK проверен. Нажмите «Установить». Если Android запросит разрешение установки из этого источника, включите его, вернитесь и снова нажмите «Установить».</string>
+    <string name="updates_download_error">Не удалось загрузить APK. Можно повторить попытку.</string>
+    <string name="updates_invalid_apk">APK не прошёл проверку пакета, версии или подписи. Установка не предложена.</string>
+    <string name="updates_install_error">Не удалось открыть установщик. Можно повторить попытку.</string>
+</resources>

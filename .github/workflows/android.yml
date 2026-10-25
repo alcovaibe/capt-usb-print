@@ -1,4 +1,4 @@
-name: CAPT USB Print checks and signed prerelease
+name: CAPT USB Print checks and signed release
 on:
   push:
     branches: [main]
@@ -39,7 +39,8 @@ jobs:
           /tmp/capt-hiscoa-smoke
       - name: Validate release and emulator setup scripts
         run: |
-          python3 -m py_compile tools/prepare-signing.py tools/signed-release.py
+          python3 -m py_compile tools/prepare-signing.py tools/signed-release.py tools/update-feed.py
+          python3 -m unittest discover -s tools -p test_update_feed.py
           bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
           # Reproduce duplicate partition-size entries from a device profile.
           fixture="$(mktemp -d)"
@@ -136,6 +137,11 @@ jobs:
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
             adb install pr-apk/app-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
+            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.UpdateSmoke | tee /tmp/capt-update-smoke.txt
+            mkdir -p update-ui-evidence
+            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-main.png update-ui-evidence/
+            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-result.png update-ui-evidence/
+            grep -F 'CAPT_UPDATE_UI_SMOKE_PASSED' /tmp/capt-update-smoke.txt
             bash tools/run-office-worker-smoke.sh lifecycle
             bash tools/run-office-worker-smoke.sh kernel
             bash tools/run-office-worker-smoke.sh ui
@@ -152,6 +158,14 @@ jobs:
             grep -F 'CAPT_QUEUE_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.PreparedPdfSmoke | tee /tmp/capt-prepared-smoke.txt
             grep -F 'CAPT_PREPARED_PDF_LAYOUT_SMOKE_PASSED' /tmp/capt-prepared-smoke.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capt-update-ui-evidence-api-${{ matrix.api }}
+          path: update-ui-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
 
   signing-availability:
     name: Owner signing configuration

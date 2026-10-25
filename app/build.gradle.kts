@@ -57,8 +57,13 @@ android {
         release {
             if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("permanent")
             isMinifyEnabled = false
+            // Office branch is deliberately offline, including release candidates.
+            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "false")
         }
-        debug { applicationIdSuffix = ".debug" }
+        debug {
+            applicationIdSuffix = ".debug"
+            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "false")
+        }
     }
 
     compileOptions {
@@ -88,5 +93,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core)
+    implementation(libs.okhttp)
+    implementation(libs.coroutines.android)
     testImplementation(libs.junit)
 }
