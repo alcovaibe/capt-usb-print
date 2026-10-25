@@ -118,8 +118,11 @@ public final class OfficeAdmissionChecks {
         streams=word(); streams.put("Workbook",biff(false)); reject(compound(3,streams,false),OfficeAdmission.Reason.UNSUPPORTED);
         byte[] extended=extendedDifat();
         accept(extended,OfficeAdmission.Kind.DOC);
-        mutated=extended.clone(); put32(mutated,76,-1); put32(mutated,112*512+8,0);
-        reject(mutated,OfficeAdmission.Reason.CORRUPT); // Same FAT IDs, illegal gap before a valid entry.
+        mutated=extended.clone();
+        for (int i=108;i>0;i--) put32(mutated,76+i*4,i-1);
+        put32(mutated,76,-1);
+        for (int i=0;i<3;i++) put32(mutated,112*512+i*4,108+i);
+        reject(mutated,OfficeAdmission.Reason.CORRUPT); // Preserve FAT order, but insert an illegal FREE gap.
         put32(extended,68,1); reject(extended,OfficeAdmission.Reason.CORRUPT);
         // Regular FAT streams, independent of the mini-stream path.
         accept(compound(3,word(),true),OfficeAdmission.Kind.DOC);
