@@ -37,11 +37,12 @@ internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
                 throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
             if (options.fitWidth && document.configureCalcFitWidth(options.selectedSheets?.toIntArray() ?: intArrayOf()) != 1)
                 throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_LAYOUT)
-            val filter = options.selectedSheets?.let { selected -> JSONObject()
-                .put("SheetRange", JSONObject().put("type", "string")
-                    .put("value", selected.joinToString(",") { (it + 1).toString() }))
+            val filter = if (options.kind.spreadsheet) JSONObject()
                 .put("SinglePageSheets", JSONObject().put("type", "boolean").put("value", false))
-                .toString() } ?: ""
+                .apply { options.selectedSheets?.let { selected ->
+                    put("SheetRange", JSONObject().put("type", "string")
+                        .put("value", selected.joinToString(",") { (it + 1).toString() }))
+                } }.toString() else ""
             check(!output.exists())
             if (document.saveAs(output.toURI().toASCIIString(), "pdf", filter) == 0)
                 throw OfficeConversionFailure(OfficeFailure.ENGINE_FAILED)
