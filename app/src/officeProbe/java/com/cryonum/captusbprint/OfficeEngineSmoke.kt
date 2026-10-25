@@ -30,9 +30,11 @@ class OfficeEngineSmoke : Instrumentation() {
         var outcome = Activity.RESULT_CANCELED
         var activity: Activity? = null
         val context = targetContext
-        val directory = File(context.cacheDir, "office-engine-probe").apply { mkdirs() }
+        val directory = File(context.cacheDir, "office-engine-probe")
         try {
             mark("bootstrap")
+            check(!directory.exists() || directory.deleteRecursively())
+            check(directory.mkdirs())
             waitForIdleSync()
             val report = File(context.filesDir, "office-probe-results.json")
             check(!report.exists() || report.delete())
@@ -68,30 +70,49 @@ class OfficeEngineSmoke : Instrumentation() {
                         check(document.getParts() == 3)
                         check((0 until 3).map { document.getPartName(it) } == listOf("Сводка", "Широкая", "Длинная"))
                     }
-                    mark("export-$name")
-                    val pdf = File(directory, "$name.pdf")
-                    check(!pdf.exists() || pdf.delete()) // A failed saveAs must never reuse an old PDF.
-                    check(document.saveAs(pdf.toURI().toASCIIString(), "pdf", "") != 0)
-                    check(pdf.isFile && pdf.length() in 1..DocumentInspector.MAX_SOURCE_BYTES)
-                    mark("validate-$name")
-                    DocumentInspector.openPreparedPdf(context, pdf).use { prepared ->
-                        if (!book) check(prepared.overview.pageCount == 3)
-                        else check(prepared.overview.pageCount >= 3)
-                        check(prepared.preparedPdfLayout != null)
-                        val preview = prepared.renderPreparedPrintPreview(0) { false }
-                        try {
-                            val pixels = IntArray(preview.width * preview.height)
-                            preview.getPixels(pixels, 0, preview.width, 0, 0, preview.width, preview.height)
-                            check(pixels.any { it == android.graphics.Color.BLACK })
-                        } finally { preview.recycle() }
-                        val spool = File(directory, "$name.capt")
-                        StoredCaptPage.write(spool,
-                            produce = { accept -> prepared.forEachPrintBand(0,
-                                prepared.preparedPdfLayout.orientations[0], 0, { false }, accept) },
-                            encode = { bytes, stride, lines, last -> HiscoaNative.encodeBand(bytes, stride, lines, last) },
-                            cancelled = { false }, reserve = {}).validate { false }
-                        observations.put(JSONObject().put("format", name.substringAfterLast('.'))
-                            .put("pdfPages", prepared.overview.pageCount).put("pdfBytes", pdf.length()))
+                    fun export(selectedSheets: List<Int>? = null): Int {
+                        // Reverse click order 3→1 still exports in workbook order 1→3.
+                        val selection = selectedSheets?.distinct()?.sorted()
+                        val suffix = selection?.joinToString("-") { (it + 1).toString() } ?: "all"
+                        val options = if (selection == null) "" else JSONObject()
+                            .put("SheetRange", JSONObject().put("type", "string")
+                                .put("value", selection.joinToString(",") { (it + 1).toString() }))
+                            .put("SinglePageSheets", JSONObject().put("type", "boolean").put("value", false))
+                            .toString()
+                        mark("export-$name-$suffix")
+                        val pdf = File(directory, "$name-$suffix.pdf")
+                        check(!pdf.exists() || pdf.delete()) // A failed saveAs must never reuse an old PDF.
+                        check(document.saveAs(pdf.toURI().toASCIIString(), "pdf", options) != 0)
+                        check(pdf.isFile && pdf.length() in 1..DocumentInspector.MAX_SOURCE_BYTES)
+                        mark("validate-$name-$suffix")
+                        return DocumentInspector.openPreparedPdf(context, pdf).use { prepared ->
+                            if (!book) check(prepared.overview.pageCount == 3)
+                            else check(prepared.overview.pageCount >= 1)
+                            check(prepared.preparedPdfLayout != null)
+                            val preview = prepared.renderPreparedPrintPreview(0) { false }
+                            try {
+                                val pixels = IntArray(preview.width * preview.height)
+                                preview.getPixels(pixels, 0, preview.width, 0, 0, preview.width, preview.height)
+                                check(pixels.any { it == android.graphics.Color.BLACK })
+                            } finally { preview.recycle() }
+                            val spool = File(directory, "$name-$suffix.capt")
+                            StoredCaptPage.write(spool,
+                                produce = { accept -> prepared.forEachPrintBand(0,
+                                    prepared.preparedPdfLayout.orientations[0], 0, { false }, accept) },
+                                encode = { bytes, stride, lines, last -> HiscoaNative.encodeBand(bytes, stride, lines, last) },
+                                cancelled = { false }, reserve = {}).validate { false }
+                            observations.put(JSONObject().put("format", name.substringAfterLast('.'))
+                                .put("sheetRange", suffix).put("pdfPages", prepared.overview.pageCount).put("pdfBytes", pdf.length()))
+                            prepared.overview.pageCount
+                        }
+                    }
+                    val allPages = export()
+                    if (book) {
+                        val singleCounts = (0 until 3).map { export(listOf(it)) }
+                        val subsetPages = export(listOf(2, 0))
+                        check(singleCounts[2] > 1) // The long sheet must keep pagination by height.
+                        check(allPages == singleCounts.sum())
+                        check(subsetPages == singleCounts[0] + singleCounts[2])
                     }
                 } finally { document.destroy() }
             }
@@ -105,7 +126,10 @@ class OfficeEngineSmoke : Instrumentation() {
         } catch (error: Throwable) {
             result.putString("stream", "OFFICE_ENGINE_PROBE_FAILED:$stage:${error.javaClass.simpleName}")
         } finally {
-            directory.deleteRecursively()
+            if (!directory.deleteRecursively()) {
+                result.putString("stream", "OFFICE_ENGINE_PROBE_FAILED:cleanup")
+                outcome = Activity.RESULT_CANCELED
+            }
             activity?.let { runOnMainSync { it.finish() } }
         }
         finish(outcome, result)

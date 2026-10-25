@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reproduce adb's zero-exit process crash without an emulator or native engine."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -8,8 +9,10 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 FAKE_ADB = '''#!/usr/bin/env python3
-import os, sys
+import json, os, sys
 a = sys.argv[1:]
+with open(os.environ["PROBE_TEST_CALLS"], "a") as calls:
+    calls.write(json.dumps(a) + "\\n")
 if a[:3] == ['shell', 'am', 'instrument']:
     mode = os.environ['PROBE_TEST_MODE']
     if mode == 'success':
@@ -52,8 +55,11 @@ def main():
             work.mkdir()
             result = subprocess.run(['bash', str(ROOT / 'tools/run-office-engine-smoke.sh')],
                 cwd=work, env={**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
-                               'PROBE_TEST_MODE': mode}, capture_output=True, text=True, timeout=10)
+                               'PROBE_TEST_MODE': mode, 'PROBE_TEST_CALLS': str(work / 'calls.jsonl')}, capture_output=True, text=True, timeout=10)
             assert (result.returncode == 0) == (mode == 'success'), (mode, result.stdout, result.stderr)
+            calls = [json.loads(line) for line in (work / 'calls.jsonl').read_text().splitlines()]
+            assert calls[-1] == ['shell', 'am', 'force-stop', 'com.cryonum.captusbprint.debug']
+            assert any(a[:2] == ['shell', 'run-as'] and 'rm' in a for a in calls)
             assert (work / 'office-engine-logcat.txt').read_text().strip() == 'synthetic native crash diagnostic'
             assert (work / 'office-probe-stage.txt').read_text().strip() == 'jni-init'
     print('CAPT_OFFICE_PROBE_RUNNER_PASSED scenarios=5 (not an engine test)')

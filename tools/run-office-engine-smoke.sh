@@ -8,7 +8,14 @@ collect() {
   timeout 15 adb exec-out run-as "$package" cat files/office-probe-stage.txt > office-probe-stage.txt 2>/dev/null || true
   timeout 15 adb exec-out run-as "$package" cat files/office-probe-results.json > office-probe-results.json 2>/dev/null || true
 }
-trap collect EXIT
+finish_probe() {
+  local outcome=$?
+  collect
+  # timeout terminates the adb client, not the Android process it started.
+  timeout 15 adb shell am force-stop "$package" >/dev/null 2>&1 || true
+  exit "$outcome"
+}
+trap finish_probe EXIT
 adb logcat -b all -c
 # Even a crash before onStart must not expose evidence left by a previous invocation.
 adb shell run-as "$package" rm -f files/office-probe-stage.txt files/office-probe-results.json
