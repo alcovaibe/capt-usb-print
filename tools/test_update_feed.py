@@ -22,6 +22,15 @@ class FeedTests(unittest.TestCase):
     def candidate(self, build=150):
         return feed.manifest_from_apk(self.release(build), self.badging(build), "a"*64, "a"*64)
 
+    def test_download_counter_does_not_change_release_identity(self):
+        release = dict(self.release(), assets=[{"id": 1, "name": "app.apk", "state": "uploaded", "size": 10000,
+                                              "digest": "sha256:abc", "download_count": 0}])
+        downloaded = copy.deepcopy(release); downloaded["assets"][0]["download_count"] = 1
+        self.assertEqual(feed.release_snapshot(release), feed.release_snapshot(downloaded))
+        for key, value in [("id", 2), ("name", "replaced.apk"), ("size", 11000), ("digest", "sha256:def"), ("state", "new")]:
+            replaced = copy.deepcopy(downloaded); replaced["assets"][0][key] = value
+            self.assertNotEqual(feed.release_snapshot(release), feed.release_snapshot(replaced))
+
     def test_metadata_comes_from_verified_actual_apk(self):
         result = self.candidate()["release"]
         self.assertEqual(1150, result["versionCode"])

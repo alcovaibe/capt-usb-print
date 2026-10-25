@@ -74,6 +74,14 @@ def merge_feed(previous, candidate):
     return candidate
 
 
+def release_snapshot(release):
+    # Download counters change when we inspect the asset; compare publication identity only.
+    asset_fields = ("id", "name", "state", "size", "content_type", "created_at", "updated_at",
+                    "digest", "browser_download_url")
+    return {**{k: release.get(k) for k in ("draft", "prerelease", "tag_name", "html_url")},
+            "assets": [{k: a.get(k) for k in asset_fields} for a in release["assets"]]}
+
+
 def read_optional(endpoint):
     # Only a real 404 initializes a missing ref/file. Other failures stop publication.
     result = subprocess.run(["gh", "api", f"repos/{REPO}/{endpoint}"], text=True, capture_output=True)
@@ -122,7 +130,7 @@ def publish():
             raise RuntimeError("Asset digest mismatch")
     # Recheck the release/asset after inspecting the actual download.
     fresh = api(f"releases/{release['id']}")
-    if any(fresh.get(k) != release.get(k) for k in ("draft", "prerelease", "tag_name", "html_url", "assets")):
+    if release_snapshot(fresh) != release_snapshot(release):
         raise RuntimeError("Release changed during verification")
     if api(f"commits/{tag}")["sha"] != commit:
         raise RuntimeError("Tag changed during verification")
