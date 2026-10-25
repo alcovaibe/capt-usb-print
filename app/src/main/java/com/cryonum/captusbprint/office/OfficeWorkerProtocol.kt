@@ -40,7 +40,7 @@ internal class OfficeOptions(kind: OfficeKind, selectedSheets: List<Int>? = null
 internal enum class OfficeFailure {
     ENGINE_UNAVAILABLE, CANCELLED, TIME_LIMIT, MEMORY_LIMIT, DISK_LIMIT, NO_SPACE,
     RESOURCE_OBSERVATION, WORKER_CRASHED, WORKER_STOP_FAILED, BAD_INPUT, UNSUPPORTED_LAYOUT,
-    ENGINE_FAILED, INVALID_RESULT, BUSY
+    ENGINE_FAILED, INVALID_RESULT, BUSY, PASSWORD_REQUIRED, UNSUPPORTED_DOCUMENT, CORRUPT_DOCUMENT, DOCUMENT_LIMIT
 }
 
 internal class OfficeConversionFailure(val reason: OfficeFailure) : IOException(reason.name)
@@ -78,6 +78,13 @@ internal object OfficeWorkerProtocol {
     }
     fun failure(error: Throwable): OfficeFailure = when (error) {
         is OfficeConversionFailure -> error.reason
+        is OfficeAdmission.Failure -> when (error.reason) {
+            OfficeAdmission.Reason.PASSWORD -> OfficeFailure.PASSWORD_REQUIRED
+            OfficeAdmission.Reason.UNSUPPORTED -> OfficeFailure.UNSUPPORTED_DOCUMENT
+            OfficeAdmission.Reason.CORRUPT -> OfficeFailure.CORRUPT_DOCUMENT
+            OfficeAdmission.Reason.LIMIT -> OfficeFailure.DOCUMENT_LIMIT
+            OfficeAdmission.Reason.CANCELLED -> OfficeFailure.CANCELLED
+        }
         is OfficeWorkBudget.Exceeded -> when (error.limit) {
             OfficeWorkBudget.Limit.TIME -> OfficeFailure.TIME_LIMIT
             OfficeWorkBudget.Limit.MEMORY -> OfficeFailure.MEMORY_LIMIT

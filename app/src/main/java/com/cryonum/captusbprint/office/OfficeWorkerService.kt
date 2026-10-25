@@ -64,6 +64,7 @@ open class OfficeWorkerService : Service() {
                 { ParcelFileDescriptor.AutoCloseInputStream(source) }, { false }, { directory.usableSpace })
             val input = File(directory, "source.${options.kind.extension}")
             check(imported.renameTo(input))
+            validateInput(input, options)
             val backend = newBackend()
             sheets = backend.convert(this, input, File(directory, "result.pdf"), directory, options)
             check(sheets.size <= 256 && sheets.all { it.length <= 256 })
@@ -73,6 +74,12 @@ open class OfficeWorkerService : Service() {
             runCatching { source.close() }
         }
         report(callback, id, failure, sheets)
+    }
+
+    internal open fun validateInput(input: File, options: OfficeOptions) {
+        val actual = OfficeAdmission.inspect(input) { Thread.currentThread().isInterrupted }
+        if (actual.name != options.kind.name)
+            throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_DOCUMENT)
     }
 
     internal open fun newBackend(): OfficeWorkerBackend =

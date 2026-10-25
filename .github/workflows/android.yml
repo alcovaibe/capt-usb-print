@@ -54,6 +54,8 @@ jobs:
         run: python3 tools/check-manual-json-sharing.py
       - name: Check bounded private document import on host
         run: bash tools/check-private-import.sh
+      - name: Check bounded Office containers on host
+        run: bash tools/check-office-admission.sh
       - name: Check Office worker resource observation on host
         run: bash tools/check-office-work-budget.sh
       - name: Verify native probe fails on process crash and timeout

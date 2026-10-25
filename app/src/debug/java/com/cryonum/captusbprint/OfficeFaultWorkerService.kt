@@ -12,6 +12,8 @@ import java.io.File
 
 /** Fault injection only; these bytes are not Office files and this is not a format renderer. */
 class OfficeFaultWorkerService : OfficeWorkerService() {
+    // Lifecycle fault bytes deliberately bypass format admission, only in this debug-only service.
+    internal override fun validateInput(input: File, options: OfficeOptions) = Unit
     internal override fun newBackend(): OfficeWorkerBackend = object : OfficeWorkerBackend {
         override fun convert(context: Context, input: File, output: File, directory: File,
                              options: OfficeOptions): List<String> {
