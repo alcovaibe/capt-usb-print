@@ -58,7 +58,7 @@ class OfficeIntakeSmoke : Instrumentation() {
                 val corrupt = File(directory, "corrupt.bin").apply { writeBytes(byteArrayOf(1, 2, 3)) }
                 rejectedByWorker(corrupt, OfficeKind.DOCX, OfficeFailure.CORRUPT_DOCUMENT)
                 val admissionChecks = OfficeAdmissionChecks.run(fixtures, directory)
-                check(admissionChecks >= 71)
+                check(admissionChecks >= 72)
                 for (name in listOf("word.docx", "word.doc", "workbook.xls", "workbook.xlsx")) {
                     // A misleading .pdf name/MIME must not turn a ZIP/OLE container into PDF.
                     val file = File(directory, "spoofed.pdf")

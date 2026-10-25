@@ -45,8 +45,10 @@ public final class OfficeAdmissionChecks {
         reject(zip,OfficeAdmission.Reason.CANCELLED,OfficeAdmission.DEFAULT,()->true);
         AtomicInteger polls=new AtomicInteger();
         reject(zip,OfficeAdmission.Reason.CANCELLED,OfficeAdmission.DEFAULT,()->polls.incrementAndGet()>8);
+        Files.write(file.toPath(),zip);
         Thread.currentThread().interrupt();
-        try { reject(zip,OfficeAdmission.Reason.CANCELLED); } finally { Thread.interrupted(); }
+        try { rejectCurrent(OfficeAdmission.Reason.CANCELLED,OfficeAdmission.DEFAULT,()->false); }
+        finally { Thread.interrupted(); }
         reject(new byte[3],OfficeAdmission.Reason.CORRUPT);
         reject("Not an Office container".getBytes(StandardCharsets.UTF_8),OfficeAdmission.Reason.UNSUPPORTED);
         reject(zip,OfficeAdmission.Reason.LIMIT,new OfficeAdmission.Limits(8,1<<20,1<<20,100,200),()->false);
@@ -116,6 +118,8 @@ public final class OfficeAdmissionChecks {
         streams=word(); streams.put("Workbook",biff(false)); reject(compound(3,streams,false),OfficeAdmission.Reason.UNSUPPORTED);
         byte[] extended=extendedDifat();
         accept(extended,OfficeAdmission.Kind.DOC);
+        mutated=extended.clone(); put32(mutated,76,-1); put32(mutated,112*512+8,0);
+        reject(mutated,OfficeAdmission.Reason.CORRUPT); // Same FAT IDs, illegal gap before a valid entry.
         put32(extended,68,1); reject(extended,OfficeAdmission.Reason.CORRUPT);
         // Regular FAT streams, independent of the mini-stream path.
         accept(compound(3,word(),true),OfficeAdmission.Kind.DOC);
@@ -128,6 +132,9 @@ public final class OfficeAdmissionChecks {
     private void reject(byte[] bytes,OfficeAdmission.Reason reason) throws Exception { reject(bytes,reason,OfficeAdmission.DEFAULT,()->false); }
     private void reject(byte[] bytes,OfficeAdmission.Reason reason,OfficeAdmission.Limits limits,BooleanSupplier cancelled) throws Exception {
         Files.write(file.toPath(),bytes);
+        rejectCurrent(reason,limits,cancelled);
+    }
+    private void rejectCurrent(OfficeAdmission.Reason reason,OfficeAdmission.Limits limits,BooleanSupplier cancelled) throws Exception {
         try { OfficeAdmission.inspect(file,limits,cancelled); throw new AssertionError("ACCEPTED_"+checks); }
         catch (OfficeAdmission.Failure error) {
             if (error.reason!=reason) throw new AssertionError("CHECK_"+checks+":"+reason+":"+error.reason);

@@ -98,9 +98,9 @@ CFB с `EncryptionInfo` + `EncryptedPackage` получает ошибку па�
 ## Воспроизводимость и границы доказательств
 
 `bash tools/check-office-admission.sh` компилирует тот же Java-код и выполняет
-71 проверку. `OfficeIntakeSmoke` повторяет этот набор на Android API 29/36:
+72 проверки. `OfficeIntakeSmoke` повторяет этот набор на Android API 29/36:
 четыре исходных файла с правильными и ложными расширениями; ZIP с data
- descriptors/CRC; лимиты размера/числа/сжатия; XML/DTD; внешние relationships;
+descriptors/CRC; лимиты размера/числа/сжатия; XML/DTD; внешние relationships;
 шифрование; циклы и наложения FAT/mini-FAT/каталога; обе версии CFB; продолжение
 DIFAT более 109 FAT-секторов; отмена и interrupt. Временные файлы удаляются.
 

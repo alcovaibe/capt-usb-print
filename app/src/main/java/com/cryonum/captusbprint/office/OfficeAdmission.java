@@ -63,6 +63,7 @@ public final class OfficeAdmission {
     }
     public static Kind inspect(File file, Limits limits, BooleanSupplier cancelled) throws IOException {
         OfficeAdmission gate = new OfficeAdmission(limits, cancelled);
+        gate.tick(); // Cancel before opening a descriptor, including an already-interrupted caller.
         try (RandomAccessFile in = new RandomAccessFile(file, "r")) {
             gate.tick();
             if (in.length() > limits.sourceBytes) fail(Reason.LIMIT);
@@ -331,6 +332,7 @@ public final class OfficeAdmission {
         final boolean[] used;
         final byte[] header;
         final List<Entry> entries=new ArrayList<>();
+        boolean fatEnded;
         int[] miniFat, rootChain;
         boolean[] miniUsed;
         long rootSize;
@@ -368,7 +370,8 @@ public final class OfficeAdmission {
         }
         private int bounded(long n,int max) throws Failure { require(n<=max); return (int)n; }
         private void addFat(List<Integer> ids,int id) throws Failure {
-            if (id!=FREE) { require(id>=0 && id<count && ids.size()<count); ids.add(id); }
+            if (id==FREE) fatEnded=true;
+            else { require(!fatEnded && id>=0 && id<count && ids.size()<count); ids.add(id); }
         }
         private void claim(int id) throws Failure {
             require(id>=0 && id<count && !used[id]); used[id]=true;
