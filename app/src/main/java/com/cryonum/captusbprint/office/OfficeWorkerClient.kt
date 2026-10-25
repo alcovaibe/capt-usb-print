@@ -13,6 +13,9 @@ import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -225,7 +228,13 @@ internal object OfficeWorkerClient {
                 }
                 try {
                     val unbound = awaitCleanup(bindingStopped)
-                    val stopped = pid.get() == 0 || awaitCleanup(dead) || processBirth(pid.get()) != birth
+                    // A dead service Binder alone does not prove that the Linux process exited.
+                    val until = SystemClock.elapsedRealtime() + 2000
+                    var stopped = processStopped()
+                    while (!stopped && SystemClock.elapsedRealtime() < until) {
+                        try { Thread.sleep(25) } catch (_: InterruptedException) { interrupted = true }
+                        stopped = processStopped()
+                    }
                     if (stopped && (!preserve || !unbound)) directory.deleteRecursively()
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                 } finally { if (interrupted) Thread.currentThread().interrupt() }
@@ -235,7 +244,16 @@ internal object OfficeWorkerClient {
         fun kill() {
             val workerPid = pid.get()
             if (workerPid > 0 && workerPid != Process.myPid() && birth != null &&
-                dead.count > 0 && processBirth(workerPid) == birth) Process.killProcess(workerPid)
+                processBirth(workerPid) == birth) Process.killProcess(workerPid)
+        }
+
+        fun processStopped(): Boolean {
+            val workerPid = pid.get()
+            if (workerPid == 0) return true
+            val currentBirth = processBirth(workerPid)
+            if (currentBirth != null && currentBirth != birth) return true
+            return try { Os.kill(workerPid, 0); false }
+            catch (error: ErrnoException) { error.errno == OsConstants.ESRCH }
         }
 
         fun readBounded(file: File, max: Int): String = file.inputStream().use { stream ->

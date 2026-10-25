@@ -4,6 +4,9 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.os.Bundle
 import android.os.Process
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import com.cryonum.captusbprint.office.OfficeConversionFailure
 import com.cryonum.captusbprint.office.OfficeKind
 import com.cryonum.captusbprint.office.OfficeOptions
@@ -41,6 +44,9 @@ class OfficeWorkerSmoke : Instrumentation() {
                 val options = OfficeOptions(kind, if (kind.spreadsheet) listOf(2, 0) else null)
                 OfficeWorkerClient.prepare(context, source, options).use { prepared ->
                     check(prepared.workerPid != Process.myPid() && pids.add(prepared.workerPid))
+                    val gone = try { Os.kill(prepared.workerPid, 0); false }
+                    catch (error: ErrnoException) { error.errno == OsConstants.ESRCH }
+                    check(gone)
                     check(prepared.peakObservedRssBytes > 0)
                     check((root.listFiles()?.map { it.name }?.toSet() ?: emptySet()) == baseline)
                     val session = prepared.session

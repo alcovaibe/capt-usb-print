@@ -5,6 +5,9 @@ import android.app.Instrumentation
 import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import com.cryonum.captusbprint.office.OfficeConversionFailure
 import com.cryonum.captusbprint.office.OfficeFailure
 import com.cryonum.captusbprint.office.OfficeKind
@@ -41,6 +44,11 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
         fun clean() {
             check((root.listFiles()?.map { it.name }?.toSet() ?: emptySet()) == previous)
             check(previewMarker.isFile)
+            for (pid in workerPids) {
+                val gone = try { Os.kill(pid, 0); false }
+                catch (error: ErrnoException) { error.errno == OsConstants.ESRCH }
+                check(gone) // Independently verify OS exit, not just a Binder notification.
+            }
         }
         fun failure(expected: OfficeFailure, action: () -> Unit) {
             val error = runCatching(action).exceptionOrNull() ?: error("Expected failure")
