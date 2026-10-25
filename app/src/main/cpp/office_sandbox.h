@@ -10,4 +10,5 @@ void capt_broker_stop(capt_broker *broker);
 void capt_broker_set_worker(capt_broker *broker, int pid);
 int capt_broker_denied(capt_broker *broker);
 int capt_sandbox_install(int socket_fd, const char *root);
+int capt_sandbox_environment(const char *root);
 #endif

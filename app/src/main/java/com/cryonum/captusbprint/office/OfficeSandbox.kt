@@ -30,9 +30,15 @@ internal object OfficeSandbox {
         if (installNative(fd, directory.absolutePath) != 1)
             throw OfficeConversionFailure(OfficeFailure.SANDBOX_UNAVAILABLE)
     }
+    fun prepareEnvironment(context: Context, directory: File) {
+        check(Application.getProcessName() == "${context.packageName}:office")
+        if (environmentNative(directory.absolutePath) != 1)
+            throw OfficeConversionFailure(OfficeFailure.SANDBOX_UNAVAILABLE)
+    }
     private external fun startNative(directory: String, apk: String, libraries: String): LongArray?
     private external fun stopNative(handle: Long)
     private external fun attachNative(handle: Long, pid: Int)
     private external fun deniedNative(handle: Long): Int
     private external fun installNative(socket: Int, directory: String): Int
+    private external fun environmentNative(directory: String): Int
 }

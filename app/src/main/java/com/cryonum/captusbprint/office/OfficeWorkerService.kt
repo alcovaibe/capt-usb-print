@@ -69,6 +69,7 @@ open class OfficeWorkerService : Service() {
             check(imported.renameTo(input))
             validateInput(input, options)
             val backend = newBackend()
+            OfficeSandbox.prepareEnvironment(this, directory)
             // Only trusted code/resources are loaded here; no native document import yet.
             backend.preload()
             OfficeSandbox.install(this, sandbox, directory)

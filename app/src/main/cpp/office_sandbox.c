@@ -195,7 +195,15 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
             return;
         }
         r->error=errno;
-        if(q->op==OPEN || write_access)deny_resource(b,q->op,paths[0]);
+        if(q->op==OPEN) {
+            /* Engines probe absent fallback fonts/caches and log devices.
+             * They still receive EACCES, but only an existing regular file or
+             * symlink can be a denied external document resource. No content
+             * is read here. This does not authorize opening the probed path. */
+            struct stat outside;
+            if(!lstat(paths[0],&outside) && (S_ISREG(outside.st_mode) || S_ISLNK(outside.st_mode)))
+                deny_resource(b,q->op,paths[0]);
+        } else if(write_access)deny_resource(b,q->op,paths[0]);
         return;
     }
     errno=0; long result=-1;
@@ -471,8 +479,8 @@ static void only_socket(int nr,int fd) {
     statement(BPF_RET|BPF_K,SECCOMP_RET_ALLOW);
     statement(BPF_RET|BPF_K,SECCOMP_RET_ERRNO|EACCES);
 }
-int capt_sandbox_install(int socket_fd,const char *root) {
-    if (broker_socket>=0 || socket_fd<3 || !root || !normalize(root,current_directory)) return 0;
+int capt_sandbox_environment(const char *root) {
+    if(!root || root[0]!='/')return 0;
     /* Fontconfig/ICU/LO must not fall back to the Android passwd home (often
      * /) or the application's shared cache. All mutable defaults belong here. */
     const char *variables[]={"HOME","TMPDIR","XDG_CONFIG_HOME","XDG_CACHE_HOME","XDG_DATA_HOME"};
@@ -481,6 +489,10 @@ int capt_sandbox_install(int socket_fd,const char *root) {
         char path[PATH_MAX];int n=snprintf(path,sizeof(path),"%s/%s",root,parts[i]);
         if(n<0 || n>=(int)sizeof(path) || (mkdir(path,0700) && errno!=EEXIST) || setenv(variables[i],path,1))return 0;
     }
+    return 1;
+}
+int capt_sandbox_install(int socket_fd,const char *root) {
+    if (broker_socket>=0 || socket_fd<3 || !root || !normalize(root,current_directory) || !capt_sandbox_environment(root)) return 0;
     /* Hide native/Java stdio before any document is interpreted. */
     int null_fd=open("/dev/null",O_WRONLY|O_CLOEXEC);
     if(null_fd<0 || dup2(null_fd,STDOUT_FILENO)<0 || dup2(null_fd,STDERR_FILENO)<0) { if(null_fd>=0)close(null_fd);return 0; }

@@ -7,6 +7,23 @@
 #include <unistd.h>
 #include "office_sandbox.h"
 
+static int worker_process(void) {
+    char name[512];int fd=open("/proc/self/cmdline",O_RDONLY|O_CLOEXEC);
+    if(fd<0)return 0;
+    ssize_t n=read(fd,name,sizeof(name)-1);close(fd);
+    if(n<=0)return 0;
+    name[n]=0;size_t length=strlen(name);
+    return length>=7 && !strcmp(name+length-7,":office");
+}
+JNIEXPORT jint JNICALL Java_com_cryonum_captusbprint_office_OfficeSandbox_environmentNative
+  (JNIEnv *env,jobject self,jstring directory) {
+    (void)self;
+    if(!directory || !worker_process())return 0;
+    const char *root=(*env)->GetStringUTFChars(env,directory,NULL);if(!root)return 0;
+    int result=capt_sandbox_environment(root);
+    (*env)->ReleaseStringUTFChars(env,directory,root);return result;
+}
+
 JNIEXPORT jlongArray JNICALL Java_com_cryonum_captusbprint_office_OfficeSandbox_startNative
   (JNIEnv *env,jobject self,jstring directory,jstring apk,jstring libraries) {
     (void)self;
@@ -42,13 +59,7 @@ JNIEXPORT jint JNICALL Java_com_cryonum_captusbprint_office_OfficeSandbox_instal
   (JNIEnv *env,jobject self,jint socket_fd,jstring directory) {
     (void)self;
     /* A caller cannot accidentally confine the UI/USB process. */
-    char name[512]; int fd=open("/proc/self/cmdline",O_RDONLY|O_CLOEXEC);
-    if(fd<0 || !directory)return 0;
-    ssize_t n=read(fd,name,sizeof(name)-1);close(fd);
-    if(n<=0)return 0;
-    name[n]=0;
-    size_t length=strlen(name);
-    if(length<7 || strcmp(name+length-7,":office"))return 0;
+    if(!directory || !worker_process())return 0;
     const char *root=(*env)->GetStringUTFChars(env,directory,NULL);
     if(!root)return 0;
     int result=capt_sandbox_install(socket_fd,root);
