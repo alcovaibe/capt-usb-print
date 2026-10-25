@@ -205,7 +205,7 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
             struct stat outside;
             if((q->flags&O_ACCMODE)!=O_WRONLY && !lstat(paths[0],&outside) && (S_ISREG(outside.st_mode) || S_ISLNK(outside.st_mode)))
                 deny_resource(b,q->op,paths[0]);
-        } else if(write_access)deny_resource(b,q->op,paths[0]);
+        }
         return;
     }
     errno=0; long result=-1;
@@ -301,7 +301,8 @@ capt_broker *capt_broker_start(const char *root,const char *apk,const char *libr
         !add_root(b,"/data/misc/zoneinfo/current/tzdata",READ,1,0) ||
         !add_root(b,"/data/misc/zoneinfo/current/icu/icu_tzdata.dat",READ,1,0))goto failed;
     if(!add_root(b,"/proc/cpuinfo",READ,1,0) || !add_root(b,"/proc/meminfo",READ,1,0) ||
-        !add_root(b,"/sys/devices/system/cpu",READ,0,0))goto failed;
+        !add_root(b,"/sys/devices/system/cpu",READ,0,0) ||
+        !add_root(b,"/dev/__properties__",READ,0,0))goto failed;
     if (!add_root(b,"/dev/null",READ|WRITE,1,1) || !add_root(b,"/dev/urandom",READ,1,1) ||
         !add_root(b,"/dev/random",READ,1,1) || socketpair(AF_UNIX,SOCK_SEQPACKET|SOCK_CLOEXEC,0,pair)) goto failed;
     b->socket=pair[0];
