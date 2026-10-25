@@ -21,10 +21,10 @@ def call(*args):
     return subprocess.run([str(a) for a in args], check=True, capture_output=True, text=True).stdout
 
 
-def api(endpoint, data=None):
+def api(endpoint, data=None, method=None):
     args = ["gh", "api", f"repos/{REPO}/{endpoint}"]
     if data is not None:
-        result = subprocess.run(args + ["--input", "-"], input=json.dumps(data), text=True,
+        result = subprocess.run(args + ["--method", method or "POST", "--input", "-"], input=json.dumps(data), text=True,
                                 capture_output=True, check=True)
         return json.loads(result.stdout)
     return json.loads(call(*args))
@@ -151,7 +151,7 @@ def publish():
             "content": base64.b64encode((json.dumps(candidate, ensure_ascii=False, indent=2) + "\n").encode()).decode()}
     if entry is not None:
         body["sha"] = entry["sha"]  # Contents API rejects concurrent replacement; never force.
-    api(f"contents/{PATH}", body)
+    api(f"contents/{PATH}", body, method="PUT")
     actual = api(f"contents/{PATH}?ref={BRANCH}")
     if json.loads(base64.b64decode(actual["content"])) != candidate:
         raise RuntimeError("Published feed differs from verified candidate")

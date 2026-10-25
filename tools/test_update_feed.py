@@ -3,6 +3,8 @@ import copy
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location("feed", Path(__file__).with_name("update-feed.py"))
 feed = importlib.util.module_from_spec(spec)
@@ -21,6 +23,13 @@ class FeedTests(unittest.TestCase):
 
     def candidate(self, build=150):
         return feed.manifest_from_apk(self.release(build), self.badging(build), "a"*64, "a"*64)
+
+    def test_content_write_uses_put_and_ref_creation_uses_post(self):
+        with patch.object(feed.subprocess, "run", return_value=SimpleNamespace(stdout="{}")) as run:
+            feed.api("contents/updates/android.json", {"content": "e30="}, method="PUT")
+            self.assertEqual(["--method", "PUT", "--input", "-"], run.call_args.args[0][-4:])
+            feed.api("git/refs", {"ref": "refs/heads/updates", "sha": "a"*40})
+            self.assertEqual(["--method", "POST", "--input", "-"], run.call_args.args[0][-4:])
 
     def test_download_counter_does_not_change_release_identity(self):
         release = dict(self.release(), assets=[{"id": 1, "name": "app.apk", "state": "uploaded", "size": 10000,
