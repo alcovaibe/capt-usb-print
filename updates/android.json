@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "platform": "android",
+  "channel": "experimental",
+  "applicationId": "com.cryonum.captusbprint",
+  "release": null
+}

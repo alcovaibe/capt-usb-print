@@ -1,4 +1,4 @@
-name: CAPT USB Print checks and signed prerelease
+name: CAPT USB Print checks and signed release
 on:
   push:
     branches: [main]
@@ -39,7 +39,8 @@ jobs:
           /tmp/capt-hiscoa-smoke
       - name: Validate release and emulator setup scripts
         run: |
-          python3 -m py_compile tools/prepare-signing.py tools/signed-release.py
+          python3 -m py_compile tools/prepare-signing.py tools/signed-release.py tools/update-feed.py
+          python3 -m unittest discover -s tools -p test_update_feed.py
           bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
           # Reproduce duplicate partition-size entries from a device profile.
           fixture="$(mktemp -d)"
@@ -62,11 +63,11 @@ jobs:
           test -s "$APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcapt_hiscoa.so'
           unzip -l "$APK" | grep -q 'lib/x86_64/libcapt_hiscoa.so'
-          if grep -E 'android.permission.INTERNET|android.permission.READ_EXTERNAL_STORAGE|android.permission.MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
+          if grep -E 'android.permission.READ_EXTERNAL_STORAGE|android.permission.MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
             echo "Unexpected permission in source manifest"; exit 1
           fi
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" | tee apk-permissions.txt
-          if grep -E 'android.permission.(INTERNET|READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' apk-permissions.txt; then
+          if grep -E 'android.permission.(READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' apk-permissions.txt; then
             echo "Unexpected merged APK permission"; exit 1
           fi
       - uses: actions/upload-artifact@v4
@@ -116,6 +117,11 @@ jobs:
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '36'
             adb install pr-apk/app-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
+            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.UpdateSmoke | tee /tmp/capt-update-smoke.txt
+            mkdir -p update-ui-evidence
+            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-main.png update-ui-evidence/
+            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-result.png update-ui-evidence/
+            grep -F 'CAPT_UPDATE_UI_SMOKE_PASSED' /tmp/capt-update-smoke.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageDPrintSmoke | tee /tmp/capt-system-smoke.txt
             grep -F 'CAPT_STAGE_D_SYSTEM_SMOKE_PASSED' /tmp/capt-system-smoke.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-raster-smoke.txt
@@ -125,6 +131,14 @@ jobs:
             adb shell am instrument -w -e verifyRecovery true com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_STAGE_C_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_QUEUE_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capt-update-ui-evidence
+          path: update-ui-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
 
   signing-availability:
     name: Owner signing configuration
@@ -184,7 +198,7 @@ jobs:
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" > release-output/permissions.txt
-          if grep -E 'android.permission.(INTERNET|READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
+          if grep -E 'android.permission.(READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
             echo "Unexpected release APK permission"; exit 1
           fi
       - name: Free unrelated GitHub runner toolchains before emulator

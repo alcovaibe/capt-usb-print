@@ -14,6 +14,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Build
+import android.view.Gravity
+import android.widget.FrameLayout
+import com.cryonum.captusbprint.updates.UpdateSession
+import com.cryonum.captusbprint.updates.UpdatePanel
 import android.view.WindowInsets
 import android.util.TypedValue
 import android.graphics.drawable.GradientDrawable
@@ -44,6 +48,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
+    private lateinit var updateSession: UpdateSession
+    private lateinit var updatePanel: UpdatePanel
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var status: TextView
     private lateinit var devices: LinearLayout
@@ -101,6 +107,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        updateSession = lastNonConfigurationInstance as? UpdateSession ?: UpdateSession(applicationContext)
+        updatePanel = UpdatePanel(this, updateSession)
         restoreDiagnosticEvents()
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -129,24 +137,38 @@ class MainActivity : Activity() {
             isFillViewport = true
             addView(content)
         }
-        scrolling.setOnApplyWindowInsetsListener { _, insets ->
+        val root = FrameLayout(this).apply {
+            addView(scrolling, FrameLayout.LayoutParams(-1, -1))
+            addView(updatePanel.view, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.BOTTOM or Gravity.RIGHT).apply {
+                rightMargin = dp(12); bottomMargin = dp(8)
+            })
+        }
+        root.setOnApplyWindowInsetsListener { _, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
                 val safe = insets.getInsets(
                     WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
                 )
                 content.setPadding(dp(16) + safe.left, dp(16) + safe.top,
-                    dp(16) + safe.right, dp(24) + safe.bottom)
+                    dp(16) + safe.right, dp(80) + safe.bottom)
+                (updatePanel.view.layoutParams as FrameLayout.LayoutParams).apply {
+                    rightMargin = dp(12) + safe.right; bottomMargin = dp(8) + safe.bottom
+                }.also { updatePanel.view.layoutParams = it }
             } else {
                 @Suppress("DEPRECATION")
                 content.setPadding(dp(16) + insets.systemWindowInsetLeft,
                     dp(16) + insets.systemWindowInsetTop,
                     dp(16) + insets.systemWindowInsetRight,
-                    dp(24) + insets.systemWindowInsetBottom)
+                    dp(80) + insets.systemWindowInsetBottom)
+                @Suppress("DEPRECATION")
+                (updatePanel.view.layoutParams as FrameLayout.LayoutParams).apply {
+                    rightMargin = dp(12) + insets.systemWindowInsetRight
+                    bottomMargin = dp(8) + insets.systemWindowInsetBottom
+                }.also { updatePanel.view.layoutParams = it }
             }
             insets
         }
-        setContentView(scrolling)
-        scrolling.requestApplyInsets()
+        setContentView(root)
+        root.requestApplyInsets()
     }
 
     override fun onStart() {
@@ -165,6 +187,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        updatePanel.resume()
         PermissionEvents.listener = {
             if (permissionRequestPending) {
                 permissionRequestPending = false
@@ -185,6 +208,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        updatePanel.pause()
         diagnosticCancelled.set(true)
         monitoring = false
         monitor.removeCallbacks(pollUsb)
@@ -200,7 +224,10 @@ class MainActivity : Activity() {
         super.onStop()
     }
 
+    override fun onRetainNonConfigurationInstance(): Any = updateSession
+
     override fun onDestroy() {
+        if (!isChangingConfigurations) updateSession.close()
         scanGeneration += 1
         testPrintCancelled.set(true)
         diagnosticCancelled.set(true)
