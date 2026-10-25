@@ -42,7 +42,7 @@ internal class OfficePreviewPreparation(
             else -> OfficeWorkerProtocol.failure(error)
         } },
         { listener(it) },
-        { check(sourceDirectory.deleteRecursively()) }
+        { check(OfficePrivateFiles.deleteTree(sourceDirectory)) }
     )
     private fun prepareDocument(options: OfficeOptions, cancelled: () -> Boolean): OfficePreparedDocument {
         check(options.kind == kind)

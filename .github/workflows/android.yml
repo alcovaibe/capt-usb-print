@@ -60,6 +60,8 @@ jobs:
         run: bash tools/check-office-kernel-limits.sh
       - name: Check latest prepared document ownership and cancellation
         run: bash tools/check-latest-preparation.sh
+      - name: Check Office private cleanup never follows links
+        run: bash tools/check-office-private-files.sh
       - name: Check Office worker resource observation on host
         run: bash tools/check-office-work-budget.sh
       - name: Verify native probe fails on process crash and timeout

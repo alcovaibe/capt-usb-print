@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import com.cryonum.captusbprint.document.DocumentInspector
+import com.cryonum.captusbprint.document.DocumentSession
 import com.cryonum.captusbprint.document.PrivateDocumentImport
 import java.util.concurrent.CancellationException
 
@@ -40,13 +41,24 @@ internal object OfficeWorkerClient {
                 cancelled: () -> Boolean = { false }, budget: OfficeWorkBudget = DEFAULT_BUDGET,
                 onWorkerStarted: (Int) -> Unit = {},
                 serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficePreparedDocument {
-        convert(context, privateSource, options, cancelled, budget, onWorkerStarted, serviceClass).use { raw ->
-            try {
+        var candidate: OfficePreparedDocument? = null
+        var candidateSession: DocumentSession? = null
+        try {
+            convert(context, privateSource, options, cancelled, budget, onWorkerStarted, serviceClass).use { raw ->
                 val session = DocumentInspector.openPreparedPdf(context, raw.file, cancelled)
-                return OfficePreparedDocument(session, raw.sheetNames, raw.workerPid, raw.peakObservedRssBytes)
-            } catch (_: CancellationException) { throw OfficeConversionFailure(OfficeFailure.CANCELLED) }
-            catch (error: PrivateDocumentImport.Failure) { throw OfficeConversionFailure(OfficeWorkerProtocol.failure(error)) }
-            catch (_: Throwable) { throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT) }
+                candidateSession = session
+                candidate = OfficePreparedDocument(session, raw.sheetNames, raw.workerPid, raw.peakObservedRssBytes)
+            }
+            return requireNotNull(candidate)
+        } catch (error: Throwable) {
+            // A successful PDF copy is still unpublished if closing the workspace failed.
+            runCatching { candidateSession?.close() }
+            when (error) {
+                is OfficeConversionFailure -> throw error
+                is CancellationException -> throw OfficeConversionFailure(OfficeFailure.CANCELLED)
+                is PrivateDocumentImport.Failure -> throw OfficeConversionFailure(OfficeWorkerProtocol.failure(error))
+                else -> throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
+            }
         }
     }
 
@@ -239,8 +251,9 @@ internal object OfficeWorkerClient {
                         try { Thread.sleep(25) } catch (_: InterruptedException) { interrupted = true }
                         stopped = processStopped()
                     }
-                    if (stopped && (!preserve || !unbound)) directory.deleteRecursively()
+                    val cleaned = !stopped || (preserve && unbound) || OfficePrivateFiles.deleteTree(directory)
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
+                    if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
                 } finally { if (interrupted) Thread.currentThread().interrupt() }
             }
         }

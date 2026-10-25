@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.os.Process
+import android.system.Os
 import com.cryonum.captusbprint.office.OfficeOptions
 import com.cryonum.captusbprint.office.OfficeWorkerBackend
 import com.cryonum.captusbprint.office.OfficeWorkerService
@@ -17,7 +18,8 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
     internal override fun newBackend(): OfficeWorkerBackend = object : OfficeWorkerBackend {
         override fun convert(context: Context, input: File, output: File, directory: File,
                              options: OfficeOptions): List<String> {
-            when (input.inputStream().use { it.read() }) {
+            val mode = input.inputStream().use { it.read() }
+            when (mode) {
                 1 -> Thread.sleep(60_000)
                 2 -> Process.killProcess(Process.myPid())
                 3 -> {
@@ -29,16 +31,18 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
                 }
                 4 -> error("PRIVATE_FAULT_DETAIL_MUST_NOT_ESCAPE")
                 5 -> output.writeText("not a PDF")
-                6, 7 -> {
+                6, 7, 8 -> {
                     val pdf = PdfDocument()
                     try {
-                        val size = if (input.inputStream().use { it.read() } == 7) 612 to 792 else 595 to 842
+                        val size = if (mode == 7) 612 to 792 else 595 to 842
                         val page = pdf.startPage(PdfDocument.PageInfo.Builder(size.first, size.second, 1).create())
                         page.canvas.drawColor(Color.WHITE)
                         page.canvas.drawRect(70f, 80f, 200f, 150f, Paint().apply { color = Color.BLACK })
                         pdf.finishPage(page)
                         output.outputStream().use { pdf.writeTo(it) }
                     } finally { pdf.close() }
+                    // Read/traversal is allowed, so PDF validation succeeds; unlink must fail.
+                    if (mode == 8) Os.chmod(directory.absolutePath, 0b101000000)
                 }
                 else -> error("Unknown synthetic worker fault")
             }

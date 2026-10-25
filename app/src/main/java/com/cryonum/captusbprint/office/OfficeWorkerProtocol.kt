@@ -50,7 +50,9 @@ internal class OfficeConversionFailure(val reason: OfficeFailure) : IOException(
 internal class OfficeConvertedPdf(val file: File, sheets: List<String>, val workerPid: Int,
                                   val peakObservedRssBytes: Long, private val directory: File) : Closeable {
     val sheetNames: List<String> = Collections.unmodifiableList(sheets.toList())
-    override fun close() { directory.deleteRecursively() }
+    override fun close() {
+        if (!OfficePrivateFiles.deleteTree(directory)) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+    }
 }
 
 internal class OfficePreparedDocument(val session: DocumentSession, sheets: List<String>,

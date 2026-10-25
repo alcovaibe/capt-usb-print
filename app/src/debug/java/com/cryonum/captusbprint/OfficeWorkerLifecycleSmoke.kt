@@ -14,6 +14,7 @@ import com.cryonum.captusbprint.office.OfficeKind
 import com.cryonum.captusbprint.office.OfficeOptions
 import com.cryonum.captusbprint.office.OfficeWorkBudget
 import com.cryonum.captusbprint.office.OfficeWorkerClient
+import com.cryonum.captusbprint.office.OfficePrivateFiles
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -35,6 +36,8 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
         val root = File(context.noBackupFilesDir, "office-work")
         val previous = root.listFiles()?.map { it.name }?.toSet() ?: emptySet()
         val workerPids = mutableSetOf<Int>()
+        var readonlyWorkspace: File? = null
+        val cleanupProbe = File(context.cacheDir,"office-cleanup-symlink-check")
         fun budget(time: Long = 12_000, rss: Long = 768L * 1024 * 1024,
                    disk: Long = 192L * 1024 * 1024) = OfficeWorkBudget(time, rss, disk, 8L * 1024 * 1024, 8192)
         fun run(mode: Int, cancelled: () -> Boolean = { false }, limit: OfficeWorkBudget = budget(),
@@ -57,6 +60,15 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             check(!error.toString().contains("PRIVATE_FAULT_DETAIL")); clean()
         }
         try {
+            stage = "private-cleanup-symlinks"
+            check(OfficePrivateFiles.deleteTree(cleanupProbe))
+            val outside = File(cleanupProbe,"outside").apply { check(mkdirs()) }
+            val sentinel = File(outside,"keep").apply { writeText("synthetic sentinel") }
+            val owned = File(cleanupProbe,"owned").apply { check(mkdir()) }
+            Os.symlink(outside.absolutePath,File(owned,"directory-link").absolutePath)
+            Os.symlink(sentinel.absolutePath,File(owned,"file-link").absolutePath)
+            check(OfficePrivateFiles.deleteTree(owned) && sentinel.readText()=="synthetic sentinel")
+            check(OfficePrivateFiles.deleteTree(cleanupProbe))
             stage = "cancel-before-bind"
             failure(OfficeFailure.CANCELLED) { run(1, { true }).close() }
             stage = "success-and-independent-copy"
@@ -99,6 +111,16 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             failure(OfficeFailure.INVALID_RESULT) { run(5).close() }
             stage = "non-A4-output"
             failure(OfficeFailure.INVALID_RESULT) { run(7).close() }
+            stage = "cleanup-failure-with-unpublished-pdf"
+            val inspected = File(context.cacheDir,"stage-c-inspection")
+            val inspectedBefore = inspected.listFiles()?.map { it.name }?.toSet() ?: emptySet()
+            val cleanupError = runCatching { run(8).use { check(it.session.overview.pageCount==1) } }.exceptionOrNull()
+            readonlyWorkspace = root.listFiles()?.single { it.name !in previous }
+            check(cleanupError is OfficeConversionFailure && cleanupError.reason==OfficeFailure.RESOURCE_OBSERVATION)
+            check((inspected.listFiles()?.map { it.name }?.toSet() ?: emptySet())==inspectedBefore)
+            Os.chmod(requireNotNull(readonlyWorkspace).absolutePath,0b111000000)
+            check(OfficePrivateFiles.deleteTree(requireNotNull(readonlyWorkspace))); readonlyWorkspace=null
+            clean()
             stage = "new-job-after-failures"
             run(6).use { check(it.session.overview.pageCount == 1) }
             clean(); check(workerPids.size >= 8)
@@ -106,7 +128,14 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             code = Activity.RESULT_OK
         } catch (error: Throwable) {
             result.putString("stream", "OFFICE_WORKER_LIFECYCLE_FAILED:$stage:${if (error is UnexpectedFailure) error.expected + ":" + error.actual else error.javaClass.simpleName}")
-        } finally { Thread.interrupted(); input.delete(); previewMarker.delete() }
+        } finally {
+            readonlyWorkspace?.let { folder ->
+                runCatching { Os.chmod(folder.absolutePath,0b111000000) }
+                OfficePrivateFiles.deleteTree(folder)
+            }
+            OfficePrivateFiles.deleteTree(cleanupProbe)
+            Thread.interrupted(); input.delete(); previewMarker.delete()
+        }
         finish(code, result)
     }
 }
