@@ -58,6 +58,12 @@ public final class LibreOfficeKit
     // CAPT probe adaptation: all writable bootstrap state has one disposable owner.
     public static synchronized void init(Context context, File workDir)
     {
+        init(context, workDir, true);
+    }
+
+    // CAPT worker never redirects native stdout/stderr into a document diagnostic log.
+    public static synchronized void init(Context context, File workDir, boolean diagnostics)
+    {
         if (initializeDone) {
             return;
         }
@@ -65,9 +71,9 @@ public final class LibreOfficeKit
         mgr = context.getResources().getAssets();
 
         String dataDir = workDir.getAbsolutePath();
-        Log.i(LOGTAG, "Initializing synthetic LibreOfficeKit probe");
+        if (diagnostics) Log.i(LOGTAG, "Initializing synthetic LibreOfficeKit probe");
 
-        redirectStdio(true);
+        redirectStdio(diagnostics);
 
         String cacheDir = new File(workDir, "cache").getAbsolutePath();
         if (!new File(cacheDir).isDirectory() && !new File(cacheDir).mkdirs()) {

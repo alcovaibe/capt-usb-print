@@ -1,0 +1,93 @@
+package com.cryonum.captusbprint
+
+import android.app.Activity
+import android.app.Instrumentation
+import android.os.Bundle
+import android.os.Process
+import android.os.SystemClock
+import com.cryonum.captusbprint.office.OfficeConversionFailure
+import com.cryonum.captusbprint.office.OfficeFailure
+import com.cryonum.captusbprint.office.OfficeKind
+import com.cryonum.captusbprint.office.OfficeOptions
+import com.cryonum.captusbprint.office.OfficeWorkBudget
+import com.cryonum.captusbprint.office.OfficeWorkerClient
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Real Android processes, fake renderer: lifecycle/resource tests, not Office compatibility. */
+class OfficeWorkerLifecycleSmoke : Instrumentation() {
+    private class UnexpectedFailure(val expected: String, val actual: String) : RuntimeException()
+    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    override fun onStart() {
+        var stage = "start"
+        var code = Activity.RESULT_CANCELED
+        val result = Bundle()
+        val context = targetContext
+        val input = File(context.cacheDir, "office-worker-fault.bin")
+        val previewMarker = File(context.cacheDir, "stage-c-inspection/live-preview-marker").apply {
+            parentFile!!.mkdirs(); writeText("synthetic live preview")
+        }
+        val root = File(context.noBackupFilesDir, "office-work")
+        val previous = root.listFiles()?.map { it.name }?.toSet() ?: emptySet()
+        val workerPids = mutableSetOf<Int>()
+        fun budget(time: Long = 12_000, rss: Long = 768L * 1024 * 1024,
+                   disk: Long = 192L * 1024 * 1024) = OfficeWorkBudget(time, rss, disk, 8L * 1024 * 1024, 8192)
+        fun run(mode: Int, cancelled: () -> Boolean = { false }, limit: OfficeWorkBudget = budget(),
+                onStart: (Int) -> Unit = {}) = OfficeWorkerClient.prepare(context,
+            input.apply { writeBytes(byteArrayOf(mode.toByte())) }, OfficeOptions(OfficeKind.DOCX), cancelled, limit,
+            { pid -> check(pid != Process.myPid()); workerPids.add(pid); onStart(pid) }, OfficeFaultWorkerService::class.java)
+        fun clean() {
+            check((root.listFiles()?.map { it.name }?.toSet() ?: emptySet()) == previous)
+            check(previewMarker.isFile)
+        }
+        fun failure(expected: OfficeFailure, action: () -> Unit) {
+            val error = runCatching(action).exceptionOrNull() ?: error("Expected failure")
+            if (error !is OfficeConversionFailure || error.reason != expected)
+                throw UnexpectedFailure(expected.name, (error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName)
+            check(!error.toString().contains("PRIVATE_FAULT_DETAIL")); clean()
+        }
+        try {
+            stage = "cancel-before-bind"
+            failure(OfficeFailure.CANCELLED) { run(1, { true }).close() }
+            stage = "success-and-independent-copy"
+            run(6).use { prepared ->
+                check(prepared.session.overview.pageCount == 1 && prepared.session.preparedPdfLayout != null)
+                check(prepared.peakObservedRssBytes > 0)
+                clean() // Work directory is gone, while the prepared preview copy is still alive.
+                prepared.session.renderPreparedPrintPreview(0) { false }.recycle()
+            }
+            stage = "cancel-running"
+            val cancel = AtomicBoolean(false)
+            failure(OfficeFailure.CANCELLED) { run(1, { cancel.get() }, onStart = { cancel.set(true) }).close() }
+            stage = "interrupt-running"
+            failure(OfficeFailure.CANCELLED) {
+                try { run(1, onStart = { Thread.currentThread().interrupt() }).close() }
+                finally { Thread.interrupted() }
+            }
+            stage = "timeout"
+            val started = SystemClock.elapsedRealtime()
+            failure(OfficeFailure.TIME_LIMIT) { run(1, limit = budget(time = 4000)).close() }
+            check(SystemClock.elapsedRealtime() - started < 10_000)
+            stage = "worker-crash"
+            failure(OfficeFailure.WORKER_CRASHED) { run(2).close() }
+            stage = "memory-budget"
+            failure(OfficeFailure.MEMORY_LIMIT) { run(1, limit = budget(rss = 1)).close() }
+            stage = "disk-budget"
+            failure(OfficeFailure.DISK_LIMIT) { run(3, limit = budget(disk = 1024 * 1024)).close() }
+            stage = "engine-error-privacy"
+            failure(OfficeFailure.ENGINE_FAILED) { run(4).close() }
+            stage = "invalid-output"
+            failure(OfficeFailure.INVALID_RESULT) { run(5).close() }
+            stage = "non-A4-output"
+            failure(OfficeFailure.INVALID_RESULT) { run(7).close() }
+            stage = "new-job-after-failures"
+            run(6).use { check(it.session.overview.pageCount == 1) }
+            clean(); check(workerPids.size >= 8)
+            result.putString("stream", "CAPT_OFFICE_WORKER_LIFECYCLE_PASSED (fault backend, no USB)")
+            code = Activity.RESULT_OK
+        } catch (error: Throwable) {
+            result.putString("stream", "OFFICE_WORKER_LIFECYCLE_FAILED:$stage:${if (error is UnexpectedFailure) error.expected + ":" + error.actual else error.javaClass.simpleName}")
+        } finally { Thread.interrupted(); input.delete(); previewMarker.delete() }
+        finish(code, result)
+    }
+}

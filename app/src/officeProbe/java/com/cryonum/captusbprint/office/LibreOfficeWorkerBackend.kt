@@ -1,0 +1,60 @@
+package com.cryonum.captusbprint.office
+
+import android.content.Context
+import android.content.res.AssetManager
+import org.json.JSONObject
+import org.libreoffice.kit.Document
+import org.libreoffice.kit.LibreOfficeKit
+import org.libreoffice.kit.Office
+import java.io.File
+
+/** Opt-in debug backend. Not reachable from SAF/ACTION_SEND; resource sandbox still pending. */
+internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
+    override fun convert(context: Context, input: File, output: File, directory: File,
+                         options: OfficeOptions): List<String> {
+        val engine = File(directory, "engine")
+        unpack(context.assets, "unpack", engine)
+        val fonts = File(engine, "etc/fonts/fonts.conf")
+        val configuration = fonts.readText()
+        check(configuration.contains("/data/data/org.documentfoundation.libreoffice/fontconfig"))
+        fonts.writeText(configuration.replace("/data/data/org.documentfoundation.libreoffice/fontconfig",
+            File(engine, "fontconfig").absolutePath))
+        LibreOfficeKit.init(context, engine, false)
+        val office = Office(requireNotNull(LibreOfficeKit.getLibreOfficeKitHandle()))
+        val document = office.documentLoad(input.toURI().toASCIIString())
+            ?: throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+        try {
+            if (document.getDocumentType() != if (options.kind.spreadsheet) Document.DOCTYPE_SPREADSHEET else Document.DOCTYPE_TEXT)
+                throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+            val sheets = if (options.kind.spreadsheet) {
+                val count = document.getParts()
+                if (count !in 1..256) throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+                List(count) { document.getPartName(it).also { name ->
+                    if (name.length > 256) throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+                } }
+            } else emptyList()
+            if (options.selectedSheets?.any { it !in sheets.indices } == true)
+                throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+            val filter = options.selectedSheets?.let { selected -> JSONObject()
+                .put("SheetRange", JSONObject().put("type", "string")
+                    .put("value", selected.joinToString(",") { (it + 1).toString() }))
+                .put("SinglePageSheets", JSONObject().put("type", "boolean").put("value", false))
+                .toString() } ?: ""
+            check(!output.exists())
+            if (document.saveAs(output.toURI().toASCIIString(), "pdf", filter) == 0)
+                throw OfficeConversionFailure(OfficeFailure.ENGINE_FAILED)
+            return sheets
+        } finally { document.destroy() }
+    }
+
+    private fun unpack(assets: AssetManager, path: String, directory: File) {
+        val entries = requireNotNull(assets.list(path))
+        check(entries.isNotEmpty() && directory.mkdirs())
+        for (name in entries) {
+            val asset = "$path/$name"
+            val target = File(directory, name)
+            if (!assets.list(asset).isNullOrEmpty()) unpack(assets, asset, target)
+            else assets.open(asset).use { input -> target.outputStream().use { input.copyTo(it) } }
+        }
+    }
+}

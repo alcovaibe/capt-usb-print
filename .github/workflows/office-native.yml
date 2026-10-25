@@ -6,6 +6,7 @@ on:
       - 'tools/office/**'
       - '.github/workflows/office-native.yml'
       - 'app/src/officeProbe/**'
+      - 'app/src/main/java/com/cryonum/captusbprint/office/**'
       - 'app/build.gradle.kts'
       - 'tools/run-office-engine-smoke.sh'
   workflow_dispatch:
@@ -129,6 +130,7 @@ jobs:
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
             adb install app/build/outputs/apk/debug/app-debug.apk
             bash tools/run-office-engine-smoke.sh
+            bash tools/run-office-worker-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -140,5 +142,7 @@ jobs:
             office-engine-logcat.txt
             office-engine-crash.txt
             probe-dex.txt
+            office-worker-*.txt
+            office-worker-results.json
           if-no-files-found: ignore
           retention-days: 7

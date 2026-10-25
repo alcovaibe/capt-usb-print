@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service android:name=".office.OfficeWorkerService" android:exported="false"
+            android:process=":office" android:stopWithTask="true" />
+    </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeWorkerSmoke"
+        android:targetPackage="${applicationId}" android:label="Separate-process synthetic Office conversion checks" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeEngineSmoke"
         android:targetPackage="${applicationId}" android:label="Synthetic LibreOffice JNI conversion probe" />
 </manifest>
