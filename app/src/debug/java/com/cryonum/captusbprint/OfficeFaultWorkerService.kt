@@ -31,7 +31,7 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
                 }
                 4 -> error("PRIVATE_FAULT_DETAIL_MUST_NOT_ESCAPE")
                 5 -> output.writeText("not a PDF")
-                6, 7, 8 -> {
+                6, 7, 8, 9 -> {
                     val pdf = PdfDocument()
                     try {
                         val size = if (mode == 7) 612 to 792 else 595 to 842
@@ -43,6 +43,10 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
                     } finally { pdf.close() }
                     // Read/traversal is allowed, so PDF validation succeeds; unlink must fail.
                     if (mode == 8) Os.chmod(directory.absolutePath, 0b101000000)
+                    if (mode == 9) File(directory,"budget-fill").outputStream().use { stream ->
+                        val block = ByteArray(64*1024)
+                        repeat(32) { stream.write(block) }
+                    } // Finish immediately, before the controller's next periodic observation.
                 }
                 else -> error("Unknown synthetic worker fault")
             }

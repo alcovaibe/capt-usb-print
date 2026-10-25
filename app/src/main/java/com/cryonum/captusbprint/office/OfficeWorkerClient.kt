@@ -202,6 +202,9 @@ internal object OfficeWorkerClient {
                 }
                 failure.get()?.let { throw OfficeConversionFailure(it) }
                 if (cancelled()) throw OfficeConversionFailure(OfficeFailure.CANCELLED)
+                // A quick callback may arrive during await, after the last observation.
+                budget.checkTime(SystemClock.elapsedRealtime() - started)
+                budget.checkDisk(directory, directory.usableSpace)
                 val pdf = File(directory, "result.pdf")
                 if (Files.isSymbolicLink(pdf.toPath()) || !pdf.isFile ||
                     pdf.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
@@ -251,9 +254,20 @@ internal object OfficeWorkerClient {
                         try { Thread.sleep(25) } catch (_: InterruptedException) { interrupted = true }
                         stopped = processStopped()
                     }
+                    var finalFailure: OfficeFailure? = null
+                    if (preserve && stopped && unbound) {
+                        // Native background threads can still write after the success callback.
+                        // Only a stopped process makes the last workspace measurement stable.
+                        try { budget.checkDisk(directory, directory.usableSpace) }
+                        catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
+                        catch (_: IOException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
+                        catch (_: SecurityException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
+                        if (finalFailure != null) preserve = false
+                    }
                     val cleaned = !stopped || (preserve && unbound) || OfficePrivateFiles.deleteTree(directory)
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                     if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                    finalFailure?.let { throw OfficeConversionFailure(it) }
                 } finally { if (interrupted) Thread.currentThread().interrupt() }
             }
         }

@@ -100,6 +100,10 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             failure(OfficeFailure.MEMORY_LIMIT) { run(1, limit = budget(rss = 1)).close() }
             stage = "disk-budget"
             failure(OfficeFailure.DISK_LIMIT) { run(3, limit = budget(disk = 1024 * 1024)).close() }
+            stage = "fast-result-between-disk-observations"
+            failure(OfficeFailure.DISK_LIMIT) {
+                run(9, limit = budget(disk = 1024*1024), onStart = { Thread.sleep(2500) }).close()
+            }
             stage = "free-space-reserve"
             failure(OfficeFailure.NO_SPACE) {
                 run(6, limit = OfficeWorkBudget(12_000, 768L * 1024 * 1024,
