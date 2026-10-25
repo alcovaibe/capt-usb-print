@@ -14,6 +14,7 @@ on:
       - 'tools/run-office-engine-smoke.sh'
       - 'tools/run-office-worker-smoke.sh'
       - 'tools/check-office-fit-pdfs.py'
+      - 'tools/measure-office-probe-apk.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -120,6 +121,7 @@ jobs:
           if grep -F 'android.permission.INTERNET' probe-permissions.txt; then exit 1; fi
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" dex packages --defined-only app/build/outputs/apk/debug/app-debug.apk > probe-dex.txt
           grep -F 'com.cryonum.captusbprint.OfficeEngineSmoke' probe-dex.txt
+          python3 tools/measure-office-probe-apk.py app/build/outputs/apk/debug/app-debug.apk office-probe-apk-size.json
       - name: Free unused runner toolchains
         run: bash tools/free-runner-disk.sh
       - name: Enable emulator acceleration
@@ -155,6 +157,7 @@ jobs:
             office-engine-logcat.txt
             office-engine-crash.txt
             probe-dex.txt
+            office-probe-apk-size.json
             office-worker-*.txt
             office-worker-results.json
             office-native-ui-*.txt
