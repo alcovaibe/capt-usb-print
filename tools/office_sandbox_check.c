@@ -9,7 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/sendfile.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
@@ -41,6 +43,7 @@ static void child(int socket,int report,int logger,const char *job,const char *s
     char name[8192];snprintf(name,sizeof(name),"%s/output",job);
     int fd=open(name,O_RDWR|O_CREAT|O_TRUNC,0600);CHECK(fd>=0);
     CHECK(write(fd,"own",3)==3);CHECK(lseek(fd,0,SEEK_SET)==0);
+    int duplicate=dup(fd);CHECK(duplicate>=0);CHECK(close(duplicate)==0);
     char bytes[8]={0};CHECK(read(fd,bytes,3)==3 && !memcmp(bytes,"own",3));CHECK(close(fd)==0);
     CHECK(open(secret,O_RDONLY)<0 && errno==EACCES);
     CHECK(syscall(SYS_openat,AT_FDCWD,secret,O_RDONLY,0)<0 && errno==EACCES);
@@ -64,6 +67,7 @@ static void child(int socket,int report,int logger,const char *job,const char *s
     memset(&metadata,0x55,sizeof(metadata));CHECK(stat("output",&metadata.st)==0 && S_ISREG(metadata.st.st_mode));
     for(size_t i=0;i<sizeof(metadata.canary);++i)CHECK(metadata.canary[i]==0x55);
     CHECK(stat(secret,&metadata.st)<0 && errno==EACCES);
+    struct statfs space;CHECK(statfs(job,&space)==0 && space.f_bsize>0);
     CHECK(unlink(secret)<0 && errno==EACCES);CHECK(chmod(secret,0600)<0 && errno==EACCES);
     CHECK(truncate(secret,0)<0 && errno==EACCES);
     CHECK(rename("output",secret)<0 && errno==EACCES);
@@ -77,6 +81,8 @@ static void child(int socket,int report,int logger,const char *job,const char *s
     struct iovec vec={(void *)"PRIVATE_SENTINEL",16};CHECK(writev(logger,&vec,1)<0 && errno==EACCES);
     CHECK(send(logger,"PRIVATE_SENTINEL",16,0)<0 && errno==EACCES);
     CHECK(dup(logger)<0 && errno==EACCES);CHECK(fcntl(logger,F_DUPFD,3)<0 && errno==EACCES);
+    fd=open("output",O_RDONLY);CHECK(fd>=0);
+    CHECK(sendfile(logger,fd,NULL,3)<0 && errno==EACCES);close(fd);
     CHECK(kill(getppid(),SIGUSR1)<0 && errno==EACCES);
     CHECK(fork()<0 && errno==EACCES);
     CHECK(open("/dev/urandom",O_RDONLY)>=0);

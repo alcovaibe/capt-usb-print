@@ -488,6 +488,19 @@ int capt_sandbox_install(int socket_fd,const char *root) {
 #endif
     DENY(execve);DENY(execveat);DENY(ptrace);DENY(process_vm_readv);DENY(process_vm_writev);
     DENY(linkat);DENY(symlinkat);DENY(mknodat);DENY(mount);DENY(umount2);DENY(chroot);DENY(fchdir);
+    DENY(unshare);DENY(setns);DENY(inotify_add_watch);
+#ifdef __NR_close_range
+    DENY(close_range);
+#endif
+#ifdef __NR_open_tree
+    DENY(open_tree);DENY(move_mount);DENY(fsopen);DENY(fsconfig);DENY(fsmount);
+#endif
+#ifdef __NR_mount_setattr
+    DENY(mount_setattr);
+#endif
+#ifdef __NR_fchmodat2
+    DENY(fchmodat2);
+#endif
 #ifdef __NR_fork
     DENY(fork);
 #endif
@@ -586,7 +599,20 @@ int capt_sandbox_install(int socket_fd,const char *root) {
         int fd=(int)parsed;
         if(fd==socket_fd)continue;
         struct stat st;if(fstat(fd,&st)||!S_ISSOCK(st.st_mode))continue;
-        const int calls[]={__NR_write,__NR_writev,__NR_close};
+        const int calls[]={__NR_write,__NR_writev,__NR_close,__NR_dup,__NR_dup3,__NR_fcntl,
+#ifdef __NR_dup2
+            __NR_dup2,
+#endif
+#ifdef __NR_fcntl64
+            __NR_fcntl64,
+#endif
+#ifdef __NR_sendfile
+            __NR_sendfile,
+#endif
+#ifdef __NR_sendfile64
+            __NR_sendfile64,
+#endif
+            __NR_vmsplice};
         for(size_t i=0;i<sizeof(calls)/sizeof(calls[0]);++i) {
             jump(BPF_JMP|BPF_JEQ|BPF_K,(uint32_t)calls[i],0,4);
             statement(BPF_LD|BPF_W|BPF_ABS,offsetof(struct seccomp_data,args[0]));
@@ -594,22 +620,20 @@ int capt_sandbox_install(int socket_fd,const char *root) {
             statement(BPF_RET|BPF_K,SECCOMP_RET_ERRNO|EACCES);
             statement(BPF_LD|BPF_W|BPF_ABS,offsetof(struct seccomp_data,nr));
         }
+        const int targets[][2]={{__NR_dup3,1},
+#ifdef __NR_dup2
+            {__NR_dup2,1},
+#endif
+            {__NR_splice,2},{__NR_tee,1}};
+        for(size_t i=0;i<sizeof(targets)/sizeof(targets[0]);++i) {
+            jump(BPF_JMP|BPF_JEQ|BPF_K,(uint32_t)targets[i][0],0,4);
+            statement(BPF_LD|BPF_W|BPF_ABS,(uint32_t)(offsetof(struct seccomp_data,args[0])+8*targets[i][1]));
+            jump(BPF_JMP|BPF_JEQ|BPF_K,(uint32_t)fd,0,1);
+            statement(BPF_RET|BPF_K,SECCOMP_RET_ERRNO|EACCES);
+            statement(BPF_LD|BPF_W|BPF_ABS,offsetof(struct seccomp_data,nr));
+        }
     }
     closedir(descriptors);
-    DENY(dup);DENY(dup3);
-#ifdef __NR_dup2
-    DENY(dup2);
-#endif
-    jump(BPF_JMP|BPF_JEQ|BPF_K,__NR_fcntl,0,5);
-    statement(BPF_LD|BPF_W|BPF_ABS,offsetof(struct seccomp_data,args[1]));
-    jump(BPF_JMP|BPF_JEQ|BPF_K,F_DUPFD,1,0);jump(BPF_JMP|BPF_JEQ|BPF_K,F_DUPFD_CLOEXEC,0,1);
-    statement(BPF_RET|BPF_K,SECCOMP_RET_ERRNO|EACCES);statement(BPF_RET|BPF_K,SECCOMP_RET_ALLOW);
-#ifdef __NR_fcntl64
-    jump(BPF_JMP|BPF_JEQ|BPF_K,__NR_fcntl64,0,5);
-    statement(BPF_LD|BPF_W|BPF_ABS,offsetof(struct seccomp_data,args[1]));
-    jump(BPF_JMP|BPF_JEQ|BPF_K,F_DUPFD,1,0);jump(BPF_JMP|BPF_JEQ|BPF_K,F_DUPFD_CLOEXEC,0,1);
-    statement(BPF_RET|BPF_K,SECCOMP_RET_ERRNO|EACCES);statement(BPF_RET|BPF_K,SECCOMP_RET_ALLOW);
-#endif
 #ifdef __NR_open
     MEDIATE(open);MEDIATE(creat);
 #endif

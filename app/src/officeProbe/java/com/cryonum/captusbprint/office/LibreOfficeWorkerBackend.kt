@@ -8,7 +8,7 @@ import org.libreoffice.kit.LibreOfficeKit
 import org.libreoffice.kit.Office
 import java.io.File
 
-/** Opt-in debug backend. Not reachable from SAF/ACTION_SEND; resource sandbox still pending. */
+/** Opt-in debug backend. Not reachable from SAF/ACTION_SEND; file access is confined by the mandatory worker guard. */
 internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
     override fun preload() = LibreOfficeKit.initializeLibrary()
     override fun convert(context: Context, input: File, output: File, directory: File,
