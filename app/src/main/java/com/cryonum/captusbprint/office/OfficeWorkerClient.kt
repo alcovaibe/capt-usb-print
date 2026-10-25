@@ -14,6 +14,7 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -196,8 +197,14 @@ internal object OfficeWorkerClient {
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
                 throw OfficeConversionFailure(OfficeFailure.CANCELLED)
+            } catch (error: OfficeConversionFailure) {
+                throw error
+            } catch (_: IOException) {
+                throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+            } catch (_: SecurityException) {
+                throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
             } finally {
-                val interrupted = Thread.interrupted()
+                var interrupted = Thread.interrupted()
                 closed.set(true)
                 main.post {
                     try { if (bound) context.unbindService(connection) }
@@ -206,9 +213,19 @@ internal object OfficeWorkerClient {
                 }
                 // Native code may be stuck; termination does not depend on it servicing Binder.
                 kill()
+                fun awaitCleanup(latch: CountDownLatch): Boolean {
+                    val until = SystemClock.elapsedRealtime() + 2000
+                    while (latch.count > 0) {
+                        val left = until - SystemClock.elapsedRealtime()
+                        if (left <= 0) return false
+                        try { return latch.await(left, TimeUnit.MILLISECONDS) }
+                        catch (_: InterruptedException) { interrupted = true }
+                    }
+                    return true
+                }
                 try {
-                    val unbound = bindingStopped.await(2, TimeUnit.SECONDS)
-                    val stopped = pid.get() == 0 || dead.await(2, TimeUnit.SECONDS) || processBirth(pid.get()) != birth
+                    val unbound = awaitCleanup(bindingStopped)
+                    val stopped = pid.get() == 0 || awaitCleanup(dead) || processBirth(pid.get()) != birth
                     if (stopped && (!preserve || !unbound)) directory.deleteRecursively()
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                 } finally { if (interrupted) Thread.currentThread().interrupt() }

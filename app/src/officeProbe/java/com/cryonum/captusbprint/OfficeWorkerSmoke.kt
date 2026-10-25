@@ -19,6 +19,7 @@ import java.io.File
 class OfficeWorkerSmoke : Instrumentation() {
     override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
     override fun onStart() {
+        waitForIdleSync()
         val context = targetContext
         val result = Bundle()
         var outcome = Activity.RESULT_CANCELED

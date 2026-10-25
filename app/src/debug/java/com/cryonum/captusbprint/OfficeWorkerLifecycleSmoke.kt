@@ -19,6 +19,8 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
     private class UnexpectedFailure(val expected: String, val actual: String) : RuntimeException()
     override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
     override fun onStart() {
+        // Instrumentation.start may race callApplicationOnCreate on older Android.
+        waitForIdleSync()
         var stage = "start"
         var code = Activity.RESULT_CANCELED
         val result = Bundle()
@@ -74,6 +76,11 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             failure(OfficeFailure.MEMORY_LIMIT) { run(1, limit = budget(rss = 1)).close() }
             stage = "disk-budget"
             failure(OfficeFailure.DISK_LIMIT) { run(3, limit = budget(disk = 1024 * 1024)).close() }
+            stage = "free-space-reserve"
+            failure(OfficeFailure.NO_SPACE) {
+                run(6, limit = OfficeWorkBudget(12_000, 768L * 1024 * 1024,
+                    192L * 1024 * 1024, Long.MAX_VALUE, 8192)).close()
+            }
             stage = "engine-error-privacy"
             failure(OfficeFailure.ENGINE_FAILED) { run(4).close() }
             stage = "invalid-output"
