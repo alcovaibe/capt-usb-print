@@ -39,7 +39,7 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/report_file_paths" />
         </provider>
-        <provider android:name="androidx.core.content.FileProvider"
+        <provider android:name=".updates.UpdateFileProvider"
             android:authorities="${applicationId}.updates" android:exported="false"
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
