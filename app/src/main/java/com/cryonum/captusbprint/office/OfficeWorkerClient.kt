@@ -73,6 +73,7 @@ internal object OfficeWorkerClient {
         val closed = AtomicBoolean(false)
         val pid = AtomicInteger(0)
         val remote = AtomicReference<IBinder?>()
+        val connected = AtomicBoolean(false)
         val failure = AtomicReference<OfficeFailure?>()
         val sheets = AtomicReference<List<String>>(emptyList())
         @Volatile var bound = false
@@ -118,15 +119,7 @@ internal object OfficeWorkerClient {
                         dead.countDown()
                     }, 0)
                     if (closed.get()) { kill(); return }
-                    ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
-                        val request = Parcel.obtain()
-                        try {
-                            request.writeInterfaceToken(OfficeWorkerProtocol.DESCRIPTOR)
-                            request.writeString(id); request.writeStrongBinder(callback)
-                            descriptor.writeToParcel(request, 0); options.write(request)
-                            check(service.transact(OfficeWorkerProtocol.START, request, null, IBinder.FLAG_ONEWAY))
-                        } finally { request.recycle() }
-                    }
+                    connected.set(true)
                 } catch (_: Throwable) { fail(OfficeFailure.ENGINE_UNAVAILABLE) }
                 finally { data.recycle(); reply.recycle() }
             }
@@ -151,8 +144,13 @@ internal object OfficeWorkerClient {
                 if (!source.canonicalFile.toPath().startsWith(appRoot) || !source.isFile ||
                     source.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
                     throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
-                try { context.packageManager.getServiceInfo(ComponentName(context, serviceClass), 0) }
-                catch (_: PackageManager.NameNotFoundException) { throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE) }
+                val serviceInfo = try {
+                    context.packageManager.getServiceInfo(ComponentName(context, serviceClass), 0)
+                } catch (_: PackageManager.NameNotFoundException) {
+                    throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE)
+                }
+                if (serviceInfo.exported || !serviceInfo.enabled || serviceInfo.processName != "${context.packageName}:office")
+                    throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE)
                 check(directory.mkdirs())
                 budget.checkDisk(directory, directory.usableSpace)
                 main.post {
@@ -163,15 +161,12 @@ internal object OfficeWorkerClient {
                         if (!bound) fail(OfficeFailure.ENGINE_UNAVAILABLE)
                     } catch (_: Throwable) { fail(OfficeFailure.ENGINE_UNAVAILABLE) }
                 }
-                var observedPid = 0
+                var dispatched = false
                 while (true) {
                     if (cancelled() || Thread.currentThread().isInterrupted)
                         throw OfficeConversionFailure(OfficeFailure.CANCELLED)
                     budget.checkTime(SystemClock.elapsedRealtime() - started)
                     val workerPid = pid.get()
-                    if (workerPid != 0 && observedPid == 0) {
-                        observedPid = workerPid; onWorkerStarted(workerPid)
-                    }
                     if (workerPid != 0 && dead.count > 0) {
                         // Same UID /proc reads are not ActivityManager's rate-limited PSS cache.
                         val rss = try { OfficeWorkBudget.parseRss(readStatus(workerPid)) }
@@ -185,6 +180,13 @@ internal object OfficeWorkerClient {
                         if (rss > 0) { budget.checkRss(rss); peakRss = maxOf(peakRss, rss) }
                     }
                     budget.checkDisk(directory, directory.usableSpace)
+                    if (connected.get() && workerPid != 0 && !dispatched && finished.count > 0) {
+                        // Observe resident memory before any backend can finish a fast conversion.
+                        check(peakRss > 0)
+                        dispatch(requireNotNull(remote.get()))
+                        dispatched = true
+                        onWorkerStarted(workerPid)
+                    }
                     if (finished.await(100, TimeUnit.MILLISECONDS)) break
                 }
                 failure.get()?.let { throw OfficeConversionFailure(it) }
@@ -238,6 +240,18 @@ internal object OfficeWorkerClient {
                     if (stopped && (!preserve || !unbound)) directory.deleteRecursively()
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                 } finally { if (interrupted) Thread.currentThread().interrupt() }
+            }
+        }
+
+        fun dispatch(service: IBinder) {
+            ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                val request = Parcel.obtain()
+                try {
+                    request.writeInterfaceToken(OfficeWorkerProtocol.DESCRIPTOR)
+                    request.writeString(id); request.writeStrongBinder(callback)
+                    descriptor.writeToParcel(request, 0); options.write(request)
+                    check(service.transact(OfficeWorkerProtocol.START, request, null, IBinder.FLAG_ONEWAY))
+                } finally { request.recycle() }
             }
         }
 

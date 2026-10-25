@@ -61,9 +61,13 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             failure(OfficeFailure.CANCELLED) { run(1, { true }).close() }
             stage = "success-and-independent-copy"
             run(6).use { prepared ->
+                stage = "success-page-layout"
                 check(prepared.session.overview.pageCount == 1 && prepared.session.preparedPdfLayout != null)
+                stage = "success-memory-sample"
                 check(prepared.peakObservedRssBytes > 0)
+                stage = "success-owned-copy"
                 clean() // Work directory is gone, while the prepared preview copy is still alive.
+                stage = "success-preview"
                 prepared.session.renderPreparedPrintPreview(0) { false }.recycle()
             }
             stage = "cancel-running"
