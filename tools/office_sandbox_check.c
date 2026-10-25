@@ -94,14 +94,15 @@ static void child(int socket,int report,int logger,const char *job,const char *s
 static void file(const char *path) { int fd=open(path,O_CREAT|O_WRONLY,0600);if(fd<0)exit(2);if(write(fd,"secret",6)!=6)exit(2);close(fd); }
 int main(int argc,char **argv) {
     if(argc!=2)return 64;
-    char job[4096],secret[4096],apk[4096],libs[4096],library[4096],path[4096];
-    snprintf(job,sizeof(job),"%s/job",argv[1]);snprintf(secret,sizeof(secret),"%s/secret",argv[1]);snprintf(apk,sizeof(apk),"%s/base.apk",argv[1]);snprintf(libs,sizeof(libs),"%s/libs",argv[1]);snprintf(library,sizeof(library),"%s/libs/resource",argv[1]);
+    char job[4096],secret[4096],apk[4096],libs[4096],library[4096],path[4096],alias[4096];
+    snprintf(job,sizeof(job),"%s/job",argv[1]);snprintf(secret,sizeof(secret),"%s/secret",argv[1]);snprintf(apk,sizeof(apk),"%s/base.apk",argv[1]);snprintf(libs,sizeof(libs),"%s/libs",argv[1]);snprintf(library,sizeof(library),"%s/libs-link/resource",argv[1]);snprintf(alias,sizeof(alias),"%s/libs-link",argv[1]);
     if(mkdir(job,0700)||mkdir(libs,0700))return 2;
-    file(secret);file(apk);file(library);
+    file(secret);file(apk);snprintf(path,sizeof(path),"%s/libs/resource",argv[1]);file(path);
+    if(symlink(libs,alias))return 2;
     snprintf(path,sizeof(path),"%s/job/file-link",argv[1]);if(symlink(secret,path))return 2;
     snprintf(path,sizeof(path),"%s/job/dir-link",argv[1]);if(symlink(argv[1],path))return 2;
     int client=-1,report[2],logger[2];
-    capt_broker *broker=capt_broker_start(job,apk,libs,&client);
+    capt_broker *broker=capt_broker_start(job,apk,alias,&client);
     if(!broker || pipe(report) || socketpair(AF_UNIX,SOCK_DGRAM,0,logger))return 2;
     pid_t pid=fork();if(pid<0)return 2;
     if(!pid)child(client,report[1],logger[1],job,secret,apk,library);

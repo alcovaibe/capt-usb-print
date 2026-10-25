@@ -46,7 +46,7 @@ typedef struct {
     int error, length;
     unsigned char data[PATH_MAX];
 } response;
-typedef struct { char path[PATH_MAX]; int fd, access, exact; } root_entry;
+typedef struct { char path[PATH_MAX], logical[PATH_MAX]; int fd, access, exact; } root_entry;
 struct capt_broker {
     int socket;
     pthread_t thread;
@@ -83,6 +83,7 @@ static int normalize(const char *input, char *out) {
 static int add_root(capt_broker *b, const char *path, int access, int exact, int required) {
     if (!path || !*path || b->count >= MAX_ROOTS) return !required;
     root_entry *r = &b->roots[b->count];
+    if(!normalize(path,r->logical))return !required;
     if (!realpath(path,r->path)) return !required;
     r->fd = open(r->path,O_PATH|O_NOFOLLOW|O_CLOEXEC);
     if (r->fd < 0) return !required;
@@ -92,13 +93,18 @@ static int add_root(capt_broker *b, const char *path, int access, int exact, int
  * No symlink creation is permitted by the worker's filter. */
 static int anchor(capt_broker *b, const char *path, int access, char *leaf) {
     root_entry *best = NULL;
+    size_t matched=0;
     for (int i=0; i<b->count; ++i) {
         root_entry *r=&b->roots[i];
-        if ((r->exact ? !strcmp(path,r->path) : beneath(path,r->path)) &&
-            (r->access & access)==access && (!best || strlen(r->path)>strlen(best->path))) best=r;
+        const char *names[]={r->path,r->logical};
+        for(int j=0;j<2;++j) {
+            size_t length=strlen(names[j]);
+            if ((r->exact ? !strcmp(path,names[j]) : beneath(path,names[j])) &&
+                (r->access & access)==access && (!best || length>matched)) { best=r;matched=length; }
+        }
     }
     if (!best) { errno=EACCES; return -1; }
-    const char *relative=path+strlen(best->path);
+    const char *relative=path+matched;
     if (best->exact) {
         /* Exact read-only files: return their parent and fixed basename. */
         char parent[PATH_MAX]; strcpy(parent,best->path);
@@ -131,7 +137,7 @@ static int absolute_path(const char *input, int fd, char *out) {
     return normalize(joined,out);
 }
 static int ancestor(capt_broker *b, const char *path) {
-    for (int i=0;i<b->count;++i) if (beneath(b->roots[i].path,path)) return 1;
+    for (int i=0;i<b->count;++i) if (beneath(b->roots[i].path,path) || beneath(b->roots[i].logical,path)) return 1;
     return 0;
 }
 static void deny_resource(capt_broker *b,int op,const char *path) {
@@ -273,6 +279,9 @@ capt_broker *capt_broker_start(const char *root,const char *apk,const char *libr
     /* Immutable OS runtime resources. None is an app/user document directory. */
     const char *system[]={"/system","/apex","/vendor","/product","/odm"};
     for (size_t i=0;i<sizeof(system)/sizeof(system[0]);++i) if (!add_root(b,system[i],READ,0,0)) goto failed;
+    /* Android's /etc alias points into immutable /system, not a host's /etc. */
+    char etc[PATH_MAX];
+    if(realpath("/etc",etc) && beneath(etc,"/system") && !add_root(b,"/etc",READ,0,0))goto failed;
     if(!add_root(b,"/proc/cpuinfo",READ,1,0) || !add_root(b,"/proc/meminfo",READ,1,0) ||
         !add_root(b,"/sys/devices/system/cpu",READ,0,0))goto failed;
     if (!add_root(b,"/dev/null",READ|WRITE,1,1) || !add_root(b,"/dev/urandom",READ,1,1) ||
