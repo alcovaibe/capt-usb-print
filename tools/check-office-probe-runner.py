@@ -16,7 +16,14 @@ with open(os.environ["PROBE_TEST_CALLS"], "a") as calls:
 if a[:3] == ['shell', 'am', 'instrument']:
     mode = os.environ['PROBE_TEST_MODE']
     if mode == 'success':
-        print('INSTRUMENTATION_RESULT: stream=CAPT_OFFICE_ENGINE_CONVERSION_SMOKE_PASSED (synthetic only)')
+        entry = a[-1].rsplit('.', 1)[-1]
+        markers = {'OfficeEngineSmoke': 'CAPT_OFFICE_ENGINE_CONVERSION_SMOKE_PASSED',
+                   'OfficeWorkerSmoke': 'CAPT_OFFICE_WORKER_CONVERSION_PASSED',
+                   'OfficeWorkerLifecycleSmoke': 'CAPT_OFFICE_WORKER_LIFECYCLE_PASSED',
+                   'OfficeKernelLimitsSmoke': 'CAPT_OFFICE_KERNEL_LIMITS_PASSED',
+                   'OfficePreviewUiSmoke': 'CAPT_OFFICE_PREVIEW_UI_PASSED',
+                   'OfficeNativeUiSmoke': 'CAPT_OFFICE_NATIVE_UI_PASSED'}
+        print('INSTRUMENTATION_RESULT: stream=' + markers[entry] + ' (synthetic only)')
         print('INSTRUMENTATION_CODE: -1')
     elif mode == 'crash':
         print('INSTRUMENTATION_RESULT: shortMsg=Process crashed.')
@@ -35,7 +42,7 @@ elif a[:1] == ['exec-out']:
 '''
 FAKE_TIMEOUT = '''#!/usr/bin/env python3
 import os, sys
-if sys.argv[1] == '300' and os.environ['PROBE_TEST_MODE'] == 'timeout':
+if sys.argv[1] in ('300', '360') and os.environ['PROBE_TEST_MODE'] == 'timeout':
     sys.exit(124)
 os.execvp(sys.argv[2], sys.argv[2:])
 '''
@@ -50,19 +57,29 @@ def main():
             path = bin_dir / name
             path.write_text(script)
             path.chmod(0o755)
-        for mode in ['success', 'crash', 'transport', 'timeout', 'no-marker']:
-            work = root / mode
-            work.mkdir()
-            result = subprocess.run(['bash', str(ROOT / 'tools/run-office-engine-smoke.sh')],
-                cwd=work, env={**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
-                               'PROBE_TEST_MODE': mode, 'PROBE_TEST_CALLS': str(work / 'calls.jsonl')}, capture_output=True, text=True, timeout=10)
-            assert (result.returncode == 0) == (mode == 'success'), (mode, result.stdout, result.stderr)
-            calls = [json.loads(line) for line in (work / 'calls.jsonl').read_text().splitlines()]
-            assert calls[-1] == ['shell', 'am', 'force-stop', 'com.cryonum.captusbprint.debug']
-            assert any(a[:2] == ['shell', 'run-as'] and 'rm' in a for a in calls)
-            assert (work / 'office-engine-logcat.txt').read_text().strip() == 'synthetic native crash diagnostic'
-            assert (work / 'office-probe-stage.txt').read_text().strip() == 'jni-init'
-    print('CAPT_OFFICE_PROBE_RUNNER_PASSED scenarios=5 (not an engine test)')
+        runners = [('engine', 'run-office-engine-smoke.sh', [], 'office-engine')]
+        runners += [(mode, 'run-office-worker-smoke.sh', [mode], prefix) for mode, prefix in [
+            ('conversion', 'office-worker'), ('lifecycle', 'office-worker-lifecycle'),
+            ('kernel', 'office-kernel'), ('ui', 'office-ui'), ('native-ui', 'office-native-ui')]]
+        scenarios = 0
+        for name, script, arguments, prefix in runners:
+            for mode in ['success', 'crash', 'transport', 'timeout', 'no-marker']:
+                work = root / (name + '-' + mode)
+                work.mkdir()
+                result = subprocess.run(['bash', str(ROOT / 'tools' / script), *arguments],
+                    cwd=work, env={**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
+                                   'PROBE_TEST_MODE': mode, 'PROBE_TEST_CALLS': str(work / 'calls.jsonl')}, capture_output=True, text=True, timeout=10)
+                assert (result.returncode == 0) == (mode == 'success'), (name, mode, result.stdout, result.stderr)
+                calls = [json.loads(line) for line in (work / 'calls.jsonl').read_text().splitlines()]
+                assert calls[-1] == ['shell', 'am', 'force-stop', 'com.cryonum.captusbprint.debug']
+                deletes_report = any(a[:2] == ['shell', 'run-as'] and 'rm' in a for a in calls)
+                assert deletes_report == (name != 'native-ui')  # Native UI reads the earlier worker report.
+                assert (work / (prefix + '-logcat.txt')).read_text().strip() == 'synthetic native crash diagnostic'
+                assert (work / (prefix + '-crash.txt')).read_text().strip() == 'synthetic native crash diagnostic'
+                if name == 'engine':
+                    assert (work / 'office-probe-stage.txt').read_text().strip() == 'jni-init'
+                scenarios += 1
+    print(f'CAPT_OFFICE_PROBE_RUNNER_PASSED scenarios={scenarios} (not an engine test)')
 
 
 if __name__ == '__main__':

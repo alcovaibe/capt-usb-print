@@ -38,6 +38,41 @@ class OfficeNativeUiSmoke : Instrumentation() {
             val reports=JSONObject(File(targetContext.filesDir,"office-worker-results.json").readText()).getJSONArray("conversions")
             fun pages(kind:String,selection:String,fit:Boolean):Int = (0 until reports.length()).map { reports.getJSONObject(it) }
                 .single { it.getString("format")==kind && it.getString("selectedSheets")==selection && it.getBoolean("fitWidth")==fit }.getInt("pdfPages")
+            for(kind in listOf("docx","doc")) {
+                stage="$kind-open"
+                activity=startActivitySync(Intent(targetContext,OfficeFixturePreviewActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("kind",kind)) as OfficeFixturePreviewActivity
+                await { snapshot().ready && snapshot().pages==3 }
+                check(snapshot().sheets.isEmpty() && !snapshot().fit)
+                fun navigate(description:Int) = ui {
+                    val found=ArrayList<View>()
+                    current().findViewById<View>(android.R.id.content).findViewsWithText(found,
+                        targetContext.getString(description),View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+                    check(found.single().performClick())
+                }
+                stage="$kind-navigation"
+                navigate(R.string.preview_next); await { snapshot().ready && snapshot().page==1 }
+                navigate(R.string.preview_next); await { snapshot().ready && snapshot().page==2 }
+                navigate(R.string.preview_previous); await { snapshot().ready && snapshot().page==1 }
+                stage="$kind-range-copies"
+                ui {
+                    val root=current().findViewById<View>(android.R.id.content)
+                    root.findViewWithTag<EditText>("office-range").setText("2-3")
+                    root.findViewWithTag<EditText>("office-copies").setText("2")
+                }
+                click("office-reviewed")
+                check(ui { current().findViewById<View>(android.R.id.content).findViewWithTag<View>("office-print").isEnabled })
+                val id=AtomicLong(0)
+                ui { current().enqueueHeldForSmoke({ id.set(it) },{ error("NATIVE_WORD_HELD_FAILED") }) }
+                await { id.get()!=0L }; held=id.get()
+                val record=PrintQueueRuntime.snapshot().single { it.id==held }
+                check(!record.ready && !record.usbStarted && record.sheets==4)
+                val copy=File(targetContext.noBackupFilesDir,"print-queue/$held/source.bin")
+                stage="$kind-close"
+                ui { current().finish() }
+                await { folders("office-ui")==sources && folders("office-work")==workers }
+                check(PdfRenderer(ParcelFileDescriptor.open(copy,ParcelFileDescriptor.MODE_READ_ONLY)).use { it.pageCount }==3)
+                PrintQueueRuntime.cancel(requireNotNull(held)); held=null
+            }
             for(kind in listOf("xls","xlsx")) {
                 stage="$kind-open"
                 activity=startActivitySync(Intent(targetContext,OfficeFixturePreviewActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("kind",kind)) as OfficeFixturePreviewActivity
@@ -69,10 +104,12 @@ class OfficeNativeUiSmoke : Instrumentation() {
                 check(copiedPages()==1) // Closing the entire UI still cannot delete the queue's source.
                 PrintQueueRuntime.cancel(requireNotNull(held)); held=null
             }
-            result.putString("stream","CAPT_OFFICE_NATIVE_UI_PASSED (XLS/XLSX native preview/sheet selection/fit/held copy; no USB)")
+            check(PrintQueueRuntime.snapshot().none { !it.phase.terminal })
+            result.putString("stream","CAPT_OFFICE_NATIVE_UI_PASSED (DOCX/DOC navigation/range/copies; XLS/XLSX sheets/fit; held copies/cleanup; no USB)")
             outcome=Activity.RESULT_OK
         } catch(error:Throwable) {
-            result.putString("stream","OFFICE_NATIVE_UI_FAILED:$stage:${error.javaClass.simpleName}")
+            val state=runCatching { snapshot() }.getOrNull()
+            result.putString("stream","OFFICE_NATIVE_UI_FAILED:$stage:${error.javaClass.simpleName}:ready=${state?.ready}:pages=${state?.pages}:loading=${state?.loading}:failure=${state?.failure?.name}")
         } finally {
             held?.let { PrintQueueRuntime.cancel(it) }
             ui { activity?.takeIf { !it.isDestroyed }?.finish() }

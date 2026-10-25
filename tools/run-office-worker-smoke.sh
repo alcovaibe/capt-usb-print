@@ -11,6 +11,10 @@ case "${1:-conversion}" in
     entry=OfficePreviewUiSmoke
     marker=CAPT_OFFICE_PREVIEW_UI_PASSED
     prefix=office-ui ;;
+  native-ui)
+    entry=OfficeNativeUiSmoke
+    marker=CAPT_OFFICE_NATIVE_UI_PASSED
+    prefix=office-native-ui ;;
   kernel)
     entry=OfficeKernelLimitsSmoke
     marker=CAPT_OFFICE_KERNEL_LIMITS_PASSED
@@ -39,6 +43,8 @@ finish_probe() {
 }
 trap finish_probe EXIT
 adb logcat -b all -c
-adb shell run-as "$package" rm -f files/office-worker-results.json
+if [[ "$entry" != OfficeNativeUiSmoke ]]; then
+  adb shell run-as "$package" rm -f files/office-worker-results.json
+fi
 timeout 360 adb shell am instrument -w "$package/com.cryonum.captusbprint.$entry" | tee "$prefix-smoke.txt"
 grep -F "$marker" "$prefix-smoke.txt"
