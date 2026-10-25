@@ -36,6 +36,7 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
         val root = File(context.noBackupFilesDir, "office-work")
         val previous = root.listFiles()?.map { it.name }?.toSet() ?: emptySet()
         val workerPids = mutableSetOf<Int>()
+        var successfulWorkerRss = 0L
         var readonlyWorkspace: File? = null
         val cleanupProbe = File(context.cacheDir,"office-cleanup-symlink-check")
         fun budget(time: Long = 12_000, rss: Long = 768L * 1024 * 1024,
@@ -59,6 +60,16 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
                 throw UnexpectedFailure(expected.name, (error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName)
             check(!error.toString().contains("PRIVATE_FAULT_DETAIL")); clean()
         }
+        var fastResultsObserved = 0
+        fun holdObserverUntilResult() {
+            val folder = requireNotNull(root.listFiles()).single { it.name !in previous }
+            val until = SystemClock.elapsedRealtime()+5000
+            while (!File(folder,"fast-result-ready").isFile) {
+                check(SystemClock.elapsedRealtime()<until); Thread.sleep(10)
+            }
+            ++fastResultsObserved
+            Thread.sleep(100) // Allow the synchronous Binder success callback before the next observation.
+        }
         try {
             stage = "private-cleanup-symlinks"
             check(OfficePrivateFiles.deleteTree(cleanupProbe))
@@ -77,6 +88,7 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
                 check(prepared.session.overview.pageCount == 1 && prepared.session.preparedPdfLayout != null)
                 stage = "success-memory-sample"
                 check(prepared.peakObservedRssBytes > 0)
+                successfulWorkerRss = prepared.peakObservedRssBytes
                 stage = "success-owned-copy"
                 clean() // Work directory is gone, while the prepared preview copy is still alive.
                 stage = "success-preview"
@@ -98,12 +110,18 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             failure(OfficeFailure.WORKER_CRASHED) { run(2).close() }
             stage = "memory-budget"
             failure(OfficeFailure.MEMORY_LIMIT) { run(1, limit = budget(rss = 1)).close() }
+            stage = "fast-result-between-memory-observations"
+            failure(OfficeFailure.MEMORY_LIMIT) {
+                run(10, limit = budget(rss = successfulWorkerRss+32L*1024*1024), onStart = { holdObserverUntilResult() }).close()
+            }
+            check(fastResultsObserved==1)
             stage = "disk-budget"
             failure(OfficeFailure.DISK_LIMIT) { run(3, limit = budget(disk = 1024 * 1024)).close() }
             stage = "fast-result-between-disk-observations"
             failure(OfficeFailure.DISK_LIMIT) {
-                run(9, limit = budget(disk = 1024*1024), onStart = { Thread.sleep(2500) }).close()
+                run(9, limit = budget(disk = 1024*1024), onStart = { holdObserverUntilResult() }).close()
             }
+            check(fastResultsObserved==2)
             stage = "free-space-reserve"
             failure(OfficeFailure.NO_SPACE) {
                 run(6, limit = OfficeWorkBudget(12_000, 768L * 1024 * 1024,

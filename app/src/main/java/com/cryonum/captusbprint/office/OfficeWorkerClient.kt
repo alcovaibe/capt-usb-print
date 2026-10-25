@@ -178,18 +178,7 @@ internal object OfficeWorkerClient {
                         throw OfficeConversionFailure(OfficeFailure.CANCELLED)
                     budget.checkTime(SystemClock.elapsedRealtime() - started)
                     val workerPid = pid.get()
-                    if (workerPid != 0 && dead.count > 0) {
-                        // Same UID /proc reads are not ActivityManager's rate-limited PSS cache.
-                        val rss = try { OfficeWorkBudget.parseRss(readStatus(workerPid)) }
-                        catch (_: Throwable) {
-                            // Give a just-crashed process's Binder death a bounded delivery window.
-                            if (finished.await(100, TimeUnit.MILLISECONDS)) 0L
-                            else if (remote.get()?.isBinderAlive == false || processBirth(workerPid) != birth)
-                                throw OfficeConversionFailure(OfficeFailure.WORKER_CRASHED)
-                            else throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
-                        }
-                        if (rss > 0) { budget.checkRss(rss); peakRss = maxOf(peakRss, rss) }
-                    }
+                    observeRss()
                     budget.checkDisk(directory, directory.usableSpace)
                     if (connected.get() && workerPid != 0 && !dispatched && finished.count > 0) {
                         // Observe resident memory before any backend can finish a fast conversion.
@@ -205,6 +194,7 @@ internal object OfficeWorkerClient {
                 // A quick callback may arrive during await, after the last observation.
                 budget.checkTime(SystemClock.elapsedRealtime() - started)
                 budget.checkDisk(directory, directory.usableSpace)
+                observeRss()
                 val pdf = File(directory, "result.pdf")
                 if (Files.isSymbolicLink(pdf.toPath()) || !pdf.isFile ||
                     pdf.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
@@ -270,6 +260,21 @@ internal object OfficeWorkerClient {
                     finalFailure?.let { throw OfficeConversionFailure(it) }
                 } finally { if (interrupted) Thread.currentThread().interrupt() }
             }
+        }
+
+        fun observeRss() {
+            val workerPid = pid.get()
+            if (workerPid == 0 || dead.count == 0L) return
+            // Same UID /proc reads are not ActivityManager's rate-limited PSS cache.
+            val rss = try { OfficeWorkBudget.parseRss(readStatus(workerPid)) }
+            catch (_: Throwable) {
+                // Give a just-crashed process's Binder death a bounded delivery window.
+                if (finished.await(100, TimeUnit.MILLISECONDS)) 0L
+                else if (remote.get()?.isBinderAlive == false || processBirth(workerPid) != birth)
+                    throw OfficeConversionFailure(OfficeFailure.WORKER_CRASHED)
+                else throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+            }
+            if (rss > 0) { budget.checkRss(rss); peakRss = maxOf(peakRss, rss) }
         }
 
         fun dispatch(service: IBinder) {

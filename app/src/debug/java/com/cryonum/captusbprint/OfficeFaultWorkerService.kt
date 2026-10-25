@@ -13,6 +13,7 @@ import java.io.File
 
 /** Fault injection only; these bytes are not Office files and this is not a format renderer. */
 class OfficeFaultWorkerService : OfficeWorkerService() {
+    companion object { private var retainedMemory: ByteArray? = null }
     // Lifecycle fault bytes deliberately bypass format admission, only in this debug-only service.
     internal override fun validateInput(input: File, options: OfficeOptions) = Unit
     internal override fun newBackend(): OfficeWorkerBackend = object : OfficeWorkerBackend {
@@ -31,7 +32,7 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
                 }
                 4 -> error("PRIVATE_FAULT_DETAIL_MUST_NOT_ESCAPE")
                 5 -> output.writeText("not a PDF")
-                6, 7, 8, 9 -> {
+                6, 7, 8, 9, 10 -> {
                     val pdf = PdfDocument()
                     try {
                         val size = if (mode == 7) 612 to 792 else 595 to 842
@@ -47,6 +48,12 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
                         val block = ByteArray(64*1024)
                         repeat(32) { stream.write(block) }
                     } // Finish immediately, before the controller's next periodic observation.
+                    if (mode == 10) {
+                        val bytes = ByteArray(96*1024*1024)
+                        for (offset in bytes.indices step 4096) bytes[offset] = 0x55
+                        retainedMemory = bytes // Keep committed pages alive until the worker is killed.
+                    }
+                    if (mode == 9 || mode == 10) File(directory,"fast-result-ready").writeText("ready")
                 }
                 else -> error("Unknown synthetic worker fault")
             }
