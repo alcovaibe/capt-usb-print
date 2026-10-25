@@ -15,6 +15,7 @@ on:
       - 'app/src/main/java/com/cryonum/captusbprint/DocumentPreviewPanel.kt'
       - 'app/src/main/AndroidManifest.xml'
       - 'app/src/main/cpp/office_limits*'
+      - 'app/src/main/cpp/office_sandbox*'
       - 'app/src/main/cpp/CMakeLists.txt'
       - 'app/src/main/res/values/office_strings.xml'
       - 'app/build.gradle.kts'
@@ -120,12 +121,12 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y poppler-utils
           fi
-      - name: Build opt-in probe APK without network permission
+      - name: Build opt-in probe APK preserving main permissions
         run: |
           sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
           bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" :app:assembleDebug :app:lintDebug
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions app/build/outputs/apk/debug/app-debug.apk > probe-permissions.txt
-          if grep -F 'android.permission.INTERNET' probe-permissions.txt; then exit 1; fi
+          grep -F 'android.permission.INTERNET' probe-permissions.txt
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" dex packages --defined-only app/build/outputs/apk/debug/app-debug.apk > probe-dex.txt
           grep -F 'com.cryonum.captusbprint.OfficeEngineSmoke' probe-dex.txt
           python3 tools/measure-office-probe-apk.py app/build/outputs/apk/debug/app-debug.apk office-probe-apk-size.json
@@ -151,6 +152,7 @@ jobs:
             adb install app/build/outputs/apk/debug/app-debug.apk
             bash tools/run-office-engine-smoke.sh
             bash tools/run-office-worker-smoke.sh
+            bash tools/run-office-worker-smoke.sh sandbox
             python3 tools/check-office-fit-pdfs.py office-layout-synthetic.tar office-worker-results.json
             bash tools/run-office-worker-smoke.sh native-ui
       - uses: actions/upload-artifact@v4
@@ -167,6 +169,7 @@ jobs:
             office-probe-apk-size.json
             office-formula-policy.json
             office-worker-*.txt
+            office-sandbox-*.txt
             office-worker-results.json
             office-native-ui-*.txt
             office-layout-synthetic.tar

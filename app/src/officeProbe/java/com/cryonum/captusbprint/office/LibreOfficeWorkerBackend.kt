@@ -10,6 +10,7 @@ import java.io.File
 
 /** Opt-in debug backend. Not reachable from SAF/ACTION_SEND; resource sandbox still pending. */
 internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
+    override fun preload() = LibreOfficeKit.initializeLibrary()
     override fun convert(context: Context, input: File, output: File, directory: File,
                          options: OfficeOptions): List<String> {
         val engine = File(directory, "engine")

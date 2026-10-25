@@ -23,4 +23,6 @@
     <string name="office_error_pdf">Движок не подготовил корректный многостраничный PDF A4. Документ не отправлен на принтер.</string>
     <string name="office_error_cleanup">Не удалось надёжно проверить ресурсы или завершение процесса. Печать не запущена.</string>
     <string name="office_error_failed">Не удалось подготовить документ Office. Документ не отправлен на принтер.</string>
+    <string name="office_error_sandbox">Не удалось включить изоляцию процесса Office. Документ не открыт и не отправлен на принтер.</string>
+    <string name="office_error_external">Документ попытался обратиться к недоступному внешнему файлу. Подготовка остановлена, печать не запущена.</string>
 </resources>

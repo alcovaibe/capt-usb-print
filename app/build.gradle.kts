@@ -57,8 +57,7 @@ android {
         release {
             if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("permanent")
             isMinifyEnabled = false
-            // Office branch is deliberately offline, including release candidates.
-            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "false")
+            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "true")
         }
         debug {
             applicationIdSuffix = ".debug"

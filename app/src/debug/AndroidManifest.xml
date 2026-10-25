@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <service android:name=".OfficeSandboxTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeFileLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeCpuLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeAddressLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
@@ -11,6 +12,8 @@
         <service android:name=".OfficeFaultWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
     </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeSandboxSmoke"
+        android:targetPackage="${applicationId}" android:label="Kernel file broker and log privacy, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeKernelLimitsSmoke"
         android:targetPackage="${applicationId}" android:label="Kernel limits in disposable workers, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficePreviewUiSmoke"

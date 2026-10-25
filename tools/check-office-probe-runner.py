@@ -18,6 +18,7 @@ if a[:3] == ['shell', 'am', 'instrument']:
     if mode == 'success':
         entry = a[-1].rsplit('.', 1)[-1]
         markers = {'OfficeEngineSmoke': 'CAPT_OFFICE_ENGINE_CONVERSION_SMOKE_PASSED',
+                   'OfficeSandboxSmoke': 'CAPT_OFFICE_SANDBOX_ANDROID_PASSED',
                    'OfficeWorkerSmoke': 'CAPT_OFFICE_WORKER_CONVERSION_PASSED',
                    'OfficeWorkerLifecycleSmoke': 'CAPT_OFFICE_WORKER_LIFECYCLE_PASSED',
                    'OfficeKernelLimitsSmoke': 'CAPT_OFFICE_KERNEL_LIMITS_PASSED',
@@ -59,6 +60,7 @@ def main():
             path.chmod(0o755)
         runners = [('engine', 'run-office-engine-smoke.sh', [], 'office-engine')]
         runners += [(mode, 'run-office-worker-smoke.sh', [mode], prefix) for mode, prefix in [
+            ('sandbox', 'office-sandbox'),
             ('conversion', 'office-worker'), ('lifecycle', 'office-worker-lifecycle'),
             ('kernel', 'office-kernel'), ('ui', 'office-ui'), ('native-ui', 'office-native-ui')]]
         scenarios = 0

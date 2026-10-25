@@ -32,14 +32,17 @@ open class OfficeWorkerService : Service() {
                 val id = requireNotNull(data.readString())
                 val callback = requireNotNull(data.readStrongBinder())
                 val source = ParcelFileDescriptor.CREATOR.createFromParcel(data)
+                var sandbox: ParcelFileDescriptor? = null
                 try {
+                    val channel = ParcelFileDescriptor.CREATOR.createFromParcel(data)
+                    sandbox = channel
                     val options = OfficeOptions.read(data)
                     require(data.dataAvail() == 0)
                     if (!started.compareAndSet(false, true)) {
-                        source.close(); report(callback, id, OfficeFailure.BUSY, emptyList())
-                    } else executor.execute { runConversion(id, source, options, callback) }
+                        source.close(); channel.close(); report(callback, id, OfficeFailure.BUSY, emptyList())
+                    } else executor.execute { runConversion(id, source, channel, options, callback) }
                 } catch (_: Throwable) {
-                    source.close(); report(callback, id, OfficeFailure.BAD_INPUT, emptyList())
+                    source.close(); sandbox?.close(); report(callback, id, OfficeFailure.BAD_INPUT, emptyList())
                 }
             }
             return true
@@ -52,7 +55,7 @@ open class OfficeWorkerService : Service() {
     }
     override fun onBind(intent: Intent?): IBinder = binder
 
-    private fun runConversion(id: String, source: ParcelFileDescriptor, options: OfficeOptions,
+    private fun runConversion(id: String, source: ParcelFileDescriptor, sandbox: ParcelFileDescriptor, options: OfficeOptions,
                               callback: IBinder) {
         var failure: OfficeFailure? = null
         var sheets = emptyList<String>()
@@ -66,12 +69,16 @@ open class OfficeWorkerService : Service() {
             check(imported.renameTo(input))
             validateInput(input, options)
             val backend = newBackend()
+            // Only trusted code/resources are loaded here; no native document import yet.
+            backend.preload()
+            OfficeSandbox.install(this, sandbox, directory)
             sheets = backend.convert(this, input, File(directory, "result.pdf"), directory, options)
             check(sheets.size <= 256 && sheets.all { it.length <= 256 })
         } catch (error: Throwable) {
             failure = OfficeWorkerProtocol.failure(error)
         } finally {
             runCatching { source.close() }
+            runCatching { sandbox.close() }
         }
         report(callback, id, failure, sheets)
     }

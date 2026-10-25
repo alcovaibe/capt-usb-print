@@ -57,6 +57,8 @@ jobs:
         run: bash tools/check-private-import.sh
       - name: Check bounded Office containers on host
         run: bash tools/check-office-admission.sh
+      - name: Check Office filesystem sandbox and parent isolation
+        run: bash tools/check-office-sandbox.sh
       - name: Check worker kernel file CPU and address-space caps
         run: bash tools/check-office-kernel-limits.sh
       - name: Check latest prepared document ownership and cancellation
@@ -79,11 +81,11 @@ jobs:
           test -s "$APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcapt_hiscoa.so'
           unzip -l "$APK" | grep -q 'lib/x86_64/libcapt_hiscoa.so'
-          if grep -E 'android.permission.INTERNET|android.permission.READ_EXTERNAL_STORAGE|android.permission.MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
+          if grep -E 'android.permission.READ_EXTERNAL_STORAGE|android.permission.MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
             echo "Unexpected permission in source manifest"; exit 1
           fi
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" | tee apk-permissions.txt
-          if grep -E 'android.permission.(INTERNET|READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' apk-permissions.txt; then
+          if grep -E 'android.permission.(READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' apk-permissions.txt; then
             echo "Unexpected merged APK permission"; exit 1
           fi
       - uses: actions/upload-artifact@v4
@@ -143,6 +145,7 @@ jobs:
             adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-result.png update-ui-evidence/
             grep -F 'CAPT_UPDATE_UI_SMOKE_PASSED' /tmp/capt-update-smoke.txt
             bash tools/run-office-worker-smoke.sh lifecycle
+            bash tools/run-office-worker-smoke.sh sandbox
             bash tools/run-office-worker-smoke.sh kernel
             bash tools/run-office-worker-smoke.sh ui
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.OfficeIntakeSmoke | tee /tmp/capt-office-intake.txt
@@ -225,7 +228,7 @@ jobs:
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" > release-output/permissions.txt
-          if grep -E 'android.permission.(INTERNET|READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
+          if grep -E 'android.permission.(READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
             echo "Unexpected release APK permission"; exit 1
           fi
       - name: Free unrelated GitHub runner toolchains before emulator

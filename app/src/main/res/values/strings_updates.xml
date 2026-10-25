@@ -5,7 +5,7 @@
     <string name="updates_current">Более новой совместимой сборки нет.</string>
     <string name="updates_network_error">Не удалось проверить обновления. Проверьте подключение и повторите попытку.</string>
     <string name="updates_invalid_response">Сервер вернул некорректные данные обновления.</string>
-    <string name="updates_disabled">Сетевые обновления отключены в этой автономной сборке. Новый APK можно установить вручную.</string>
+    <string name="updates_disabled">Проверка обновлений доступна в подписанной версии приложения. Отладочная версия использует отдельный пакет.</string>
     <string name="updates_download">Скачать</string>
     <string name="updates_cancel">Отмена</string>
     <string name="updates_install">Установить</string>

@@ -19,5 +19,7 @@ internal object OfficePreviewMessages {
         OfficeFailure.INVALID_RESULT -> R.string.office_error_pdf
         OfficeFailure.RESOURCE_OBSERVATION, OfficeFailure.WORKER_STOP_FAILED -> R.string.office_error_cleanup
         OfficeFailure.ENGINE_FAILED -> R.string.office_error_failed
+        OfficeFailure.SANDBOX_UNAVAILABLE -> R.string.office_error_sandbox
+        OfficeFailure.EXTERNAL_RESOURCE -> R.string.office_error_external
     }
 }

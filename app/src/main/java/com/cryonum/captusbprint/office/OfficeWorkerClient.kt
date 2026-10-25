@@ -91,6 +91,7 @@ internal object OfficeWorkerClient {
         @Volatile var bound = false
         @Volatile var birth: String? = null
         var peakRss = 0L
+        var broker: OfficeSandbox.Broker? = null
 
         val callback = object : Binder() {
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -125,6 +126,7 @@ internal object OfficeWorkerClient {
                     birth = processBirth(workerPid)
                     check(birth != null)
                     pid.set(workerPid)
+                    requireNotNull(broker).attach(workerPid)
                     remote.set(service)
                     service.linkToDeath({
                         if (finished.count > 0) fail(OfficeFailure.WORKER_CRASHED)
@@ -164,6 +166,7 @@ internal object OfficeWorkerClient {
                     throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE)
                 check(directory.mkdirs())
                 budget.checkDisk(directory, directory.usableSpace)
+                broker = OfficeSandbox.start(context, directory)
                 main.post {
                     if (closed.get()) return@post
                     try {
@@ -252,13 +255,17 @@ internal object OfficeWorkerClient {
                         catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
                         catch (_: IOException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
                         catch (_: SecurityException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
+                        if (requireNotNull(broker).denied()) finalFailure = OfficeFailure.EXTERNAL_RESOURCE
                         if (finalFailure != null) preserve = false
                     }
                     val cleaned = !stopped || (preserve && unbound) || OfficePrivateFiles.deleteTree(directory)
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                     if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
                     finalFailure?.let { throw OfficeConversionFailure(it) }
-                } finally { if (interrupted) Thread.currentThread().interrupt() }
+                } finally {
+                    broker?.close(); broker = null
+                    if (interrupted) Thread.currentThread().interrupt()
+                }
             }
         }
 
@@ -283,7 +290,9 @@ internal object OfficeWorkerClient {
                 try {
                     request.writeInterfaceToken(OfficeWorkerProtocol.DESCRIPTOR)
                     request.writeString(id); request.writeStrongBinder(callback)
-                    descriptor.writeToParcel(request, 0); options.write(request)
+                    descriptor.writeToParcel(request, 0)
+                    requireNotNull(broker).descriptor.writeToParcel(request, 0)
+                    options.write(request)
                     check(service.transact(OfficeWorkerProtocol.START, request, null, IBinder.FLAG_ONEWAY))
                 } finally { request.recycle() }
             }

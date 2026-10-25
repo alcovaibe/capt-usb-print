@@ -41,7 +41,7 @@ internal class OfficeOptions(kind: OfficeKind, selectedSheets: List<Int>? = null
 internal enum class OfficeFailure {
     ENGINE_UNAVAILABLE, CANCELLED, TIME_LIMIT, MEMORY_LIMIT, DISK_LIMIT, NO_SPACE,
     RESOURCE_OBSERVATION, WORKER_CRASHED, WORKER_STOP_FAILED, BAD_INPUT, UNSUPPORTED_LAYOUT,
-    ENGINE_FAILED, INVALID_RESULT, BUSY, PASSWORD_REQUIRED, UNSUPPORTED_DOCUMENT, CORRUPT_DOCUMENT, DOCUMENT_LIMIT, CPU_LIMIT, FILE_LIMIT
+    ENGINE_FAILED, INVALID_RESULT, BUSY, PASSWORD_REQUIRED, UNSUPPORTED_DOCUMENT, CORRUPT_DOCUMENT, DOCUMENT_LIMIT, CPU_LIMIT, FILE_LIMIT, SANDBOX_UNAVAILABLE, EXTERNAL_RESOURCE
 }
 
 internal class OfficeConversionFailure(val reason: OfficeFailure) : IOException(reason.name)
@@ -63,6 +63,7 @@ internal class OfficePreparedDocument(val session: DocumentSession, sheets: List
 
 /** Implementations must not be exposed to user documents until their resource policy is verified. */
 internal interface OfficeWorkerBackend {
+    fun preload() = Unit
     fun convert(context: Context, input: File, output: File, directory: File,
                 options: OfficeOptions): List<String>
 }
