@@ -91,7 +91,7 @@ class OfficeEngineSmoke : Instrumentation() {
                             encode = { bytes, stride, lines, last -> HiscoaNative.encodeBand(bytes, stride, lines, last) },
                             cancelled = { false }, reserve = {}).validate { false }
                         observations.put(JSONObject().put("format", name.substringAfterLast('.'))
-                            .put("pdfPages", prepared.overview.pageCount).put("pdfBytes", pdf.length())
+                            .put("pdfPages", prepared.overview.pageCount).put("pdfBytes", pdf.length()))
                     }
                 } finally { document.destroy() }
             }
