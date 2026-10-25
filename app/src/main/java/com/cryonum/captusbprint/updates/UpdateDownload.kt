@@ -29,6 +29,7 @@ internal class InvalidUpdateApk : IOException("Invalid update APK")
 internal interface UpdateDownloader {
     suspend fun download(release: UpdateManifest.Release, progress: (Long, Long?) -> Unit): File
     suspend fun verify(file: File, release: UpdateManifest.Release)
+    fun retainForInstaller(file: File) {}
 }
 
 /** Downloads only the exact release announced by the existing website manifest. */
@@ -38,6 +39,8 @@ internal class GithubUpdateDownloader(
     internal val client: OkHttpClient = newClient(),
 ) : UpdateDownloader, AutoCloseable {
     constructor(context: Context) : this(File(context.cacheDir, "updates"), { file, release -> verifyApk(context, file, release) })
+    private val installerFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
+    override fun retainForInstaller(file: File) { installerFiles.add(file) }
     private val ownedFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
 
     override suspend fun download(release: UpdateManifest.Release, progress: (Long, Long?) -> Unit): File {
@@ -127,7 +130,7 @@ internal class GithubUpdateDownloader(
         executor.execute {
             try {
                 client.connectionPool.evictAll()
-                // Completed APKs expire in UpdateSession; keep installer grants readable.
+                ownedFiles.filterNot { it in installerFiles }.forEach { it.delete() }
             } finally { executor.shutdown() }
         }
     }

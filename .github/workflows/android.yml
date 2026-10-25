@@ -117,6 +117,11 @@ jobs:
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '36'
             adb install pr-apk/app-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
+            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.UpdateSmoke | tee /tmp/capt-update-smoke.txt
+            grep -F 'CAPT_UPDATE_UI_SMOKE_PASSED' /tmp/capt-update-smoke.txt
+            mkdir -p update-ui-evidence
+            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-main.png update-ui-evidence/
+            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-result.png update-ui-evidence/
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageDPrintSmoke | tee /tmp/capt-system-smoke.txt
             grep -F 'CAPT_STAGE_D_SYSTEM_SMOKE_PASSED' /tmp/capt-system-smoke.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-raster-smoke.txt
@@ -126,6 +131,14 @@ jobs:
             adb shell am instrument -w -e verifyRecovery true com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_STAGE_C_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
             grep -F 'CAPT_QUEUE_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capt-update-ui-evidence
+          path: update-ui-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
 
   signing-availability:
     name: Owner signing configuration

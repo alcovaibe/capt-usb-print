@@ -37,6 +37,7 @@ internal class UpdateController(
 ) {
     private val mutableState = MutableStateFlow(UpdateUiState())
     val state = mutableState.asStateFlow()
+    private var installerFile: File? = null
     private var active = false
     private var transferJob: Job? = null
     @Volatile private var transferGeneration = 0L
@@ -106,7 +107,7 @@ internal class UpdateController(
         transferGeneration++
         transferJob?.cancel()
         transferJob = null
-        mutableState.value.apk?.let { file -> scope.launch(Dispatchers.IO) { file.delete() } }
+        mutableState.value.apk?.takeUnless { it == installerFile }?.let { file -> scope.launch(Dispatchers.IO) { file.delete() } }
         mutableState.value = UpdateUiState()
     }
 
@@ -152,6 +153,13 @@ internal class UpdateController(
             withContext(Dispatchers.IO) { file.delete() }
             if (mutableState.value == state) mutableState.value = UpdateUiState(UpdateStatus.INVALID_APK, release)
             return null
+        }
+    }
+
+    fun installerOpened(file: File) {
+        if (mutableState.value.apk == file) {
+            installerFile = file
+            downloader?.retainForInstaller(file)
         }
     }
 

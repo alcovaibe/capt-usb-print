@@ -32,7 +32,7 @@ internal class UpdatePanel(private val activity: Activity, private val session: 
         val attrs = activity.obtainStyledAttributes(intArrayOf(attr))
         return try { attrs.getColor(0, Color.BLACK) } finally { attrs.recycle() }
     }
-    private val foreground get() = color(android.R.attr.textColorPrimary)
+    private val inkColor get() = color(android.R.attr.textColorPrimary)
     private val accent get() = color(android.R.attr.colorAccent)
     private var observation: Job? = null
     private var retryJob: Job? = null
@@ -46,7 +46,7 @@ internal class UpdatePanel(private val activity: Activity, private val session: 
     val view = FrameLayout(activity)
     private val button = ImageButton(activity).apply {
         setImageResource(R.drawable.ic_check_updates)
-        imageTintList = ColorStateList.valueOf(foreground)
+        imageTintList = ColorStateList.valueOf(inkColor)
         contentDescription = activity.getString(R.string.updates_check)
         tooltipText = contentDescription
         val ripple = TypedValue()
@@ -91,7 +91,7 @@ internal class UpdatePanel(private val activity: Activity, private val session: 
         progressBar = null
     }
     private fun label(value: String, size: Float = 16f) = TextView(activity).apply {
-        text = value; textSize = size; setTextColor(foreground)
+        text = value; textSize = size; setTextColor(inkColor)
     }
     private fun render(state: UpdateUiState) {
         button.isEnabled = state.status !in setOf(UpdateStatus.CHECKING, UpdateStatus.DOWNLOADING)
@@ -198,6 +198,7 @@ internal class UpdatePanel(private val activity: Activity, private val session: 
                     val intent = UpdateInstaller.installIntent(activity, file)
                     intent.clipData = ClipData.newRawUri("CAPT update", intent.data)
                     activity.startActivity(intent)
+                    controller.installerOpened(file)
                 }
             } catch (error: kotlinx.coroutines.CancellationException) { throw error
             } catch (_: Exception) { controller.installFailed() }
