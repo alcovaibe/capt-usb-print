@@ -106,6 +106,8 @@ jobs:
           bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" :app:assembleDebug :app:lintDebug
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions app/build/outputs/apk/debug/app-debug.apk > probe-permissions.txt
           if grep -F 'android.permission.INTERNET' probe-permissions.txt; then exit 1; fi
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" dex packages --defined-only app/build/outputs/apk/debug/app-debug.apk > probe-dex.txt
+          grep -F 'com.cryonum.captusbprint.OfficeEngineSmoke' probe-dex.txt
       - name: Free unused runner toolchains
         run: bash tools/free-runner-disk.sh
       - name: Enable emulator acceleration
@@ -136,5 +138,7 @@ jobs:
             office-probe-results.json
             office-probe-stage.txt
             office-engine-logcat.txt
+            office-engine-crash.txt
+            probe-dex.txt
           if-no-files-found: ignore
           retention-days: 7

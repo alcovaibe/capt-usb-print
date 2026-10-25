@@ -37,12 +37,20 @@ class OfficeEngineSmoke : Instrumentation() {
             val report = File(context.filesDir, "office-probe-results.json")
             check(!report.exists() || report.delete())
             // Same asset layout as pinned upstream Android Viewer; no downloaded user content.
-            unpack(context.assets, "unpack", File(context.applicationInfo.dataDir))
+            val engineRoot = File(directory, "engine")
+            unpack(context.assets, "unpack", engineRoot)
+            // The upstream asset contains the original Viewer package name.
+            // Keep font caches inside this disposable probe, never in that package.
+            val fonts = File(engineRoot, "etc/fonts/fonts.conf")
+            val fontConfig = fonts.readText()
+            check(fontConfig.contains("/data/data/org.documentfoundation.libreoffice/fontconfig"))
+            fonts.writeText(fontConfig.replace("/data/data/org.documentfoundation.libreoffice/fontconfig",
+                File(engineRoot, "fontconfig").absolutePath))
             activity = startActivitySync(Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
             mark("jni-init")
-            LibreOfficeKit.init(activity)
+            LibreOfficeKit.init(context, engineRoot)
             mark("jni-handle")
             val office = Office(requireNotNull(LibreOfficeKit.getLibreOfficeKitHandle()))
             val observations = JSONArray()
@@ -63,7 +71,7 @@ class OfficeEngineSmoke : Instrumentation() {
                     mark("export-$name")
                     val pdf = File(directory, "$name.pdf")
                     check(!pdf.exists() || pdf.delete()) // A failed saveAs must never reuse an old PDF.
-                    document.saveAs(pdf.toURI().toASCIIString(), "pdf", "")
+                    check(document.saveAs(pdf.toURI().toASCIIString(), "pdf", "") != 0)
                     check(pdf.isFile && pdf.length() in 1..DocumentInspector.MAX_SOURCE_BYTES)
                     mark("validate-$name")
                     DocumentInspector.openPreparedPdf(context, pdf).use { prepared ->

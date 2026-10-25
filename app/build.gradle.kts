@@ -68,7 +68,8 @@ android {
     buildFeatures { buildConfig = true }
     // Compile the synthetic JNI probe in regular debug checks; never initialize it there.
     sourceSets.getByName("debug") {
-        java.srcDir("src/officeProbe/java")
+        // AGP 9 built-in Kotlin ignores extra Kotlin roots registered as Java.
+        kotlin.directories += "src/officeProbe/java"
         java.srcDir("src/officeProbe/upstream")
     }
     if (officeEngineDir != null) {

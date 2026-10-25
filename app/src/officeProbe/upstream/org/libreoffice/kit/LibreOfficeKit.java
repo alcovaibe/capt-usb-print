@@ -10,11 +10,12 @@
 package org.libreoffice.kit;
 
 import android.app.Activity;
-import android.content.pm.ApplicationInfo;
+import android.content.Context;
 import android.content.res.AssetManager;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
+import java.io.File;
 
 // Native methods in this class are all implemented in
 // sal/android/lo-bootstrap.c as the lo-bootstrap library is loaded with
@@ -51,24 +52,32 @@ public final class LibreOfficeKit
     // LO-based apps.
     public static synchronized void init(Activity activity)
     {
+        init(activity, new File(activity.getApplicationInfo().dataDir));
+    }
+
+    // CAPT probe adaptation: all writable bootstrap state has one disposable owner.
+    public static synchronized void init(Context context, File workDir)
+    {
         if (initializeDone) {
             return;
         }
 
-        mgr = activity.getResources().getAssets();
+        mgr = context.getResources().getAssets();
 
-        ApplicationInfo applicationInfo = activity.getApplicationInfo();
-        String dataDir = applicationInfo.dataDir;
-        Log.i(LOGTAG, String.format("Initializing LibreOfficeKit, dataDir=%s\n", dataDir));
+        String dataDir = workDir.getAbsolutePath();
+        Log.i(LOGTAG, "Initializing synthetic LibreOfficeKit probe");
 
         redirectStdio(true);
 
-        String cacheDir = activity.getApplication().getCacheDir().getAbsolutePath();
-        String apkFile = activity.getApplication().getPackageResourcePath();
+        String cacheDir = new File(workDir, "cache").getAbsolutePath();
+        if (!new File(cacheDir).isDirectory() && !new File(cacheDir).mkdirs()) {
+            throw new IllegalStateException("Office probe cache unavailable");
+        }
+        String apkFile = context.getPackageResourcePath();
 
         if (!initializeNative(dataDir, cacheDir, apkFile, mgr)) {
             Log.e(LOGTAG, "Initialize native failed!");
-            return;
+            throw new IllegalStateException("Office probe initialization failed");
         }
         initializeDone = true;
     }

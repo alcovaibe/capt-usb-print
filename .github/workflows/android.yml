@@ -54,6 +54,8 @@ jobs:
         run: python3 tools/check-manual-json-sharing.py
       - name: Check bounded private document import on host
         run: bash tools/check-private-import.sh
+      - name: Verify native probe fails on process crash and timeout
+        run: python3 tools/check-office-probe-runner.py
       - name: Verify synthetic Office fixture integrity
         run: python3 tools/check-office-fixtures.py
       - name: Build, lint and tests
