@@ -75,6 +75,8 @@ static void child(int socket,int report,int logger,int logpipe,int trace,const c
     fd=open(apk,O_RDONLY);CHECK(fd>=0);close(fd);
     CHECK(open(apk,O_WRONLY|O_TRUNC)<0 && errno==EACCES);
     fd=open(library,O_RDONLY);CHECK(fd>=0);close(fd);
+    snprintf(name,sizeof(name),"%s-link",library);fd=open(name,O_RDONLY);CHECK(fd>=0);close(fd);
+    snprintf(name,sizeof(name),"%s-escape",library);CHECK(open(name,O_RDONLY)<0 && errno==EACCES);
     CHECK(open(library,O_WRONLY|O_TRUNC)<0 && errno==EACCES);
     CHECK(socketpair(AF_UNIX,SOCK_STREAM,0,(int[2]){0})<0 && errno==EACCES);
     CHECK(write(logger,"PRIVATE_SENTINEL",16)<0 && errno==EACCES);
@@ -101,6 +103,8 @@ int main(int argc,char **argv) {
     snprintf(job,sizeof(job),"%s/job",argv[1]);snprintf(secret,sizeof(secret),"%s/secret",argv[1]);snprintf(apk,sizeof(apk),"%s/base.apk",argv[1]);snprintf(libs,sizeof(libs),"%s/libs",argv[1]);snprintf(library,sizeof(library),"%s/libs-link/resource",argv[1]);snprintf(alias,sizeof(alias),"%s/libs-link",argv[1]);
     if(mkdir(job,0700)||mkdir(libs,0700))return 2;
     file(secret);file(apk);snprintf(path,sizeof(path),"%s/libs/resource",argv[1]);file(path);
+    char target[4096];strcpy(target,path);snprintf(path,sizeof(path),"%s/libs/resource-link",argv[1]);if(symlink(target,path))return 2;
+    snprintf(path,sizeof(path),"%s/libs/resource-escape",argv[1]);if(symlink(secret,path))return 2;
     if(symlink(libs,alias))return 2;
     snprintf(path,sizeof(path),"%s/job/file-link",argv[1]);if(symlink(secret,path))return 2;
     snprintf(path,sizeof(path),"%s/job/dir-link",argv[1]);if(symlink(argv[1],path))return 2;

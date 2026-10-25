@@ -140,6 +140,15 @@ static int ancestor(capt_broker *b, const char *path) {
     for (int i=0;i<b->count;++i) if (beneath(b->roots[i].path,path) || beneath(b->roots[i].logical,path)) return 1;
     return 0;
 }
+static int readonly_runtime_path(capt_broker *b,const char *path) {
+    for(int i=0;i<b->count;++i) {
+        root_entry *r=&b->roots[i];
+        if(r->access!=READ)continue;
+        if(r->exact ? (!strcmp(path,r->path)||!strcmp(path,r->logical)) :
+            (beneath(path,r->path)||beneath(path,r->logical)))return 1;
+    }
+    return 0;
+}
 static void deny_resource(capt_broker *b,int op,const char *path) {
     /* Fixed categories only: never retain a document path in diagnostics. */
     const char *prefix[]={"/.cache","/.config","/tmp","/proc","/dev","/sys","/storage","/sdcard","/data/fonts","/data/app","/data/user","/data/data","/etc","/usr","/home","/data/local","/data/misc","/data/dalvik-cache","/mnt","/run","/var","/lib","/vendor","/product","/odm","/system_ext","/data"};
@@ -184,6 +193,13 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
     }
     int write_access=q->op==MKDIR || q->op==UNLINK || q->op==RENAME || q->op==CHMOD ||
         (q->op==OPEN && ((q->flags&O_ACCMODE)!=O_RDONLY || (q->flags&(O_CREAT|O_TRUNC|O_APPEND))));
+    /* Managed OS/font/library symlinks are resolved once, then the canonical
+     * target is independently authorized and walked with O_NOFOLLOW. Never
+     * apply this to a document/job path or to a writable request. */
+    if(!write_access && readonly_runtime_path(b,paths[0])) {
+        char resolved[PATH_MAX];
+        if(realpath(paths[0],resolved))strcpy(paths[0],resolved);
+    }
     char leaf[PATH_MAX],second[PATH_MAX];
     int dir=anchor(b,paths[0],write_access?WRITE:READ,leaf), other=-1;
     if (dir<0) {
@@ -209,7 +225,7 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
         return;
     }
     errno=0; long result=-1;
-    if (!check_leaf(dir,leaf,q->op==OPEN || q->op==MKDIR || q->op==RENAME)) { r->error=errno?errno:EACCES; if(r->error==EACCES)deny_resource(b,q->op,paths[0]);close(dir); return; }
+    if (!check_leaf(dir,leaf,q->op==OPEN || q->op==MKDIR || q->op==RENAME)) { r->error=errno?errno:EACCES; if(r->error==EACCES && q->op==OPEN && (q->flags&O_ACCMODE)!=O_WRONLY)deny_resource(b,q->op,paths[0]);close(dir); return; }
     switch (q->op) {
         case OPEN: {
             /* No arbitrary device, FIFO or directory outside the allowlist. */
