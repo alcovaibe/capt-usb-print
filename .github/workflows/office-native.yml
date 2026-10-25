@@ -138,6 +138,8 @@ jobs:
             bash tools/run-office-engine-smoke.sh
             bash tools/run-office-worker-smoke.sh
             python3 tools/check-office-fit-pdfs.py office-layout-synthetic.tar office-worker-results.json
+            timeout 360 adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.OfficeNativeUiSmoke | tee office-native-ui.txt
+            grep -F 'CAPT_OFFICE_NATIVE_UI_PASSED' office-native-ui.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -151,6 +153,7 @@ jobs:
             probe-dex.txt
             office-worker-*.txt
             office-worker-results.json
+            office-native-ui.txt
             office-layout-synthetic.tar
           if-no-files-found: ignore
           retention-days: 7

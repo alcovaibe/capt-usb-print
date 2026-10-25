@@ -1,8 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name=".OfficeFixturePreviewActivity" android:exported="false" />
         <service android:name=".office.OfficeWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
     </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeNativeUiSmoke"
+        android:targetPackage="${applicationId}" android:label="Real native Office UI with held queue copy, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeWorkerSmoke"
         android:targetPackage="${applicationId}" android:label="Separate-process synthetic Office conversion checks" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeEngineSmoke"

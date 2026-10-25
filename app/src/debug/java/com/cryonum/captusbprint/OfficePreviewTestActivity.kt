@@ -34,7 +34,8 @@ class OfficePreviewTestWorkerService : OfficeWorkerService() {
             require(!options.kind.spreadsheet || selection.all { it in 0..2 })
             val counts = if (options.fitWidth) listOf(1,1,4) else listOf(1,3,6)
             val pages = if (options.kind.spreadsheet) selection.sumOf { counts[it] } else 3
-            PdfDocument().use { pdf ->
+            val pdf = PdfDocument()
+            try {
                 for (i in 0 until pages) {
                     val page = pdf.startPage(PdfDocument.PageInfo.Builder(595,842,i+1).create())
                     page.canvas.drawColor(Color.WHITE)
@@ -44,7 +45,7 @@ class OfficePreviewTestWorkerService : OfficeWorkerService() {
                     pdf.finishPage(page)
                 }
                 output.outputStream().use { pdf.writeTo(it) }
-            }
+            } finally { pdf.close() }
             return if (options.kind.spreadsheet) listOf("Сводка","Широкая","Длинная") else emptyList()
         }
     }
