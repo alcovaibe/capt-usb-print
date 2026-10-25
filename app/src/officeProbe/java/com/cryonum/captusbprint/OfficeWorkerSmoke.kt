@@ -12,6 +12,7 @@ import com.cryonum.captusbprint.office.OfficeKind
 import com.cryonum.captusbprint.office.OfficeOptions
 import com.cryonum.captusbprint.office.OfficeWorkerClient
 import com.cryonum.captusbprint.core.JobSpecification
+import com.cryonum.captusbprint.core.Orientation
 import com.cryonum.captusbprint.document.StoredCaptPage
 import com.cryonum.captusbprint.core.HiscoaNative
 import org.json.JSONArray
@@ -56,6 +57,8 @@ class OfficeWorkerSmoke : Instrumentation() {
                     if (expected != null) check(count == expected)
                     check(prepared.sheetNames == if (kind.spreadsheet) listOf("Сводка", "Широкая", "Длинная") else emptyList<String>())
                     val layout = requireNotNull(session.preparedPdfLayout)
+                    if (!kind.spreadsheet) check(layout.orientations == listOf(
+                        Orientation.PORTRAIT, Orientation.PORTRAIT, Orientation.LANDSCAPE))
                     // Synthetic evidence uses the same exact PDF-copy path as the real queue.
                     val label = "${kind.extension}-${if (fitWidth) "fit" else "saved"}-${selected?.sorted()?.joinToString("+") { (it + 1).toString() } ?: "all"}"
                     val copyDirectory = File(pdfEvidence, "queue-copy").apply { check(mkdir()) }

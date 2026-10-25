@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.TextView
 import com.cryonum.captusbprint.queue.PrintQueueRuntime
 import org.json.JSONObject
 import java.io.File
@@ -52,6 +53,8 @@ class OfficeNativeUiSmoke : Instrumentation() {
                 stage="$kind-navigation"
                 navigate(R.string.preview_next); await { snapshot().ready && snapshot().page==1 }
                 navigate(R.string.preview_next); await { snapshot().ready && snapshot().page==2 }
+                check(ui { current().findViewById<View>(android.R.id.content).findViewWithTag<TextView>("office-geometry").text.toString() }
+                    .contains(targetContext.getString(R.string.document_landscape)))
                 navigate(R.string.preview_previous); await { snapshot().ready && snapshot().page==1 }
                 stage="$kind-range-copies"
                 ui {
