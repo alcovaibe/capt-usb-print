@@ -32,10 +32,13 @@ class OfficeWorkerSmoke : Instrumentation() {
         val root = File(context.noBackupFilesDir, "office-work")
         val baseline = root.listFiles()?.map { it.name }?.toSet() ?: emptySet()
         val report = File(context.filesDir, "office-worker-results.json")
+        val pdfEvidence = File(context.filesDir, "office-layout-smoke")
         val observations = JSONArray()
         val pids = mutableSetOf<Int>()
         try {
             check(!report.exists() || report.delete())
+            check(!pdfEvidence.exists() || pdfEvidence.deleteRecursively())
+            check(pdfEvidence.mkdir())
             fun convert(kind: OfficeKind, selected: List<Int>?, fitWidth: Boolean, expected: Int? = null): Int {
                 stage = "${kind.extension}-${if (fitWidth) "fit" else "saved"}-${selected?.joinToString("-") ?: "all"}"
                 val before = source.readBytes() // Fixed, small synthetic assets only.
@@ -53,6 +56,14 @@ class OfficeWorkerSmoke : Instrumentation() {
                     if (expected != null) check(count == expected)
                     check(prepared.sheetNames == if (kind.spreadsheet) listOf("Сводка", "Широкая", "Длинная") else emptyList<String>())
                     val layout = requireNotNull(session.preparedPdfLayout)
+                    // Synthetic evidence uses the same exact PDF-copy path as the real queue.
+                    val label = "${kind.extension}-${if (fitWidth) "fit" else "saved"}-${selected?.sorted()?.joinToString("+") { (it + 1).toString() } ?: "all"}"
+                    val copyDirectory = File(pdfEvidence, "queue-copy").apply { check(mkdir()) }
+                    session.copyForPrint(copyDirectory) {}.use { copy ->
+                        check(copy.overview == session.overview && copy.preparedPdfLayout === layout)
+                        File(copyDirectory, "source.bin").copyTo(File(pdfEvidence, "$label.pdf"))
+                    }
+                    check(copyDirectory.delete())
                     val range = if (count >= 3) "2-3" else "1"
                     val plan = JobSpecification.preparedPdf(layout.orientations, range, 2)
                     check(plan.outputPageOrder == if (count >= 3) listOf(1, 2, 1, 2) else listOf(0, 0))

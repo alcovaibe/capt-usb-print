@@ -101,6 +101,12 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
+      - name: Install synthetic PDF text verifier
+        run: |
+          if ! command -v pdftotext >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y poppler-utils
+          fi
       - name: Build opt-in probe APK without network permission
         run: |
           sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
@@ -131,6 +137,7 @@ jobs:
             adb install app/build/outputs/apk/debug/app-debug.apk
             bash tools/run-office-engine-smoke.sh
             bash tools/run-office-worker-smoke.sh
+            python3 tools/check-office-fit-pdfs.py office-layout-synthetic.tar office-worker-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -144,5 +151,6 @@ jobs:
             probe-dex.txt
             office-worker-*.txt
             office-worker-results.json
+            office-layout-synthetic.tar
           if-no-files-found: ignore
           retention-days: 7

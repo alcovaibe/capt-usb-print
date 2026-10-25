@@ -18,6 +18,10 @@ finish_probe() {
   timeout 15 adb logcat -b all -d -v threadtime > "$prefix-logcat.txt" 2>&1 || true
   timeout 15 adb logcat -b crash -d -v threadtime > "$prefix-crash.txt" 2>&1 || true
   timeout 15 adb exec-out run-as "$package" cat files/office-worker-results.json > office-worker-results.json 2>/dev/null || true
+  if [[ "$entry" == OfficeWorkerSmoke ]]; then
+    # Only fixed synthetic fixture PDFs, never an external URI or user workspace.
+    timeout 15 adb exec-out run-as "$package" tar -C files -cf - office-layout-smoke > office-layout-synthetic.tar 2>/dev/null || true
+  fi
   if [[ "$outcome" != 0 ]]; then
     cat "$prefix-crash.txt"
     tail -n 250 "$prefix-logcat.txt"
