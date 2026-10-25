@@ -7,6 +7,13 @@ on:
       - '.github/workflows/office-native.yml'
       - 'app/src/officeProbe/**'
       - 'app/src/main/java/com/cryonum/captusbprint/office/**'
+      # These owners/geometry paths also change Office preview and held queue copies.
+      - 'app/src/main/java/com/cryonum/captusbprint/document/**'
+      - 'app/src/main/java/com/cryonum/captusbprint/queue/**'
+      - 'app/src/main/java/com/cryonum/captusbprint/core/JobSpecification.kt'
+      - 'app/src/main/java/com/cryonum/captusbprint/CaptApplication.kt'
+      - 'app/src/main/java/com/cryonum/captusbprint/DocumentPreviewPanel.kt'
+      - 'app/src/main/AndroidManifest.xml'
       - 'app/src/main/cpp/office_limits*'
       - 'app/src/main/cpp/CMakeLists.txt'
       - 'app/src/main/res/values/office_strings.xml'
