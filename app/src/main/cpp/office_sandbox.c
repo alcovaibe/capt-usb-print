@@ -297,7 +297,9 @@ capt_broker *capt_broker_start(const char *root,const char *apk,const char *libr
     if(realpath("/etc",etc) && beneath(etc,"/system") && !add_root(b,"/etc",READ,0,0))goto failed;
     /* OS-maintained public time-zone data; never the rest of /data/misc. */
     if(!add_root(b,"/data/misc/zoneinfo",READ,0,0) ||
-        !add_root(b,"/data/misc/apexdata/com.android.tzdata",READ,0,0))goto failed;
+        !add_root(b,"/data/misc/apexdata/com.android.tzdata",READ,0,0) ||
+        !add_root(b,"/data/misc/zoneinfo/current/tzdata",READ,1,0) ||
+        !add_root(b,"/data/misc/zoneinfo/current/icu/icu_tzdata.dat",READ,1,0))goto failed;
     if(!add_root(b,"/proc/cpuinfo",READ,1,0) || !add_root(b,"/proc/meminfo",READ,1,0) ||
         !add_root(b,"/sys/devices/system/cpu",READ,0,0))goto failed;
     if (!add_root(b,"/dev/null",READ|WRITE,1,1) || !add_root(b,"/dev/urandom",READ,1,1) ||

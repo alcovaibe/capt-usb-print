@@ -29,11 +29,11 @@ static void *other_thread(void *unused) {
 }
 static void fail(int pipe,int code) { ssize_t ignored=write(pipe,&code,sizeof(code));(void)ignored;_exit(1); }
 #define CHECK(value) do { ++checks;if(!(value))fail(report,checks); } while(0)
-static void child(int socket,int report,int logger,const char *job,const char *secret,const char *apk,const char *library) {
+static void child(int socket,int report,int logger,int logpipe,int trace,const char *job,const char *secret,const char *apk,const char *library) {
     int checks=0;
     /* Android starts the real worker through zygote, not fork. Drop the host
      * harness's inherited broker/root descriptors to model that boundary. */
-    for(int fd=3;fd<1024;++fd)if(fd!=socket && fd!=report && fd!=logger)close(fd);
+    for(int fd=3;fd<1024;++fd)if(fd!=socket && fd!=report && fd!=logger && fd!=logpipe && fd!=trace)close(fd);
     secret_path=secret;pthread_t thread;
     CHECK(pthread_create(&thread,NULL,other_thread,NULL)==0);
     while(!atomic_load(&ready))sched_yield();
@@ -78,6 +78,9 @@ static void child(int socket,int report,int logger,const char *job,const char *s
     CHECK(open(library,O_WRONLY|O_TRUNC)<0 && errno==EACCES);
     CHECK(socketpair(AF_UNIX,SOCK_STREAM,0,(int[2]){0})<0 && errno==EACCES);
     CHECK(write(logger,"PRIVATE_SENTINEL",16)<0 && errno==EACCES);
+    CHECK(write(logpipe,"PRIVATE_SENTINEL",16)<0 && errno==EACCES);
+    CHECK(write(trace,"PRIVATE_SENTINEL",16)<0 && errno==EACCES);
+    CHECK(dup(trace)<0 && errno==EACCES);
     struct iovec vec={(void *)"PRIVATE_SENTINEL",16};CHECK(writev(logger,&vec,1)<0 && errno==EACCES);
     CHECK(send(logger,"PRIVATE_SENTINEL",16,0)<0 && errno==EACCES);
     CHECK(dup(logger)<0 && errno==EACCES);CHECK(fcntl(logger,F_DUPFD,3)<0 && errno==EACCES);
@@ -101,19 +104,22 @@ int main(int argc,char **argv) {
     if(symlink(libs,alias))return 2;
     snprintf(path,sizeof(path),"%s/job/file-link",argv[1]);if(symlink(secret,path))return 2;
     snprintf(path,sizeof(path),"%s/job/dir-link",argv[1]);if(symlink(argv[1],path))return 2;
-    int client=-1,report,logger[2];
+    int client=-1,report,trace,logger[2],logpipe[2];
     capt_broker *broker=capt_broker_start(job,apk,alias,&client);
     snprintf(path,sizeof(path),"%s/job/host-result",argv[1]);report=open(path,O_CREAT|O_RDWR,0600);
-    if(!broker || report<0 || socketpair(AF_UNIX,SOCK_DGRAM,0,logger))return 2;
+    snprintf(path,sizeof(path),"%s/trace",argv[1]);trace=open(path,O_CREAT|O_RDWR,0600);
+    if(!broker || report<0 || trace<0 || pipe(logpipe) || socketpair(AF_UNIX,SOCK_DGRAM,0,logger))return 2;
     pid_t pid=fork();if(pid<0)return 2;
-    if(!pid)child(client,report,logger[1],job,secret,apk,library);
-    close(client);close(logger[1]);
+    if(!pid)child(client,report,logger[1],logpipe[1],trace,job,secret,apk,library);
+    close(client);close(logger[1]);close(logpipe[1]);
     int status=0,checks=0;waitpid(pid,&status,0);
     if(lseek(report,0,SEEK_SET)<0)return 2;
     ssize_t count=read(report,&checks,sizeof(checks));close(report);
     capt_broker_stop(broker);
     if(count!=sizeof(checks) || !WIFEXITED(status) || WEXITSTATUS(status)) { fprintf(stderr,"SANDBOX_FAILED check=%d status=%d bytes=%zd\n",checks,status,count);return 1; }
     char buffer[32];if(recv(logger[0],buffer,sizeof(buffer),MSG_DONTWAIT)>=0 || errno!=EAGAIN)return 1;
+    if(read(logpipe[0],buffer,sizeof(buffer))!=0)return 1;
+    struct stat trace_stat;if(fstat(trace,&trace_stat) || trace_stat.st_size)return 1;
     int fd=open(secret,O_RDONLY);if(fd<0 || read(fd,buffer,6)!=6 || memcmp(buffer,"secret",6))return 1;close(fd);
     int pair[2];if(socketpair(AF_UNIX,SOCK_STREAM,0,pair))return 1;close(pair[0]);close(pair[1]);
     printf("CAPT_OFFICE_SANDBOX_HOST_PASSED checks=%d (real TSYNC/filter/broker; parent filesystem/network unchanged)\n",checks);
