@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 180
     concurrency:
       group: office-native-${{ github.event.pull_request.number || github.ref }}-${{ matrix.abi }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:

@@ -9,7 +9,7 @@
 #include <vector>
 #include <set>
 
-#if defined(ANDROID) && HAVE_FEATURE_ANDROID_LOK
+#ifdef ANDROID
 extern "C" SAL_JNI_EXPORT jint JNICALL
 Java_org_libreoffice_kit_Document_configureCalcFitWidth(JNIEnv* env, jobject object,
                                                       jintArray selected)

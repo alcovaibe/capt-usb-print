@@ -41,7 +41,7 @@ def main():
     # Include a synchronous Android-only UNO adapter in the existing LOK translation unit.
     adapter = Path(__file__).with_name('capt-calc-layout.hxx')
     (path.parent / adapter.name).write_bytes(adapter.read_bytes())
-    text += '\n#if defined(ANDROID) && HAVE_FEATURE_ANDROID_LOK\n#include "capt-calc-layout.hxx"\n#endif\n'
+    text += '\n#ifdef ANDROID\n#include "capt-calc-layout.hxx"\n#endif\n'
     path.write_text(text)
     # The same explicit servlet classpath is used by F-Droid for this pinned upstream.
     hsqldb = args.source / 'external/hsqldb/ExternalProject_hsqldb.mk'
