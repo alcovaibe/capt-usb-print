@@ -45,7 +45,7 @@ class OfficePreviewUiSmoke : Instrumentation() {
         val previewFiles = File(targetContext.cacheDir,"stage-c-inspection").listFiles()?.map { it.name }?.toSet() ?: emptySet()
         try {
             stage = "open"
-            activity = startActivitySync(Intent(targetContext,OfficePreviewTestActivity::class.java).putExtra("kind","xls")) as OfficePreviewTestActivity
+            activity = startActivitySync(Intent(targetContext,OfficePreviewTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("kind","xls")) as OfficePreviewTestActivity
             await { snapshot().ready && snapshot().pages==6 }
             check(snapshot().sheets==listOf(0,1,2) && snapshot().fit)
             stage = "latest-subset"
@@ -96,7 +96,7 @@ class OfficePreviewUiSmoke : Instrumentation() {
             await { files("office-ui")==sources && files("office-work")==work }
             check((File(targetContext.cacheDir,"stage-c-inspection").listFiles()?.map { it.name }?.toSet() ?: emptySet())==previewFiles)
             stage = "private-failure"
-            activity=startActivitySync(Intent(targetContext,OfficePreviewTestActivity::class.java).putExtra("sourceFailure",true)) as OfficePreviewTestActivity
+            activity=startActivitySync(Intent(targetContext,OfficePreviewTestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("sourceFailure",true)) as OfficePreviewTestActivity
             await { ui { current().findViewById<View>(android.R.id.content).findViewWithTag<TextView>("office-status").text.toString() } == targetContext.getString(R.string.office_error_failed) }
             ui { current().finish() }
             await { files("office-ui")==sources }

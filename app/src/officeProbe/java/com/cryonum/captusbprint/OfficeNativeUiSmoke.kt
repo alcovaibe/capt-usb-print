@@ -40,7 +40,7 @@ class OfficeNativeUiSmoke : Instrumentation() {
                 .single { it.getString("format")==kind && it.getString("selectedSheets")==selection && it.getBoolean("fitWidth")==fit }.getInt("pdfPages")
             for(kind in listOf("xls","xlsx")) {
                 stage="$kind-open"
-                activity=startActivitySync(Intent(targetContext,OfficeFixturePreviewActivity::class.java).putExtra("kind",kind)) as OfficeFixturePreviewActivity
+                activity=startActivitySync(Intent(targetContext,OfficeFixturePreviewActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("kind",kind)) as OfficeFixturePreviewActivity
                 await { snapshot().ready && snapshot().pages==pages(kind,"all",true) }
                 check(snapshot().sheets==listOf(0,1,2))
                 stage="$kind-wide-fit"
