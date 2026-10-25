@@ -26,6 +26,7 @@ cp -a android/source/assets capt-office-package/
 cp -a android/source/assets_strippedUI capt-office-package/
 cp -a android/Bootstrap/src capt-office-package/java-bootstrap
 cp capt-office-patch.json capt-office-package/
+cp "$capt_root/tools/office/capt-calc-layout.hxx" capt-office-package/
 cp "$lock" capt-office-package/source-lock.json
 mkdir -p capt-office-package/licenses
 find . -maxdepth 1 -type f -name 'COPYING*' -exec cp '{}' capt-office-package/licenses/ \;

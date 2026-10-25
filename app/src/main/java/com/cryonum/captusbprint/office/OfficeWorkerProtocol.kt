@@ -17,6 +17,7 @@ internal enum class OfficeKind(val extension: String, val spreadsheet: Boolean) 
 internal class OfficeOptions(kind: OfficeKind, selectedSheets: List<Int>? = null,
                              val fitWidth: Boolean = false) {
     val kind = kind
+    init { require(!fitWidth || kind.spreadsheet) }
     val selectedSheets: List<Int>? = selectedSheets?.let {
         require(kind.spreadsheet && it.size in 1..256 && it.all { index -> index in 0..255 })
         require(it.distinct().size == it.size)

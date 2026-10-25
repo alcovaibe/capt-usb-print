@@ -35,6 +35,8 @@ internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
             } else emptyList()
             if (options.selectedSheets?.any { it !in sheets.indices } == true)
                 throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+            if (options.fitWidth && document.configureCalcFitWidth(options.selectedSheets?.toIntArray() ?: intArrayOf()) != 1)
+                throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_LAYOUT)
             val filter = options.selectedSheets?.let { selected -> JSONObject()
                 .put("SheetRange", JSONObject().put("type", "string")
                     .put("value", selected.joinToString(",") { (it + 1).toString() }))

@@ -181,6 +181,10 @@ public class Document {
     // CAPT adaptation: lokandroid.cxx returns jint; do not discard export failure.
     public native int saveAs(String url, String format, String options);
 
+    // CAPT adapter: synchronous, checked UNO A4 page styles; empty array means all sheets.
+    // Does not save/reload the workbook or run an asynchronous UI command.
+    public native int configureCalcFitWidth(int[] selectedSheets);
+
     private native void paintTileNative(ByteBuffer buffer, int canvasWidth, int canvasHeight, int tilePositionX, int tilePositionY, int tileWidth, int tileHeight);
 
     public int getDocumentType() {

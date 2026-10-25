@@ -57,7 +57,6 @@ open class OfficeWorkerService : Service() {
         var failure: OfficeFailure? = null
         var sheets = emptyList<String>()
         try {
-            if (options.fitWidth) throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_LAYOUT)
             val directory = OfficeWorkerProtocol.directory(this, id)
             check(directory.isDirectory)
             val imported = PrivateDocumentImport.copy(directory,

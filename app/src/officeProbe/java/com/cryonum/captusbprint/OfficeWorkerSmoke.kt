@@ -36,41 +36,64 @@ class OfficeWorkerSmoke : Instrumentation() {
         val pids = mutableSetOf<Int>()
         try {
             check(!report.exists() || report.delete())
-            for (kind in OfficeKind.entries) {
-                stage = "worker-${kind.extension}"
-                context.assets.open("office-fixtures/${if (kind.spreadsheet) "workbook" else "word"}.${kind.extension}").use { input ->
-                    source.outputStream().use { input.copyTo(it) }
-                }
-                val options = OfficeOptions(kind, if (kind.spreadsheet) listOf(2, 0) else null)
-                OfficeWorkerClient.prepare(context, source, options).use { prepared ->
+            fun convert(kind: OfficeKind, selected: List<Int>?, fitWidth: Boolean, expected: Int? = null): Int {
+                stage = "${kind.extension}-${if (fitWidth) "fit" else "saved"}-${selected?.joinToString("-") ?: "all"}"
+                val before = source.readBytes() // Fixed, small synthetic assets only.
+                var count = 0
+                OfficeWorkerClient.prepare(context, source, OfficeOptions(kind, selected, fitWidth)).use { prepared ->
                     check(prepared.workerPid != Process.myPid() && pids.add(prepared.workerPid))
                     val gone = try { Os.kill(prepared.workerPid, 0); false }
                     catch (error: ErrnoException) { error.errno == OsConstants.ESRCH }
                     check(gone)
                     check(prepared.peakObservedRssBytes > 0)
                     check((root.listFiles()?.map { it.name }?.toSet() ?: emptySet()) == baseline)
+                    check(source.readBytes().contentEquals(before))
                     val session = prepared.session
-                    check(session.overview.pageCount == if (kind.spreadsheet) 7 else 3)
+                    count = session.overview.pageCount
+                    if (expected != null) check(count == expected)
                     check(prepared.sheetNames == if (kind.spreadsheet) listOf("Сводка", "Широкая", "Длинная") else emptyList<String>())
                     val layout = requireNotNull(session.preparedPdfLayout)
-                    val plan = JobSpecification.preparedPdf(layout.orientations, "2-3", 2)
-                    check(plan.outputPageOrder == listOf(1, 2, 1, 2))
-                    val preview = session.renderPreparedPrintPreview(0) { false }
-                    try {
-                        val pixels = IntArray(preview.width * preview.height)
-                        preview.getPixels(pixels, 0, preview.width, 0, 0, preview.width, preview.height)
-                        check(pixels.any { it == android.graphics.Color.BLACK })
-                    } finally { preview.recycle() }
+                    val range = if (count >= 3) "2-3" else "1"
+                    val plan = JobSpecification.preparedPdf(layout.orientations, range, 2)
+                    check(plan.outputPageOrder == if (count >= 3) listOf(1, 2, 1, 2) else listOf(0, 0))
+                    // First and last prepared pages remain usable after the worker/profile are gone.
+                    for (index in listOf(0, count - 1).distinct()) {
+                        val preview = session.renderPreparedPrintPreview(index) { false }
+                        try {
+                            val pixels = IntArray(preview.width * preview.height)
+                            preview.getPixels(pixels, 0, preview.width, 0, 0, preview.width, preview.height)
+                            check(pixels.any { it == android.graphics.Color.BLACK })
+                        } finally { preview.recycle() }
+                    }
                     StoredCaptPage.write(spool,
                         produce = { accept -> session.forEachPrintBand(0, layout.orientations[0], 0, { false }, accept) },
                         encode = { bytes, stride, lines, last -> HiscoaNative.encodeBand(bytes, stride, lines, last) },
                         cancelled = { false }, reserve = {}).validate { false }
                     observations.put(JSONObject().put("format", kind.extension)
-                        .put("selectedSheets", if (kind.spreadsheet) "1+3" else "all")
-                        .put("pdfPages", session.overview.pageCount)
+                        .put("selectedSheets", selected?.sorted()?.joinToString("+") { (it + 1).toString() } ?: "all")
+                        .put("fitWidth", fitWidth).put("pdfPages", count)
                         .put("peakObservedRssBytes", prepared.peakObservedRssBytes))
                 }
+                return count
             }
+            for (kind in OfficeKind.entries) {
+                stage = "source-${kind.extension}"
+                context.assets.open("office-fixtures/${if (kind.spreadsheet) "workbook" else "word"}.${kind.extension}").use { input ->
+                    source.outputStream().use { input.copyTo(it) }
+                }
+                convert(kind, if (kind.spreadsheet) listOf(2, 0) else null, false, if (kind.spreadsheet) 7 else 3)
+                if (kind.spreadsheet) {
+                    val fitted = (0 until 3).map { convert(kind, listOf(it), true) }
+                    check(fitted[0] == 1)
+                    check(fitted[1] == 1) // Saved 100% layout needs 3 horizontal pages for this table.
+                    check(fitted[2] > 1) // Height remains unlimited, not a single-page sheet export.
+                    check(convert(kind, null, true) == fitted.sum())
+                    check(convert(kind, listOf(2, 0), true) == fitted[0] + fitted[2])
+                    // A new job with fit disabled uses the untouched original, not mutated native state.
+                    convert(kind, listOf(1), false, 3)
+                }
+            }
+            check(pids.size == 16)
             report.writeText(JSONObject().put("syntheticOnly", true).put("hardwarePrintTest", false)
                 .put("workerProcesses", pids.size).put("conversions", observations).toString())
             result.putString("stream", "CAPT_OFFICE_WORKER_CONVERSION_PASSED (synthetic, no USB)")

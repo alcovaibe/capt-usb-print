@@ -38,6 +38,10 @@ def main():
         'comphelper::makePropertyValue(u"MacroExecutionMode"_ustr, nMacroExecMode),\n'
         '            comphelper::makePropertyValue(u"UpdateDocMode"_ustr, '
         'sal_Int16(document::UpdateDocMode::NO_UPDATE)),')
+    # Include a synchronous Android-only UNO adapter in the existing LOK translation unit.
+    adapter = Path(__file__).with_name('capt-calc-layout.hxx')
+    (path.parent / adapter.name).write_bytes(adapter.read_bytes())
+    text += '\n#if defined(ANDROID) && HAVE_FEATURE_ANDROID_LOK\n#include "capt-calc-layout.hxx"\n#endif\n'
     path.write_text(text)
     # The same explicit servlet classpath is used by F-Droid for this pinned upstream.
     hsqldb = args.source / 'external/hsqldb/ExternalProject_hsqldb.mk'
@@ -51,7 +55,9 @@ def main():
         'before': hashlib.sha256(original.encode()).hexdigest(),
         'after': hashlib.sha256(text.encode()).hexdigest(),
         'macros': 'NEVER_EXECUTE', 'documentUpdates': 'NO_UPDATE',
-        'externalResourcesSandbox': 'NOT_IMPLEMENTED'
+        'externalResourcesSandbox': 'NOT_IMPLEMENTED',
+        'calcLayoutAdapterSha256': hashlib.sha256(adapter.read_bytes()).hexdigest(),
+        'calcFitWidth': 'ScaleToPagesX=1,ScaleToPagesY=0,A4'
     }, indent=2) + '\n')
     print('Pinned LibreOffice load-policy patch applied; resource sandbox still required')
 

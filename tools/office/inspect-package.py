@@ -21,6 +21,7 @@ def main():
     symbols = subprocess.run(['readelf', '--dyn-syms', '--wide', str(lib)],
         check=True, text=True, capture_output=True).stdout
     assert 'libreofficekit_hook' in symbols, 'LOKit entry point missing'
+    assert 'Java_org_libreoffice_kit_Document_configureCalcFitWidth' in symbols, 'CAPT Calc layout JNI missing'
     files = {}
     for file in sorted(args.package.rglob('*')):
         if file.is_file():

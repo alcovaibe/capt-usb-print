@@ -24,6 +24,7 @@ class OfficeOptionsTest {
     @Test fun wordCannotSelectWorkbookSheets() {
         for (kind in listOf(OfficeKind.DOC, OfficeKind.DOCX)) {
             assertNull(OfficeOptions(kind).selectedSheets)
+            assertThrows(IllegalArgumentException::class.java) { OfficeOptions(kind, fitWidth = true) }
             assertThrows(IllegalArgumentException::class.java) { OfficeOptions(kind, listOf(0)) }
         }
     }
