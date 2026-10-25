@@ -121,7 +121,9 @@ Java_org_libreoffice_kit_Document_configureCalcFitWidth(JNIEnv* env, jobject obj
                 || landscape != page.landscape || left != page.left || right != page.right
                 || top != page.top || bottom != page.bottom
                 || x != 1 || y != 0 || scale != 100 || total != 0
-                || width != page.width || height != page.height)
+                // UNO converts mm/100 to integer twips and back; allow only that quantization.
+                || width < page.width - 2 || width > page.width + 2
+                || height < page.height - 2 || height > page.height + 2)
                 return 0;
         }
         return pages.empty() ? 0 : 1;
