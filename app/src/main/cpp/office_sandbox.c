@@ -206,7 +206,7 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
         /* Permit only metadata on the parents needed by realpath; never open/list them. */
         if ((q->op==STAT || q->op==READLINK || q->op==ACCESS) && ancestor(b,paths[0])) {
             if (q->op==READLINK) { r->error=EINVAL; return; }
-            struct stat st;
+            struct stat st={0};
             if (stat(paths[0],&st)) r->error=errno;
             else if (q->op==STAT) { memcpy(r->data,&st,sizeof(st)); r->length=sizeof(st); }
             else if (q->mode & W_OK) r->error=EACCES;
@@ -236,7 +236,7 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
             break;
         }
         case STAT: {
-            struct stat st; result=fstatat(dir,leaf,&st,AT_SYMLINK_NOFOLLOW);
+            struct stat st={0}; result=fstatat(dir,leaf,&st,AT_SYMLINK_NOFOLLOW);
             if (!result) { memcpy(r->data,&st,sizeof(st)); r->length=sizeof(st); }
             break;
         }
@@ -253,7 +253,7 @@ static void serve(capt_broker *b, const request *q, const int *fds, int count, r
             break;
         case CHMOD: result=fchmodat(dir,leaf,q->mode&0700,0); break;
         case STATFS: {
-            struct statfs st; result=fstatfs(dir,&st);
+            struct statfs st={0}; result=fstatfs(dir,&st);
             if (!result) { memcpy(r->data,&st,sizeof(st)); r->length=sizeof(st); }
             break;
         }

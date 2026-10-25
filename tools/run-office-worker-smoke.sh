@@ -37,8 +37,8 @@ finish_probe() {
     if grep -F 'CAPT_PRIVATE_DOCUMENT_SENTINEL_63B1' "$prefix-logcat.txt"; then outcome=1; fi
   fi
   timeout 15 adb logcat -b crash -d -v threadtime > "$prefix-crash.txt" 2>&1 || true
-  timeout 15 adb exec-out run-as "$package" cat files/office-worker-results.json > office-worker-results.json 2>/dev/null || true
   if [[ "$entry" == OfficeWorkerSmoke ]]; then
+    timeout 15 adb exec-out run-as "$package" cat files/office-worker-results.json > office-worker-results.json 2>/dev/null || true
     # Only fixed synthetic fixture PDFs, never an external URI or user workspace.
     timeout 15 adb exec-out run-as "$package" tar -C files -cf - office-layout-smoke > office-layout-synthetic.tar 2>/dev/null || true
   fi
@@ -51,7 +51,7 @@ finish_probe() {
 }
 trap finish_probe EXIT
 adb logcat -b all -c
-if [[ "$entry" != OfficeNativeUiSmoke ]]; then
+if [[ "$entry" == OfficeWorkerSmoke ]]; then
   adb shell run-as "$package" rm -f files/office-worker-results.json
 fi
 timeout 360 adb shell am instrument -w "$package/com.cryonum.captusbprint.$entry" | tee "$prefix-smoke.txt"

@@ -1,9 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <service android:name=".OfficeSandboxTestService" android:exported="false"
+            android:process=":office" android:stopWithTask="true" />
+        <service android:name=".OfficeFaultWorkerService" android:exported="false"
+            android:process=":office" android:stopWithTask="true" />
         <activity android:name=".OfficeFixturePreviewActivity" android:exported="false" />
         <service android:name=".office.OfficeWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
     </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeSandboxSmoke"
+        android:targetPackage="${applicationId}" android:label="Kernel file broker and log privacy, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeNativeUiSmoke"
         android:targetPackage="${applicationId}" android:label="Real native Office UI with held queue copy, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeWorkerSmoke"

@@ -2,6 +2,7 @@ package com.cryonum.captusbprint
 
 import android.app.Activity
 import android.app.Instrumentation
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
@@ -43,18 +44,28 @@ class UpdateSmoke : Instrumentation() {
                 check(control.isEnabled)
             }
             screenshot("updates-main.png")
+            uiAutomation.serviceInfo?.let { service ->
+                service.flags = service.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                uiAutomation.serviceInfo = service
+            }
             runOnMainSync { control.performClick() }
             waitForIdleSync()
-            val deadline = SystemClock.elapsedRealtime() + 5000
+            val deadline = SystemClock.elapsedRealtime() + 10000
             val expectedMessage = activity.getString(R.string.updates_disabled)
             fun contains(node: AccessibilityNodeInfo?): Boolean {
                 if (node == null) return false
-                if (node.text?.toString() == expectedMessage) return true
+                if (node.isVisibleToUser && node.text?.toString() == expectedMessage) return true
                 for (i in 0 until node.childCount) if (contains(node.getChild(i))) return true
                 return false
             }
-            while (!contains(uiAutomation.rootInActiveWindow) && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
-            check(contains(uiAutomation.rootInActiveWindow)) { "Manual debug check did not explain release-channel isolation" }
+            // Android 16 may keep the Activity as the active accessibility window
+            // while the native bottom Dialog is already visible in another window.
+            fun visibleMessage(): Boolean = uiAutomation.windows.orEmpty().any { window ->
+                val root = window.root
+                root?.packageName?.toString() == targetContext.packageName && contains(root)
+            } || contains(uiAutomation.rootInActiveWindow)
+            while (!visibleMessage() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100)
+            check(visibleMessage()) { "Manual debug check did not explain release-channel isolation" }
             screenshot("updates-result.png")
             apk.parentFile!!.mkdirs(); apk.writeBytes(byteArrayOf(1, 2, 3))
             val intent = UpdateInstaller.installIntent(targetContext, apk)
@@ -69,6 +80,7 @@ class UpdateSmoke : Instrumentation() {
             result.putString("stream", "CAPT_UPDATE_UI_SMOKE_PASSED\n")
             finish(Activity.RESULT_OK, result)
         } catch (error: Throwable) {
+            runCatching { screenshot("updates-result.png") }
             result.putString("stream", "CAPT_UPDATE_UI_SMOKE_FAILED: ${error.stackTraceToString()}\n")
             finish(Activity.RESULT_CANCELED, result)
         } finally {

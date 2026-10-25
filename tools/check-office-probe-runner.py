@@ -38,6 +38,8 @@ elif a[:1] == ['logcat'] and '-d' in a:
 elif a[:1] == ['exec-out']:
     if a[-1].endswith('stage.txt'):
         print('jni-init')
+    elif a[-1].endswith('office-worker-results.json'):
+        print('{"syntheticOnly": true, "probe": "conversion"}')
     else:
         sys.exit(1)
 '''
@@ -68,6 +70,8 @@ def main():
             for mode in ['success', 'crash', 'transport', 'timeout', 'no-marker']:
                 work = root / (name + '-' + mode)
                 work.mkdir()
+                previous_report = b'{"syntheticOnly":true,"previousEvidence":true}'
+                (work / 'office-worker-results.json').write_bytes(previous_report)
                 result = subprocess.run(['bash', str(ROOT / 'tools' / script), *arguments],
                     cwd=work, env={**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
                                    'PROBE_TEST_MODE': mode, 'PROBE_TEST_CALLS': str(work / 'calls.jsonl')}, capture_output=True, text=True, timeout=10)
@@ -75,7 +79,11 @@ def main():
                 calls = [json.loads(line) for line in (work / 'calls.jsonl').read_text().splitlines()]
                 assert calls[-1] == ['shell', 'am', 'force-stop', 'com.cryonum.captusbprint.debug']
                 deletes_report = any(a[:2] == ['shell', 'run-as'] and 'rm' in a for a in calls)
-                assert deletes_report == (name != 'native-ui')  # Native UI reads the earlier worker report.
+                assert deletes_report == (name in ('engine', 'conversion'))  # Sandbox/UI preserve the conversion evidence.
+                if name == 'conversion':
+                    assert json.loads((work / 'office-worker-results.json').read_text())['probe'] == 'conversion'
+                else:
+                    assert (work / 'office-worker-results.json').read_bytes() == previous_report
                 assert (work / (prefix + '-logcat.txt')).read_text().strip() == 'synthetic native crash diagnostic'
                 assert (work / (prefix + '-crash.txt')).read_text().strip() == 'synthetic native crash diagnostic'
                 if name == 'engine':
