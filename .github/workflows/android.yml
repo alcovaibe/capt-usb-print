@@ -41,6 +41,7 @@ jobs:
         run: |
           python3 -m py_compile tools/prepare-signing.py tools/signed-release.py tools/update-feed.py
           python3 -m unittest discover -s tools -p test_update_feed.py
+          python3 tools/check-update-ui-runner.py
           bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
           # Reproduce duplicate partition-size entries from a device profile.
           fixture="$(mktemp -d)"
@@ -151,11 +152,7 @@ jobs:
             adb install pr-apk/app-debug.apk
             adb install uri-fixture-apk/office-uri-fixture-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
-            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.UpdateSmoke | tee /tmp/capt-update-smoke.txt
-            mkdir -p update-ui-evidence
-            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-main.png update-ui-evidence/
-            adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-result.png update-ui-evidence/
-            grep -F 'CAPT_UPDATE_UI_SMOKE_PASSED' /tmp/capt-update-smoke.txt
+            bash tools/run-update-ui-smoke.sh
             bash tools/run-office-worker-smoke.sh uri
             bash tools/run-office-uri-owner-death.sh
             bash tools/run-office-worker-smoke.sh lifecycle
