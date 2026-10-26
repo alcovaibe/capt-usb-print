@@ -141,7 +141,7 @@ internal class GithubUpdateDownloader(
             .cookieJar(CookieJar.NO_COOKIES).cache(null)
             .authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE)
             .connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(10, TimeUnit.MINUTES).build()
+            .callTimeout(30, TimeUnit.MINUTES).build()
 
         @Suppress("DEPRECATION")
         suspend fun verifyApk(context: Context, file: File, release: UpdateManifest.Release) = withContext(Dispatchers.IO) {
@@ -174,7 +174,8 @@ internal class GithubUpdateDownloader(
             ) throw InvalidUpdateApk()
         }
 
-        const val MAX_APK_BYTES = 100L * 1024 * 1024
+        // Universal Office APK contains three native engines. Still stream with a hard cap.
+        const val MAX_APK_BYTES = 1024L * 1024 * 1024
         fun downloadUrl(release: UpdateManifest.Release): HttpUrl {
             UpdateUrls.release(release.releaseUrl)
             require(release.releaseUrl.endsWith("/${UpdateUrls.tag(release.versionName)}"))

@@ -9,6 +9,9 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.buffer
+import okio.Source
+import okio.Timeout
 import okio.Buffer
 import org.junit.Assert.*
 import org.junit.Rule
@@ -47,6 +50,38 @@ class UpdateDownloadTest {
             assertEquals(2, calls)
             assertEquals(bytes.size.toLong(), received)
             assertTrue(file.isFile)
+        }
+    }
+
+    @Test fun streamsOfficeSizedApkPastTheLegacyCapWithoutBufferingItInMemory() = runBlocking {
+        val size = 101L * 1024 * 1024
+        var verified = false
+        val block = ByteArray(32 * 1024) { 42 }
+        val client = GithubUpdateDownloader.newClient().newBuilder().addInterceptor { chain ->
+            val body = object : ResponseBody() {
+                var remaining = size
+                private val stream = object : Source {
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        if (remaining == 0L) return -1
+                        val count = minOf(remaining, byteCount, block.size.toLong()).toInt()
+                        sink.write(block,0,count); remaining -= count; return count.toLong()
+                    }
+                    override fun timeout() = Timeout.NONE
+                    override fun close() = Unit
+                }.buffer()
+                override fun contentType() = null
+                override fun contentLength() = size
+                override fun source() = stream
+            }
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).message("Fixture")
+                .code(200).body(body).build()
+        }.build()
+        GithubUpdateDownloader(temp.root, { file, _ ->
+            assertEquals(size,file.length()); file.inputStream().use { assertEquals(42,it.read()) }; verified = true
+        },client).use {
+            var progress = 0L
+            val file = it.download(release()) { count,total -> progress = count; assertEquals(size,total) }
+            assertTrue(verified); assertEquals(size,progress); assertEquals(size,file.length())
         }
     }
 

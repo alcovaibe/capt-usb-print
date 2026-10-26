@@ -104,7 +104,8 @@ jobs:
         run: |
           git fetch --depth=1 origin "$BASE_SHA"
           git worktree add --detach upgrade-baseline "$BASE_SHA"
-          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon -PofficeEngineDir="$PWD/office-engine" :app:assembleDebug
+          ln -s "$PWD/office-engine" upgrade-baseline/office-engine
+          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon :app:assembleDebug
           mkdir -p upgrade-check-input
           cp upgrade-baseline/app/build/outputs/apk/debug/app-debug.apk upgrade-check-input/base-main-debug.apk
       - uses: actions/upload-artifact@v4

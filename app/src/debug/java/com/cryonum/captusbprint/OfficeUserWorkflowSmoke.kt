@@ -57,7 +57,9 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
                     intake = startActivitySync(Intent(targetContext,DocumentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     // Intercept only the platform picker UI. Exercise the real button, MIME hints,
                     // onActivityResult and content grant using the independent provider below.
-                    val picker = addMonitor(IntentFilter(Intent.ACTION_OPEN_DOCUMENT),
+                    val picker = addMonitor(IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addDataType("*/*"); addCategory(Intent.CATEGORY_OPENABLE)
+                    },
                         ActivityResult(Activity.RESULT_OK,Intent().setData(uri)),true)
                     ui {
                         val matches = ArrayList<View>()
@@ -89,8 +91,9 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
                     val root = current().findViewById<View>(android.R.id.content)
                     root.findViewWithTag<EditText>("office-range").setText("2-3")
                     root.findViewWithTag<EditText>("office-copies").setText("2")
-                    current().recreate()
                 }
+                await { state().ready && state().page == 1 }
+                ui { current().recreate() }
                 office = waitForMonitorWithTimeout(monitor,15_000) as OfficeDocumentActivity
                 await { state().ready || state().failure != null }
                 check(state().ready && state().pages == 3 && state().page == 1)

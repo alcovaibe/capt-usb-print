@@ -118,14 +118,15 @@ def publish():
     with tempfile.TemporaryDirectory() as tmp:
         call("gh", "release", "download", tag, "--repo", REPO, "--pattern", expected_name, "--dir", tmp)
         apk = Path(tmp) / expected_name
-        if not 10000 <= apk.stat().st_size <= 100 * 1024 * 1024 or apk.stat().st_size != assets[0]["size"]:
+        if not 10000 <= apk.stat().st_size <= 1024 * 1024 * 1024 or apk.stat().st_size != assets[0]["size"]:
             raise RuntimeError("Invalid APK size")
         output = call(tools / "apksigner", "verify", "--verbose", "--print-certs", apk)
         signers = re.findall(r"Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F]+)", output)
         if len(signers) != 1:
             raise RuntimeError("Expected one APK signer")
         candidate = manifest_from_apk(release, call(tools / "aapt", "dump", "badging", apk), signers[0].lower(), expected)
-        digest = "sha256:" + hashlib.sha256(apk.read_bytes()).hexdigest()
+        with apk.open("rb") as stream:
+            digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
         if assets[0].get("digest") not in (None, digest):
             raise RuntimeError("Asset digest mismatch")
     # Recheck the release/asset after inspecting the actual download.
