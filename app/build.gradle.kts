@@ -74,6 +74,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig = true }
+    // A universal APK otherwise stores three large engines uncompressed. Android
+    // extracts only the device ABI; verify both installation and JNI in API 29/36 CI.
+    packaging { jniLibs { useLegacyPackaging = true } }
     // Compile the synthetic JNI probe in regular debug checks; never initialize it there.
     sourceSets.getByName("debug") {
         // AGP 9 built-in Kotlin ignores extra Kotlin roots registered as Java.

@@ -57,7 +57,9 @@ Java/JNI-адаптер и backend перенесены в main. И debug, и re
    и единственный пустой узел Common в main.xcd ARM32. Другие расхождения
    останавливают сборку; исходные/эквивалентные SHA всех ABI записываются в assembled.json.
 4. `bash ./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :app:assembleRelease :app:lintRelease`.
-   Нестандартный путь: `-PofficeEngineDir=/absolute/path`. Для отдельной CI-пробы
+   JNI-библиотеки сжаты в универсальном APK; Android извлекает только ABI
+   устройства при установке. Это уменьшает загрузку, но установленный каталог
+   содержит также извлечённые библиотеки. Нестандартный путь: `-PofficeEngineDir=/absolute/path`. Для отдельной CI-пробы
    допускается явный `-PofficeAbis=x86_64`; обычная сборка требует все три ABI.
 
 Переиспользуемый CI `office-packages.yml` собирает/проверяет пакеты из исходников
