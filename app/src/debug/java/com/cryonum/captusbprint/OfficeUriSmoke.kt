@@ -110,6 +110,23 @@ class OfficeUriSmoke : Instrumentation() {
             check(control("state").getInt("uid") != Process.myUid())
             stage = "main-thread-guard"
             runOnMainSync { check(runCatching { import(authority) }.exceptionOrNull() is IllegalStateException) }
+            stage = "cancel-before-hello"
+            val bindMarker = File(context.noBackupFilesDir, "office-delayed-bind-pid.txt")
+            val bindSource = File(context.cacheDir, "office-delayed-bind-source.bin")
+            check(!bindMarker.exists() || bindMarker.delete())
+            bindSource.writeBytes(byteArrayOf(1)) // No backend/admission may see this synthetic byte.
+            try {
+                var dispatched = false
+                failure(OfficeFailure.CANCELLED) {
+                    OfficeWorkerClient.prepare(context, bindSource, OfficeOptions(OfficeKind.DOCX),
+                        { bindMarker.isFile }, budget(), { dispatched = true }, OfficeDelayedBindService::class.java).close()
+                }
+                check(!dispatched && bindMarker.isFile)
+                val child = bindMarker.readText().toInt()
+                check(child != Process.myPid())
+                check(try { Os.kill(child, 0); false } catch (error: ErrnoException) { error.errno == OsConstants.ESRCH })
+            } finally { check(bindMarker.delete()); check(bindSource.delete()) }
+            clean()
             stage = "no-grant"
             val denied = Uri.withAppendedPath(authority, "word.docx")
             control("revoke", denied)

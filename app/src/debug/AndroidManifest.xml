@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <queries><provider android:authorities="com.cryonum.captusbprint.urifixture" /></queries>
     <application>
+        <service android:name=".OfficeDelayedBindService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeSandboxTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeFileLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeCpuLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />

@@ -126,6 +126,7 @@ internal object OfficeWorkerClient {
         val bindingStopped = CountDownLatch(1)
         val closed = AtomicBoolean(false)
         val pid = AtomicInteger(0)
+        val identityLock = Any()
         val remote = AtomicReference<IBinder?>()
         val connected = AtomicBoolean(false)
         val failure = AtomicReference<OfficeFailure?>()
@@ -171,9 +172,13 @@ internal object OfficeWorkerClient {
                     val workerPid = reply.readInt()
                     check(workerPid > 0 && workerPid != Process.myPid() && reply.readInt() == Process.myUid())
                     check(reply.readString() == "${context.packageName}:office")
-                    birth = processBirth(workerPid)
-                    check(birth != null)
-                    pid.set(workerPid)
+                    val identity = processBirth(workerPid)
+                    check(identity != null)
+                    synchronized(identityLock) {
+                        check(pid.get() == 0 || (pid.get() == workerPid && birth == identity))
+                        birth = identity
+                        pid.set(workerPid)
+                    }
                     broker?.attach(workerPid)
                     remote.set(service)
                     service.linkToDeath({
@@ -384,10 +389,31 @@ internal object OfficeWorkerClient {
             val workerPid = pid.get()
             if (workerPid == 0) {
                 // Cancellation can win before HELLO. Unbinding alone does not prove that
-                // a just-created service process has exited; wait for its absence too.
+                // a just-created service process has exited. Android can cache this PID
+                // without ever delivering onServiceConnected/onDestroy. Authenticate that
+                // exact app-owned child through AM, proc owner, cmdline and creation time;
+                // only then terminate it. Never treat missing HELLO as permission to delete.
                 val children = context.getSystemService(ActivityManager::class.java).runningAppProcesses
                     ?: return false
-                return children.none { it.uid == Process.myUid() && it.processName == "${context.packageName}:office" }
+                val candidates = children.filter { it.uid == Process.myUid() &&
+                    it.processName == "${context.packageName}:office" && it.pid != Process.myPid() }
+                if (candidates.isEmpty()) return true
+                for (child in candidates) {
+                    val identity = processBirth(child.pid) ?: continue
+                    val verified = runCatching {
+                        Os.stat("/proc/${child.pid}").st_uid == Process.myUid() &&
+                            readBounded(File("/proc/${child.pid}/cmdline"), 512).substringBefore('\u0000') ==
+                            "${context.packageName}:office" && processBirth(child.pid) == identity
+                    }.getOrDefault(false)
+                    if (verified) {
+                        synchronized(identityLock) {
+                            if (pid.get() == 0) { birth = identity; pid.set(child.pid) }
+                        }
+                        kill()
+                        return false // A signal is not proof of exit; next observation verifies it.
+                    }
+                }
+                return false
             }
             val currentBirth = processBirth(workerPid)
             if (currentBirth != null && currentBirth != birth) return true
