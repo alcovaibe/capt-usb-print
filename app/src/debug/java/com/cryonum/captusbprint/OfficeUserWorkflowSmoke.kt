@@ -40,7 +40,6 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
         fun folders(name: String) = File(targetContext.noBackupFilesDir,name).listFiles()?.map { it.name }?.toSet() ?: emptySet()
         val sources = folders("office-ui"); val workers = folders("office-work")
         val grants = targetContext.contentResolver.persistedUriPermissions.map { it.uri to it.isReadPermission }
-        val monitor = addMonitor(OfficeDocumentActivity::class.java.name,null,false)
         val created = AtomicReference<OfficeDocumentActivity?>()
         val application = targetContext.applicationContext as Application
         val lifecycle = object : Application.ActivityLifecycleCallbacks {
@@ -86,7 +85,8 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
                     }
                     removeMonitor(picker)
                 }
-                office = waitForMonitorWithTimeout(monitor,30_000) as OfficeDocumentActivity
+                await { created.get() != null }
+                office = requireNotNull(created.get())
                 fun current() = requireNotNull(office)
                 fun state() = ui { current().snapshot() }
                 fun click(tag: String) = ui { current().findViewById<View>(android.R.id.content).findViewWithTag<View>(tag).performClick() }
@@ -175,7 +175,6 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
         } catch (error: Throwable) {
             result.putString("stream","OFFICE_USER_WORKFLOW_FAILED:$stage:${error.javaClass.simpleName}")
         } finally {
-            removeMonitor(monitor)
             runOnMainSync { application.unregisterActivityLifecycleCallbacks(lifecycle) }
             held?.let { PrintQueueRuntime.cancel(it) }
             runOnMainSync { office?.finish(); intake?.finish() }
