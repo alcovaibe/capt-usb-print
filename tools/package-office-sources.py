@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -36,6 +37,11 @@ def main():
     assert set(manifests)=={'arm64-v8a','armeabi-v7a','x86_64'}
     with tempfile.TemporaryDirectory(prefix='capt-source-bundle-') as tmp:
         directory=Path(tmp); downloads=directory/'external-tarballs';downloads.mkdir()
+        for package in sorted(args.packages.iterdir()):
+            if not package.is_dir(): continue
+            notices = package / 'assets/office-licenses'
+            assert (notices / 'native-runtime.json').is_file()
+            shutil.copytree(notices, directory / 'runtime-notices' / package.name)
         for name,entry in sorted(archives.items()):
             target=downloads/name
             # Exact content digests from the real build, never mutable package-manager versions.

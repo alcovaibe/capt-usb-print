@@ -112,6 +112,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Install exact NDK runtime for notice and byte verification
+        run: sdkmanager --install 'ndk;29.0.14206865'
       - uses: actions/checkout@v4
         with:
           path: capt
@@ -171,7 +176,6 @@ jobs:
         run: |
           mkdir office-engine
           tar -xzf engine-archive/capt-office-x86_64.tar.gz -C office-engine
-          python3 tools/prepare-office-notices.py office-engine
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -188,7 +192,8 @@ jobs:
           fi
       - name: Build opt-in probe APK preserving main permissions
         run: |
-          sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+          sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'ndk;29.0.14206865' 'cmake;3.22.1'
+          python3 tools/prepare-office-notices.py office-engine
           bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" :app:assembleDebug :app:lintDebug
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions app/build/outputs/apk/debug/app-debug.apk > probe-permissions.txt
           grep -F 'android.permission.INTERNET' probe-permissions.txt
