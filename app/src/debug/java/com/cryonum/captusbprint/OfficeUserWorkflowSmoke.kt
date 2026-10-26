@@ -1,6 +1,7 @@
 package com.cryonum.captusbprint
 
 import android.app.Activity
+import android.app.Application
 import android.app.Instrumentation
 import android.content.Intent
 import android.content.IntentFilter
@@ -40,6 +41,22 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
         val sources = folders("office-ui"); val workers = folders("office-work")
         val grants = targetContext.contentResolver.persistedUriPermissions.map { it.uri to it.isReadPermission }
         val monitor = addMonitor(OfficeDocumentActivity::class.java.name,null,false)
+        val created = AtomicReference<OfficeDocumentActivity?>()
+        val application = targetContext.applicationContext as Application
+        val lifecycle = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, state: Bundle?) {
+                if (activity is OfficeDocumentActivity) created.set(activity)
+            }
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityResumed(activity: Activity) = Unit
+            override fun onActivityPaused(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) {
+                if (activity is OfficeDocumentActivity) created.compareAndSet(activity,null)
+            }
+        }
+        runOnMainSync { application.registerActivityLifecycleCallbacks(lifecycle) }
         val uris = mutableListOf<Uri>()
         try {
             check(control("state").getInt("uid") != android.os.Process.myUid())
@@ -93,8 +110,12 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
                     root.findViewWithTag<EditText>("office-copies").setText("2")
                 }
                 await { state().ready && state().page == 1 }
-                ui { current().recreate() }
-                office = waitForMonitorWithTimeout(monitor,15_000) as OfficeDocumentActivity
+                val previous = current()
+                ui { previous.recreate() }
+                // ActivityMonitor observes starts, not ActivityThread's in-place relaunch.
+                await { created.get() != null && created.get() !== previous }
+                office = requireNotNull(created.get())
+                stage = "${kind.extension}-restored-preview"
                 await { state().ready || state().failure != null }
                 check(state().ready && state().pages == 3 && state().page == 1)
                 if (kind.spreadsheet) check(state().sheets == listOf(1) && !state().fit)
@@ -155,6 +176,7 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
             result.putString("stream","OFFICE_USER_WORKFLOW_FAILED:$stage:${error.javaClass.simpleName}")
         } finally {
             removeMonitor(monitor)
+            runOnMainSync { application.unregisterActivityLifecycleCallbacks(lifecycle) }
             held?.let { PrintQueueRuntime.cancel(it) }
             runOnMainSync { office?.finish(); intake?.finish() }
             uris.forEach { runCatching { control("revoke",it) } }
