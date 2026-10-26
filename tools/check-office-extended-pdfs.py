@@ -23,7 +23,7 @@ def main():
             assert rows[f'{kind}-{suffix}']['failure'] == 'FIT_WIDTH_UNSUPPORTED'
         assert rows[f'{kind}-next']['pages'] == 1
     expected = {f'{name}.pdf':r for name,r in rows.items() if r['failure'] is None}
-    texts, xmls, fonts = {}, {}, {}
+    texts, raw_texts, xmls, fonts = {}, {}, {}, {}
     with tarfile.open(args.archive,'r:') as archive, tempfile.TemporaryDirectory(prefix='capt-extended-') as directory:
         for member in archive.getmembers():
             if member.isdir():
@@ -36,6 +36,11 @@ def main():
             pages = text.split('\f'); assert not pages.pop().strip()
             assert len(pages) == expected[path.name]['pages']
             texts[path.name] = [' '.join(p.split()) for p in pages]
+            # Layout mode interleaves neighbouring columns across a wrapped
+            # merged-cell label. Content-stream order keeps the cell together.
+            raw_texts[path.name] = ' '.join(subprocess.run(
+                ['pdftotext','-raw',str(pdf),'-'],check=True,capture_output=True,
+                text=True,timeout=30).stdout.split())
             xml = subprocess.run(['pdftohtml','-xml','-i','-stdout',str(pdf)],check=True,
                                  capture_output=True,text=True,timeout=30).stdout
             root = ET.fromstring(xml); xmls[path.name] = root
@@ -54,7 +59,8 @@ def main():
         assert len(pages) >= 3
         assert 'НАЧАЛО ТАБЛИЦЫ' in pages[0] and 'ПОСЛЕ РАЗРЫВА' in pages[-1]
         assert 'КОНЕЦ ТАБЛИЦЫ-084' in combined
-        assert 'ГОРИЗОНТАЛЬНОЕ ОБЪЕДИНЕНИЕ' in combined and 'ВЕРТИКАЛЬНОЕ ОБЪЕДИНЕНИЕ' in combined
+        assert 'ГОРИЗОНТАЛЬНОЕ ОБЪЕДИНЕНИЕ' in raw_texts[f'flow-{kind}.pdf']
+        assert 'ВЕРТИКАЛЬНОЕ ОБЪЕДИНЕНИЕ' in raw_texts[f'flow-{kind}.pdf']
         assert 'МЕТКА-001' in combined and 'МЕТКА-084' in combined
         for number,page in enumerate(pages,1):
             assert 'РАСШИРЕННЫЙ КОРПУС' in page and re.search(rf'Лист\s+{number}\b',page)

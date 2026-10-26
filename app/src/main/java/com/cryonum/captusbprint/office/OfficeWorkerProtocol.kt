@@ -45,7 +45,10 @@ internal enum class OfficeFailure {
     SOURCE_ACCESS, SOURCE_FAILED, FIT_WIDTH_UNSUPPORTED
 }
 
-internal class OfficeConversionFailure(val reason: OfficeFailure, val sandboxCategory: Int = 0) : IOException(reason.name)
+/** Fixed categories only: diagnostics must never expose paths, URIs or document contents. */
+internal enum class OfficeObservation { STARTUP, RSS, DISK, WORKSPACE_IO, STOPPED_DISK, CLEANUP }
+internal class OfficeConversionFailure(val reason: OfficeFailure, val sandboxCategory: Int = 0,
+                                      val observation: OfficeObservation? = null) : IOException(reason.name)
 
 /** A stopped worker's private result. Closing deletes only this request's workspace. */
 internal class OfficeWorkerOutput(val file: File, sheets: List<String>, val workerPid: Int,
@@ -53,7 +56,8 @@ internal class OfficeWorkerOutput(val file: File, sheets: List<String>, val work
                                   val importedKind: OfficeKind? = null) : Closeable {
     val sheetNames: List<String> = Collections.unmodifiableList(sheets.toList())
     override fun close() {
-        if (!OfficePrivateFiles.deleteTree(directory)) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+        if (!OfficePrivateFiles.deleteTree(directory)) throw OfficeConversionFailure(
+            OfficeFailure.RESOURCE_OBSERVATION, observation = OfficeObservation.CLEANUP)
     }
 }
 

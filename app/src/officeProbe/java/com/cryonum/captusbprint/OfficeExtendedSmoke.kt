@@ -119,7 +119,8 @@ class OfficeExtendedSmoke : Instrumentation() {
             result.putString("stream","CAPT_OFFICE_EXTENDED_PASSED (30 attempts; generated and pinned upstream corpus, real engine, no USB)")
             outcome = Activity.RESULT_OK
         } catch (error: Throwable) {
-            result.putString("stream","CAPT_OFFICE_EXTENDED_FAILED:$stage:${(error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName}")
+            val failure = error as? OfficeConversionFailure
+            result.putString("stream","CAPT_OFFICE_EXTENDED_FAILED:$stage:${failure?.reason?.name ?: error.javaClass.simpleName}:${failure?.observation?.name ?: "NONE"}")
         } finally { source.delete(); spool.delete() }
         finish(outcome,result)
     }

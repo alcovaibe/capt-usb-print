@@ -57,7 +57,8 @@ internal object OfficeWorkerClient {
 
     private fun requireCleanStartup() {
         if (stopUncertain.get()) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
-        if (!startupClean) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+        if (!startupClean) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION,
+            observation = OfficeObservation.STARTUP)
     }
     val IMPORT_BUDGET = OfficeWorkBudget(30_000, 256L * 1024 * 1024,
         PrivateDocumentImport.MAX_BYTES + 4096, PrivateDocumentImport.HEADROOM_BYTES, 8)
@@ -263,7 +264,8 @@ internal object OfficeWorkerClient {
                 preserve = true
                 return OfficeWorkerOutput(pdf, sheets.get(), pid.get(), peakRss, directory, importedKind.get())
             } catch (error: OfficeWorkBudget.Exceeded) {
-                throw OfficeConversionFailure(OfficeWorkerProtocol.failure(error))
+                throw OfficeConversionFailure(OfficeWorkerProtocol.failure(error),
+                    observation = if (error.limit == OfficeWorkBudget.Limit.OBSERVATION) OfficeObservation.DISK else null)
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
                 throw OfficeConversionFailure(OfficeFailure.CANCELLED)
@@ -273,7 +275,8 @@ internal object OfficeWorkerClient {
                 if (limit != null) throw OfficeConversionFailure(limit)
                 throw error
             } catch (_: IOException) {
-                throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION,
+                    observation = OfficeObservation.WORKSPACE_IO)
             } catch (_: SecurityException) {
                 throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
             } finally {
@@ -326,13 +329,16 @@ internal object OfficeWorkerClient {
                         stopUncertain.set(true)
                         throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                     }
-                    if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                    if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION,
+                        observation = OfficeObservation.CLEANUP)
                     if (preserve && (cancelled() || interrupted)) {
                         if (!OfficePrivateFiles.deleteTree(directory))
-                            throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                            throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION,
+                                observation = OfficeObservation.CLEANUP)
                         throw OfficeConversionFailure(OfficeFailure.CANCELLED)
                     }
-                    finalFailure?.let { throw OfficeConversionFailure(it, sandboxCategory) }
+                    finalFailure?.let { throw OfficeConversionFailure(it, sandboxCategory,
+                        if (it == OfficeFailure.RESOURCE_OBSERVATION) OfficeObservation.STOPPED_DISK else null) }
                 } finally {
                     broker?.close(); broker = null
                     if (interrupted) Thread.currentThread().interrupt()
@@ -350,7 +356,8 @@ internal object OfficeWorkerClient {
                 if (finished.await(100, TimeUnit.MILLISECONDS)) 0L
                 else if (remote.get()?.isBinderAlive == false || processBirth(workerPid) != birth)
                     throw OfficeConversionFailure(OfficeFailure.WORKER_CRASHED)
-                else throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                else throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION,
+                    observation = OfficeObservation.RSS)
             }
             if (rss > 0) { budget.checkRss(rss); peakRss = maxOf(peakRss, rss) }
         }
