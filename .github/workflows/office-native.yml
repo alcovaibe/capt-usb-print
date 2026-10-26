@@ -21,6 +21,9 @@ on:
       - 'app/build.gradle.kts'
       - 'tools/run-office-engine-smoke.sh'
       - 'tools/run-office-worker-smoke.sh'
+      - 'tools/run-office-uri-owner-death.sh'
+      - 'app/src/debug/java/com/cryonum/captusbprint/OfficeUriSmoke.kt'
+      - 'office-uri-fixture/**'
       - 'tools/check-office-fit-pdfs.py'
       - 'tools/measure-office-probe-apk.py'
   workflow_dispatch:

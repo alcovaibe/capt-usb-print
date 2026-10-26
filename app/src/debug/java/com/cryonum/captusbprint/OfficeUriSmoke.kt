@@ -19,10 +19,12 @@ import java.util.concurrent.atomic.AtomicReference
 class OfficeUriSmoke : Instrumentation() {
     private var ownerDeath = false
     private var startupBlocked = false
+    private var afterOwnerDeath = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         ownerDeath = arguments?.getString("ownerDeath") == "true"
         startupBlocked = arguments?.getString("startupBlocked") == "true"
+        afterOwnerDeath = arguments?.getString("afterOwnerDeath") == "true"
         start()
     }
     override fun onStart() {
@@ -74,8 +76,19 @@ class OfficeUriSmoke : Instrumentation() {
             }
         }
         try {
+            if (afterOwnerDeath) {
+                check(!root.exists()) // New main Application cleaned the orphan after worker exit.
+                val blocked = File(root, "cleanup-block").apply { check(mkdirs()) }
+                File(blocked, "synthetic").writeText("synthetic cleanup probe")
+                Os.chmod(blocked.absolutePath, 0b101000000)
+                result.putString("stream", "CAPT_OFFICE_OWNER_RESTART_CLEANUP_PASSED (orphan removed; next startup cleanup fault armed)")
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             if (startupBlocked) {
                 failure(OfficeFailure.RESOURCE_OBSERVATION) { import(authority).close() }
+                Os.chmod(File(root, "cleanup-block").absolutePath, 0b111000000)
+                check(OfficePrivateFiles.deleteTree(root)) // Only the synthetic fault's repair.
                 result.putString("stream", "CAPT_OFFICE_STARTUP_CLEANUP_BLOCK_PASSED (unremoved private tree blocks Office)")
                 finish(Activity.RESULT_OK, result)
                 return

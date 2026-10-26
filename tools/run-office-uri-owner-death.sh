@@ -34,18 +34,15 @@ done
 [[ "$gone" == true ]]
 wait "$probe" || true
 # A new Application cleans orphaned private work only after the killed worker is confirmed gone.
-timeout 15 adb shell am start -W -n "$package/com.cryonum.captusbprint.MainActivity" >/dev/null
-timeout 5 adb shell run-as "$package" test ! -e no_backup/office-work
+# Verify/create/chmod private test files through Os/File in Instrumentation; 'test' is a shell
+# builtin rather than an executable on some Android images.
+timeout 30 adb shell am instrument -w -e afterOwnerDeath true "$package/com.cryonum.captusbprint.OfficeUriSmoke" > office-uri-restart-cleanup.txt
+grep -F 'CAPT_OFFICE_OWNER_RESTART_CLEANUP_PASSED' office-uri-restart-cleanup.txt
 timeout 5 adb shell content call --uri content://com.cryonum.captusbprint.urifixture --method reset >/dev/null
 timeout 5 adb shell content call --uri content://com.cryonum.captusbprint.urifixture --method revoke --arg content://com.cryonum.captusbprint.urifixture/read-block >/dev/null
 timeout 5 adb shell run-as "$package" rm -f files/office-uri-owner-pids.txt
 adb shell am force-stop "$package"
-adb shell run-as "$package" mkdir -p no_backup/office-work/cleanup-block
-adb shell run-as "$package" touch no_backup/office-work/cleanup-block/synthetic
-adb shell run-as "$package" chmod 500 no_backup/office-work/cleanup-block
 timeout 30 adb shell am instrument -w -e startupBlocked true "$package/com.cryonum.captusbprint.OfficeUriSmoke" > office-uri-startup-cleanup.txt
-adb shell run-as "$package" chmod 700 no_backup/office-work/cleanup-block
 adb shell am force-stop "$package"
-adb shell run-as "$package" rm -rf no_backup/office-work
 grep -F 'CAPT_OFFICE_STARTUP_CLEANUP_BLOCK_PASSED' office-uri-startup-cleanup.txt
 echo 'CAPT_OFFICE_URI_OWNER_DEATH_PASSED (main PID killed, worker exited, restart cleanup; no USB)'
