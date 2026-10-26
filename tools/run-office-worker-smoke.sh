@@ -3,6 +3,10 @@
 set -euo pipefail
 package=com.cryonum.captusbprint.debug
 case "${1:-conversion}" in
+  extended)
+    entry=OfficeExtendedSmoke
+    marker=CAPT_OFFICE_EXTENDED_PASSED
+    prefix=office-extended ;;
   uri)
     entry=OfficeUriSmoke
     marker=CAPT_OFFICE_URI_LIFECYCLE_PASSED
@@ -47,6 +51,10 @@ finish_probe() {
     # Only fixed synthetic fixture PDFs, never an external URI or user workspace.
     timeout 15 adb exec-out run-as "$package" tar -C files -cf - office-layout-smoke > office-layout-synthetic.tar 2>/dev/null || true
   fi
+  if [[ "$entry" == OfficeExtendedSmoke ]]; then
+    timeout 15 adb exec-out run-as "$package" cat files/office-extended-results.json > office-extended-results.json 2>/dev/null || true
+    timeout 15 adb exec-out run-as "$package" tar -C files -cf - office-extended-pdfs > office-extended-synthetic.tar 2>/dev/null || true
+  fi
   if [[ "$outcome" != 0 ]]; then
     cat "$prefix-crash.txt"
     tail -n 250 "$prefix-logcat.txt"
@@ -58,6 +66,9 @@ trap finish_probe EXIT
 adb logcat -b all -c
 if [[ "$entry" == OfficeWorkerSmoke ]]; then
   adb shell run-as "$package" rm -f files/office-worker-results.json
+fi
+if [[ "$entry" == OfficeExtendedSmoke ]]; then
+  adb shell run-as "$package" rm -f files/office-extended-results.json
 fi
 timeout 360 adb shell am instrument -w "$package/com.cryonum.captusbprint.$entry" | tee "$prefix-smoke.txt"
 grep -F "$marker" "$prefix-smoke.txt"

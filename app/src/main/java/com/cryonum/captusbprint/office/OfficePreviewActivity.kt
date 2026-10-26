@@ -114,6 +114,11 @@ internal abstract class OfficePreviewActivity : Activity() {
         }
         body.addView(copies)
         text(R.string.office_compatibility)
+        text(R.string.office_fonts)
+        body.addView(Button(this).apply {
+            setText(R.string.office_licenses); tag = "office-licenses"
+            setOnClickListener { OfficeLicenses.show(this@OfficePreviewActivity) }
+        })
         acknowledge = CheckBox(this).apply {
             setText(R.string.office_reviewed); tag = "office-reviewed"
             setOnCheckedChangeListener { _, _ -> updateActions() }

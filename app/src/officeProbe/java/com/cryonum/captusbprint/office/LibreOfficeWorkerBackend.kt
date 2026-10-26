@@ -18,8 +18,10 @@ internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
         val fonts = File(engine, "etc/fonts/fonts.conf")
         val configuration = fonts.readText()
         check(configuration.contains("/data/data/org.documentfoundation.libreoffice/fontconfig"))
+        check(configuration.windowed("</fontconfig>".length).count { it == "</fontconfig>" } == 1)
+        val aliases = context.assets.open("office-font-aliases.xml").bufferedReader().use { it.readText() }
         fonts.writeText(configuration.replace("/data/data/org.documentfoundation.libreoffice/fontconfig",
-            File(engine, "fontconfig").absolutePath))
+            File(engine, "fontconfig").absolutePath).replace("</fontconfig>", "$aliases\n</fontconfig>"))
         LibreOfficeKit.init(context, engine, false)
         val office = Office(requireNotNull(LibreOfficeKit.getLibreOfficeKitHandle()))
         val document = office.documentLoad(input.toURI().toASCIIString())

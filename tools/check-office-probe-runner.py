@@ -24,7 +24,8 @@ if a[:3] == ['shell', 'am', 'instrument']:
                    'OfficeWorkerLifecycleSmoke': 'CAPT_OFFICE_WORKER_LIFECYCLE_PASSED',
                    'OfficeKernelLimitsSmoke': 'CAPT_OFFICE_KERNEL_LIMITS_PASSED',
                    'OfficePreviewUiSmoke': 'CAPT_OFFICE_PREVIEW_UI_PASSED',
-                   'OfficeNativeUiSmoke': 'CAPT_OFFICE_NATIVE_UI_PASSED'}
+                   'OfficeNativeUiSmoke': 'CAPT_OFFICE_NATIVE_UI_PASSED',
+                   'OfficeExtendedSmoke': 'CAPT_OFFICE_EXTENDED_PASSED'}
         print('INSTRUMENTATION_RESULT: stream=' + markers[entry] + ' (synthetic only)')
         print('INSTRUMENTATION_CODE: -1')
     elif mode == 'crash':
@@ -63,7 +64,7 @@ def main():
             path.chmod(0o755)
         runners = [('engine', 'run-office-engine-smoke.sh', [], 'office-engine')]
         runners += [(mode, 'run-office-worker-smoke.sh', [mode], prefix) for mode, prefix in [
-            ('uri', 'office-uri'),
+            ('extended', 'office-extended'), ('uri', 'office-uri'),
             ('sandbox', 'office-sandbox'),
             ('conversion', 'office-worker'), ('lifecycle', 'office-worker-lifecycle'),
             ('kernel', 'office-kernel'), ('ui', 'office-ui'), ('native-ui', 'office-native-ui')]]
@@ -81,7 +82,7 @@ def main():
                 calls = [json.loads(line) for line in (work / 'calls.jsonl').read_text().splitlines()]
                 assert calls[-1] == ['shell', 'am', 'force-stop', 'com.cryonum.captusbprint.debug']
                 deletes_report = any(a[:2] == ['shell', 'run-as'] and 'rm' in a for a in calls)
-                assert deletes_report == (name in ('engine', 'conversion'))  # Sandbox/UI preserve the conversion evidence.
+                assert deletes_report == (name in ('engine', 'conversion', 'extended'))
                 if name == 'conversion':
                     assert json.loads((work / 'office-worker-results.json').read_text())['probe'] == 'conversion'
                 else:

@@ -26,6 +26,12 @@ on:
       - 'office-uri-fixture/**'
       - 'tools/check-office-fit-pdfs.py'
       - 'tools/measure-office-probe-apk.py'
+      - 'tools/check-office-extended-pdfs.py'
+      - 'tools/prepare-office-notices.py'
+      - 'tools/package-office-sources.py'
+      - 'config/office-fonts.json'
+      - 'app/src/main/assets/office-font-aliases.xml'
+      - 'app/src/debug/assets/office-fixtures/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -89,6 +95,50 @@ jobs:
           path: native-output/capt-office-${{ matrix.abi }}.tar.gz
           retention-days: 7
           if-no-files-found: error
+  corresponding-sources:
+    name: Exact native sources and notices
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: capt
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: LibreOffice/core
+          ref: 8221e31b3ac356a1623c672912a3d2b492f7e3d1
+          path: libreoffice-source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: liberationfonts/liberation-sans-narrow
+          ref: 5462920fee502b688604472e65af49af951bdd56 # 1.07.6, editable SFD source
+          path: narrow-source
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: libreoffice-native-*
+          path: native-archives
+          merge-multiple: true
+      - name: Verify all packages and bundle exact corresponding sources
+        run: |
+          mkdir packages
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            mkdir "packages/$abi"
+            tar -xzf "native-archives/capt-office-$abi.tar.gz" -C "packages/$abi"
+            python3 capt/tools/prepare-office-notices.py "packages/$abi"
+          done
+          python3 capt/tools/package-office-sources.py packages libreoffice-source narrow-source office-corresponding-sources.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: office-corresponding-sources
+          path: |
+            office-corresponding-sources.tar.gz
+            office-corresponding-sources.tar.gz.sha256
+          retention-days: 7
+          if-no-files-found: error
   conversion-probe:
     name: LibreOffice synthetic conversion API ${{ matrix.api }}
     needs: native
@@ -110,6 +160,7 @@ jobs:
         run: |
           mkdir office-engine
           tar -xzf engine-archive/capt-office-x86_64.tar.gz -C office-engine
+          python3 tools/prepare-office-notices.py office-engine
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -158,6 +209,8 @@ jobs:
             bash tools/run-office-worker-smoke.sh sandbox
             python3 tools/check-office-fit-pdfs.py office-layout-synthetic.tar office-worker-results.json
             bash tools/run-office-worker-smoke.sh native-ui
+            bash tools/run-office-worker-smoke.sh extended
+            python3 tools/check-office-extended-pdfs.py office-extended-synthetic.tar office-extended-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -176,5 +229,9 @@ jobs:
             office-worker-results.json
             office-native-ui-*.txt
             office-layout-synthetic.tar
+            office-extended-*.txt
+            office-extended-results.json
+            office-extended-synthetic.tar
+            office-font-fallback-observed.json
           if-no-files-found: ignore
           retention-days: 7

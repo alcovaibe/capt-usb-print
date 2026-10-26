@@ -8,7 +8,9 @@ from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1] / 'app/src/debug/assets/office-fixtures'
-FILES = ('word.docx', 'word.doc', 'workbook.xls', 'workbook.xlsx')
+FILES = ('word.docx', 'word.doc', 'workbook.xls', 'workbook.xlsx',
+         'word-flow.docx', 'word-flow.doc', 'word-fonts.docx', 'word-fonts.doc',
+         'workbook-edge.xlsx', 'workbook-edge.xls')
 S = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 W = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 
@@ -22,6 +24,20 @@ def main():
     if args.write_manifest:
         manifest.write_text(json.dumps(identity, indent=2) + '\n', encoding='utf-8')
     assert identity == json.loads(manifest.read_text(encoding='utf-8')), 'Fixture identity changed'
+    with ZipFile(ROOT / 'word-flow.docx') as package:
+        tree = ET.fromstring(package.read('word/document.xml'))
+        assert tree.find('.//w:tblHeader', W) is not None
+        assert tree.find('.//w:vMerge', W) is not None
+        assert len(tree.findall('.//w:tr', W)) == 85
+    with ZipFile(ROOT / 'word-fonts.docx') as package:
+        assert b'CAPT Missing Font 7D41' in package.read('word/document.xml')
+    with ZipFile(ROOT / 'workbook-edge.xlsx') as package:
+        assert b'colBreaks' in package.read('xl/worksheets/sheet2.xml')
+        assert b'rowBreaks' in package.read('xl/worksheets/sheet3.xml')
+        cells = ET.fromstring(package.read('xl/worksheets/sheet5.xml'))
+        assert cells.find('.//s:c[@r="C8"]/s:v', S).text == '60'
+        assert cells.find('.//s:c[@r="C9"]/s:v', S).text == '42'
+        assert cells.find('.//s:c[@r="C10"]/s:v', S).text == '#DIV/0!'
     for name, stream in [('word.doc', 'WordDocument'), ('workbook.xls', 'Workbook')]:
         data = (ROOT / name).read_bytes()
         assert data.startswith(bytes.fromhex('D0CF11E0A1B11AE1'))

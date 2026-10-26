@@ -9,6 +9,8 @@
         <service android:name=".office.OfficeWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
     </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeExtendedSmoke"
+        android:targetPackage="${applicationId}" android:label="Extended synthetic Office layout and fonts; no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeSandboxSmoke"
         android:targetPackage="${applicationId}" android:label="Kernel file broker and log privacy, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeNativeUiSmoke"

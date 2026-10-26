@@ -2,6 +2,8 @@
     <string name="office_error_source_access">Нет доступа к документу. Выберите файл заново и разрешите чтение.</string>
     <string name="office_error_source_failed">Поставщик файла не смог передать документ. Сохраните локальную копию и выберите её заново.</string>
     <string name="office_title">Документ Word / Excel</string>
+    <string name="office_licenses">Лицензии и исходники движка</string>
+    <string name="office_fonts">Шрифты Microsoft не входят в приложение. Для Arial, Times New Roman и Courier New заданы свободные замены Liberation, для Calibri — Carlito, для Cambria — Caladea. Другие гарнитуры и отсутствующие символы могут заменяться системными шрифтами Android. Это может изменить переносы и число страниц. Список фактических замен для каждого фрагмента документа здесь не определяется.</string>
     <string name="office_internal_fixture">Внутренняя проверка: встроенный тестовый документ. Пользовательское открытие Office ещё выключено.</string>
     <string name="office_all_sheets">Выбрать все листы</string>
     <string name="office_fit_width">Вписать таблицу по ширине A4</string>

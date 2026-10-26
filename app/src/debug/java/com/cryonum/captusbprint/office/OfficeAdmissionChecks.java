@@ -34,7 +34,9 @@ public final class OfficeAdmissionChecks {
         finally { if (suite.file.exists() && !suite.file.delete()) throw new IOException("CLEANUP"); }
     }
     private void check(File fixtures) throws Exception {
-        for (String name : new String[]{"word.docx","word.doc","workbook.xls","workbook.xlsx"}) {
+        for (String name : new String[]{"word.docx","word.doc","workbook.xls","workbook.xlsx",
+                "word-flow.docx","word-flow.doc","word-fonts.docx","word-fonts.doc",
+                "workbook-edge.xlsx","workbook-edge.xls"}) {
             OfficeAdmission.Kind expected=OfficeAdmission.Kind.valueOf(name.substring(name.lastIndexOf('.')+1).toUpperCase(Locale.ROOT));
             same(OfficeAdmission.inspect(new File(fixtures,name),()->false)==expected);
             // The extension and the MIME do not participate in detection.
