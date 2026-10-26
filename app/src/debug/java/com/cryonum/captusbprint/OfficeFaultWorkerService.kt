@@ -9,11 +9,12 @@ import android.system.Os
 import com.cryonum.captusbprint.office.OfficeOptions
 import com.cryonum.captusbprint.office.OfficeWorkerBackend
 import com.cryonum.captusbprint.office.OfficeWorkerService
+import com.cryonum.captusbprint.office.OfficeWorkBudget
 import java.io.File
 
 /** Fault injection only; these bytes are not Office files and this is not a format renderer. */
 class OfficeFaultWorkerService : OfficeWorkerService() {
-    companion object { private var retainedMemory: ByteArray? = null }
+    companion object { private var retainedMemory: List<ByteArray>? = null }
     // Lifecycle fault bytes deliberately bypass format admission, only in this debug-only service.
     internal override fun validateInput(input: File, options: OfficeOptions) = Unit
     internal override fun newBackend(): OfficeWorkerBackend = object : OfficeWorkerBackend {
@@ -49,9 +50,21 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
                         repeat(32) { stream.write(block) }
                     } // Finish immediately, before the controller's next periodic observation.
                     if (mode == 10) {
-                        val bytes = ByteArray(96*1024*1024)
-                        for (offset in bytes.indices step 4096) bytes[offset] = 0x55
-                        retainedMemory = bytes // Keep committed pages alive until the worker is killed.
+                        val limit = input.inputStream().use { stream ->
+                            java.io.DataInputStream(stream).run { readUnsignedByte(); readLong() }
+                        }
+                        check(limit in 1..(512L*1024*1024))
+                        val blocks = ArrayList<ByteArray>()
+                        retainedMemory = blocks
+                        // Different disposable workers need not have equal startup RSS.
+                        // Commit only enough bounded synthetic memory to exceed THIS attempt's
+                        // budget, then keep it alive through the fast success callback.
+                        while (OfficeWorkBudget.parseRss(File("/proc/self/status").readText()) <= limit+8L*1024*1024) {
+                            check(blocks.size < 8) { "SYNTHETIC_MEMORY_TARGET_NOT_REACHED" }
+                            val bytes = ByteArray(16*1024*1024)
+                            for (offset in bytes.indices step 4096) bytes[offset] = 0x55
+                            blocks.add(bytes)
+                        }
                     }
                     if (mode == 9 || mode == 10) File(directory,"fast-result-ready").writeText("ready")
                 }

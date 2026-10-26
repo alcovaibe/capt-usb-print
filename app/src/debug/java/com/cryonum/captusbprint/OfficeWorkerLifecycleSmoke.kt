@@ -43,7 +43,9 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
                    disk: Long = 192L * 1024 * 1024) = OfficeWorkBudget(time, rss, disk, 8L * 1024 * 1024, 8192)
         fun run(mode: Int, cancelled: () -> Boolean = { false }, limit: OfficeWorkBudget = budget(),
                 onStart: (Int) -> Unit = {}) = OfficeWorkerClient.prepare(context,
-            input.apply { writeBytes(byteArrayOf(mode.toByte())) }, OfficeOptions(OfficeKind.DOCX), cancelled, limit,
+            input.apply { outputStream().use { stream -> java.io.DataOutputStream(stream).apply {
+                writeByte(mode); if (mode == 10) writeLong(limit.maxRssBytes)
+            } } }, OfficeOptions(OfficeKind.DOCX), cancelled, limit,
             { pid -> check(pid != Process.myPid()); workerPids.add(pid); onStart(pid) }, OfficeFaultWorkerService::class.java)
         fun clean() {
             check((root.listFiles()?.map { it.name }?.toSet() ?: emptySet()) == previous)
@@ -55,7 +57,7 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             }
         }
         fun failure(expected: OfficeFailure, action: () -> Unit) {
-            val error = runCatching(action).exceptionOrNull() ?: error("Expected failure")
+            val error = runCatching(action).exceptionOrNull() ?: throw UnexpectedFailure(expected.name,"NO_FAILURE")
             if (error !is OfficeConversionFailure || error.reason != expected)
                 throw UnexpectedFailure(expected.name, (error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName)
             check(!error.toString().contains("PRIVATE_FAULT_DETAIL")); clean()
@@ -112,7 +114,8 @@ class OfficeWorkerLifecycleSmoke : Instrumentation() {
             failure(OfficeFailure.MEMORY_LIMIT) { run(1, limit = budget(rss = 1)).close() }
             stage = "fast-result-between-memory-observations"
             failure(OfficeFailure.MEMORY_LIMIT) {
-                run(10, limit = budget(rss = successfulWorkerRss+32L*1024*1024), onStart = { holdObserverUntilResult() }).close()
+                run(10, limit = budget(rss = maxOf(successfulWorkerRss+32L*1024*1024,96L*1024*1024)),
+                    onStart = { holdObserverUntilResult() }).close()
             }
             check(fastResultsObserved==1)
             stage = "disk-budget"
