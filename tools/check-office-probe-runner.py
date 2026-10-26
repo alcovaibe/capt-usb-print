@@ -23,6 +23,7 @@ if a[:3] == ['shell', 'am', 'instrument']:
                    'OfficeWorkerSmoke': 'CAPT_OFFICE_WORKER_CONVERSION_PASSED',
                    'OfficeWorkerLifecycleSmoke': 'CAPT_OFFICE_WORKER_LIFECYCLE_PASSED',
                    'OfficeKernelLimitsSmoke': 'CAPT_OFFICE_KERNEL_LIMITS_PASSED',
+                   'OfficeResourceStressSmoke': 'CAPT_OFFICE_RESOURCE_STRESS_PASSED',
                    'OfficePreviewUiSmoke': 'CAPT_OFFICE_PREVIEW_UI_PASSED',
                    'OfficeNativeUiSmoke': 'CAPT_OFFICE_NATIVE_UI_PASSED',
                    'OfficeExtendedSmoke': 'CAPT_OFFICE_EXTENDED_PASSED'}
@@ -64,7 +65,7 @@ def main():
             path.chmod(0o755)
         runners = [('engine', 'run-office-engine-smoke.sh', [], 'office-engine')]
         runners += [(mode, 'run-office-worker-smoke.sh', [mode], prefix) for mode, prefix in [
-            ('extended', 'office-extended'), ('uri', 'office-uri'),
+            ('resources', 'office-resources'), ('extended', 'office-extended'), ('uri', 'office-uri'),
             ('sandbox', 'office-sandbox'),
             ('conversion', 'office-worker'), ('lifecycle', 'office-worker-lifecycle'),
             ('kernel', 'office-kernel'), ('ui', 'office-ui'), ('native-ui', 'office-native-ui')]]

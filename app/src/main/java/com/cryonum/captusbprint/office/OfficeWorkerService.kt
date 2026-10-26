@@ -109,7 +109,7 @@ open class OfficeWorkerService : Service() {
         } catch (_: SecurityException) {
             failure = OfficeFailure.SOURCE_ACCESS
         } catch (error: Throwable) {
-            failure = if (error is java.io.IOException && error !is OfficeAdmission.Failure &&
+            failure = OfficeWorkerProtocol.resourceFailure(error) ?: if (error is java.io.IOException && error !is OfficeAdmission.Failure &&
                 error !is PrivateDocumentImport.Failure && error !is OfficeConversionFailure)
                 OfficeFailure.SOURCE_FAILED else OfficeWorkerProtocol.failure(error)
         }

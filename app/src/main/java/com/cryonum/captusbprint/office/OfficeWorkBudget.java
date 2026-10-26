@@ -8,6 +8,8 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 /** Observed process/workspace limits. Not an OS sandbox or an allocation reservation. */
 public final class OfficeWorkBudget {
@@ -45,11 +47,19 @@ public final class OfficeWorkBudget {
 
     /** Never follow links or materialize a whole directory tree in memory. */
     public long checkDisk(File root, long freeBytes) throws IOException {
+        return checkDisk(new File[] { root }, freeBytes, () -> false);
+    }
+
+    /** One shared counter across private source, workspace, preview and queue roots.
+     * Missing roots may be created later; links/special files never become traversable. */
+    public long checkDisk(File[] roots, long freeBytes, BooleanSupplier cancelled) throws IOException {
         if (freeBytes < reserveBytes) throw new Exceeded(Limit.NO_SPACE);
         long[] bytes = {0};
         int[] entries = {0};
-        Files.walkFileTree(root.toPath(), new SimpleFileVisitor<Path>() {
+        for (File root : roots) Files.walkFileTree(root.toPath(), new SimpleFileVisitor<Path>() {
             private void count() throws Exceeded {
+                if (cancelled.getAsBoolean() || Thread.currentThread().isInterrupted())
+                    throw new CancellationException();
                 if (++entries[0] > maxFiles) throw new Exceeded(Limit.FILE_COUNT);
             }
             @Override public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attrs) throws IOException {

@@ -11,5 +11,6 @@ else
 fi
 "${compiler[@]}" --release 17 -Xlint:all -Werror -d "$classes" \
   app/src/main/java/com/cryonum/captusbprint/office/OfficeWorkBudget.java \
+  app/src/main/java/com/cryonum/captusbprint/office/OfficeResourcePolicy.java \
   tools/OfficeWorkBudgetCheck.java
 java -cp "$classes" com.cryonum.captusbprint.office.OfficeWorkBudgetCheck

@@ -11,6 +11,8 @@
     </application>
     <instrumentation android:name="com.cryonum.captusbprint.OfficeExtendedSmoke"
         android:targetPackage="${applicationId}" android:label="Extended synthetic Office layout and fonts; no USB" />
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeResourceStressSmoke"
+        android:targetPackage="${applicationId}" android:label="Bounded Office resource stress and cleanup, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeSandboxSmoke"
         android:targetPackage="${applicationId}" android:label="Kernel file broker and log privacy, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeNativeUiSmoke"

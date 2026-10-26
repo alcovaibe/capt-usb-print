@@ -103,7 +103,16 @@ internal class OfficePreviewPreparation(
     fun cancel() = core.cancel()
     fun render(version: Long, page: Int, cancelled: () -> Boolean,
                success: (Bitmap) -> Unit, failure: (OfficeFailure) -> Unit): Boolean =
-        core.read(version, { ready, stale -> requireNotNull(ready.document).session.renderPreparedPrintPreview(page) { stale.asBoolean || cancelled() } },
+        core.read(version, { ready, stale ->
+            val resources = OfficeResourceMonitor(app)
+            val stopped = { stale.asBoolean || cancelled() }
+            resources.before(0, stopped)
+            val bitmap = requireNotNull(ready.document).session.renderPreparedPrintPreview(page) {
+                resources.check(0, stopped); stopped()
+            }
+            try { resources.check(0, stopped, force = true); bitmap }
+            catch (error: Throwable) { bitmap.recycle(); throw error }
+        },
             { success(it) }, { failure(it) }, { it.recycle() })
 
     /** Exact reviewed version/range/copies. Returns a HELD common-queue job; caller confirms activation. */
@@ -113,7 +122,11 @@ internal class OfficePreviewPreparation(
             val session = requireNotNull(ready.document).session
             val plan = JobSpecification.preparedPdf(requireNotNull(session.preparedPdfLayout).orientations, range, copies)
             if (stale.asBoolean) throw CancellationException()
-            val id = PrintQueueRuntime.enqueue(app, session, plan, device)
+            val resources = OfficeResourceMonitor(app)
+            resources.before(session.overview.copiedBytes + 256L * 1024 * 1024) { stale.asBoolean }
+            val id = PrintQueueRuntime.enqueueChecked(app, session, plan, device) {
+                resources.check(0, { stale.asBoolean })
+            }
             if (stale.asBoolean) { PrintQueueRuntime.cancel(id); throw CancellationException() }
             id
         }, { success(it) }, { failure(it) }, { PrintQueueRuntime.cancel(it) })

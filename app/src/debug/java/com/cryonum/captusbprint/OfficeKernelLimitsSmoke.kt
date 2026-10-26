@@ -24,7 +24,8 @@ class OfficeKernelLimitsSmoke : Instrumentation() {
             for ((name,service,expected) in listOf(
                 Triple("file",OfficeFileLimitTestService::class.java,OfficeFailure.FILE_LIMIT),
                 Triple("cpu",OfficeCpuLimitTestService::class.java,OfficeFailure.CPU_LIMIT),
-                Triple("address",OfficeAddressLimitTestService::class.java,OfficeFailure.DOCUMENT_LIMIT))) {
+                Triple("address",OfficeAddressLimitTestService::class.java,OfficeFailure.DOCUMENT_LIMIT),
+                Triple("committed-memory",OfficeCommittedMemoryTestService::class.java,OfficeFailure.MEMORY_LIMIT))) {
                 stage=name
                 val pid=AtomicInteger()
                 val error=runCatching { OfficeWorkerClient.prepare(context,source,OfficeOptions(OfficeKind.DOCX),
@@ -40,7 +41,7 @@ class OfficeKernelLimitsSmoke : Instrumentation() {
             }
             check(OfficeKernelLimits.snapshot().take(6)==before)
             check((root.listFiles()?.map { it.name }?.toSet() ?: emptySet())==previous)
-            result.putString("stream","CAPT_OFFICE_KERNEL_LIMITS_PASSED (file/CPU/address denial, parent unchanged, next job succeeds; no USB)")
+            result.putString("stream","CAPT_OFFICE_KERNEL_LIMITS_PASSED (file/CPU/address denial, bounded committed ENOMEM, parent unchanged, next job succeeds; no USB)")
             outcome=Activity.RESULT_OK
         } catch(error:Throwable) {
             result.putString("stream","OFFICE_KERNEL_LIMITS_FAILED:$stage:${(error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName}")
@@ -65,6 +66,11 @@ abstract class OfficeKernelTestService : OfficeWorkerService() {
                     check(OfficeKernelLimits.deniedMapping(64L*1024*1024))
                     throw OfficeConversionFailure(OfficeFailure.DOCUMENT_LIMIT)
                 }
+                is OfficeCommittedMemoryTestService -> {
+                    val committed=OfficeKernelLimits.committedMemoryUntilDenied()
+                    check(committed in 1..(64L*1024*1024))
+                    throw OfficeConversionFailure(OfficeFailure.MEMORY_LIMIT)
+                }
             }
             error("UNREACHABLE_KERNEL_PROBE")
         }
@@ -73,3 +79,4 @@ abstract class OfficeKernelTestService : OfficeWorkerService() {
 class OfficeFileLimitTestService:OfficeKernelTestService()
 class OfficeCpuLimitTestService:OfficeKernelTestService()
 class OfficeAddressLimitTestService:OfficeKernelTestService()
+class OfficeCommittedMemoryTestService:OfficeKernelTestService()

@@ -52,3 +52,9 @@ JNIEXPORT jboolean JNICALL Java_com_cryonum_captusbprint_office_OfficeKernelLimi
     if (mapping == MAP_FAILED) return errno == ENOMEM ? JNI_TRUE : JNI_FALSE;
     munmap(mapping,(size_t)size); return JNI_FALSE;
 }
+JNIEXPORT jlong JNICALL Java_com_cryonum_captusbprint_office_OfficeKernelLimits_probeCommittedMemoryNative
+  (JNIEnv *env, jobject self) {
+    (void)env;(void)self;
+    if(!installed || !office_process())return -1;
+    return (jlong)capt_probe_committed_memory();
+}

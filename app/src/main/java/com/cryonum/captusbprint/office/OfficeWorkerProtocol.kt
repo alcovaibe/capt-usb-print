@@ -86,6 +86,21 @@ internal object OfficeWorkerProtocol {
     const val SHEETS = HELLO + 4
     const val BACKEND = "com.cryonum.captusbprint.office.LibreOfficeWorkerBackend"
     const val MAX_PDF_BYTES = 64L * 1024 * 1024
+    /** Typed errno/cause only; never infer a resource error from private exception text. */
+    fun resourceFailure(error: Throwable): OfficeFailure? {
+        var current: Throwable? = error
+        repeat(8) {
+            val value = current ?: return null
+            if (value is OutOfMemoryError) return OfficeFailure.MEMORY_LIMIT
+            if (value is android.system.ErrnoException) when (value.errno) {
+                android.system.OsConstants.ENOMEM -> return OfficeFailure.MEMORY_LIMIT
+                android.system.OsConstants.ENOSPC, android.system.OsConstants.EDQUOT -> return OfficeFailure.NO_SPACE
+                android.system.OsConstants.EFBIG -> return OfficeFailure.FILE_LIMIT
+            }
+            current = value.cause.takeUnless { it === value }
+        }
+        return null
+    }
     fun directory(context: Context, id: String): File {
         require(UUID.fromString(id).toString() == id)
         val root = File(context.noBackupFilesDir, "office-work").canonicalFile
@@ -115,6 +130,6 @@ internal object OfficeWorkerProtocol {
         }
         is ClassNotFoundException -> OfficeFailure.ENGINE_UNAVAILABLE
         is OutOfMemoryError -> OfficeFailure.MEMORY_LIMIT
-        else -> OfficeFailure.ENGINE_FAILED
+        else -> resourceFailure(error) ?: OfficeFailure.ENGINE_FAILED
     }
 }

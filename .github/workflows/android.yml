@@ -158,6 +158,7 @@ jobs:
             bash tools/run-office-worker-smoke.sh lifecycle
             bash tools/run-office-worker-smoke.sh sandbox
             bash tools/run-office-worker-smoke.sh kernel
+            bash tools/run-office-worker-smoke.sh resources
             bash tools/run-office-worker-smoke.sh ui
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.OfficeIntakeSmoke | tee /tmp/capt-office-intake.txt
             grep -F 'CAPT_OFFICE_REJECTION_CLEANUP_PASSED' /tmp/capt-office-intake.txt

@@ -33,6 +33,16 @@ class OfficeFaultWorkerService : OfficeWorkerService() {
                 }
                 4 -> error("PRIVATE_FAULT_DETAIL_MUST_NOT_ESCAPE")
                 5 -> output.writeText("not a PDF")
+                11, 12, 13, 14 -> {
+                    val number = when (mode) {
+                        11 -> android.system.OsConstants.ENOSPC
+                        12 -> android.system.OsConstants.EDQUOT
+                        13 -> android.system.OsConstants.ENOMEM
+                        else -> android.system.OsConstants.EFBIG
+                    }
+                    throw java.io.IOException("PRIVATE_RESOURCE_DETAIL_MUST_NOT_ESCAPE",
+                        android.system.ErrnoException("PRIVATE_RESOURCE_OPERATION", number))
+                }
                 6, 7, 8, 9, 10 -> {
                     val pdf = PdfDocument()
                     try {

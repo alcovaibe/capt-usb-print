@@ -81,12 +81,16 @@ internal object OfficeWorkerClient {
     fun prepare(context: Context, privateSource: File, options: OfficeOptions,
                 cancelled: () -> Boolean = { false }, budget: OfficeWorkBudget = DEFAULT_BUDGET,
                 onWorkerStarted: (Int) -> Unit = {},
-                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficePreparedDocument {
+                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java,
+                resourceMonitor: OfficeResourceMonitor = OfficeResourceMonitor(context, budget.maxRssBytes)): OfficePreparedDocument {
         var candidate: OfficePreparedDocument? = null
         var candidateSession: DocumentSession? = null
         try {
-            convert(context, privateSource, options, cancelled, budget, onWorkerStarted, serviceClass).use { raw ->
-                val session = DocumentInspector.openPreparedPdf(context, raw.file, cancelled)
+            convert(context, privateSource, options, cancelled, budget, onWorkerStarted, serviceClass, resourceMonitor).use { raw ->
+                resourceMonitor.before(raw.file.length(), cancelled)
+                val session = DocumentInspector.openPreparedPdfChecked(context, raw.file, cancelled) {
+                    resourceMonitor.check(0, cancelled)
+                }
                 candidateSession = session
                 candidate = OfficePreparedDocument(session, raw.sheetNames, raw.workerPid, raw.peakObservedRssBytes)
             }
@@ -98,7 +102,7 @@ internal object OfficeWorkerClient {
                 is OfficeConversionFailure -> throw error
                 is CancellationException -> throw OfficeConversionFailure(OfficeFailure.CANCELLED)
                 is PrivateDocumentImport.Failure -> throw OfficeConversionFailure(OfficeWorkerProtocol.failure(error))
-                else -> throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
+                else -> throw OfficeConversionFailure(OfficeWorkerProtocol.resourceFailure(error) ?: OfficeFailure.INVALID_RESULT)
             }
         }
     }
@@ -106,8 +110,9 @@ internal object OfficeWorkerClient {
     fun convert(context: Context, privateSource: File, options: OfficeOptions,
                 cancelled: () -> Boolean = { false }, budget: OfficeWorkBudget = DEFAULT_BUDGET,
                 onWorkerStarted: (Int) -> Unit = {},
-                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficeWorkerOutput =
-        sourceAttempt(context, privateSource, options, cancelled, budget, onWorkerStarted, serviceClass, false)
+                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java,
+                resourceMonitor: OfficeResourceMonitor = OfficeResourceMonitor(context, budget.maxRssBytes)): OfficeWorkerOutput =
+        sourceAttempt(context, privateSource, options, cancelled, budget, onWorkerStarted, serviceClass, false, resourceMonitor)
 
     /** Metadata is published only after sandbox checks, verified process exit and workspace cleanup.
      * No PDF/queue entry is produced. Names stay in private memory. */
@@ -117,25 +122,26 @@ internal object OfficeWorkerClient {
                       serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): List<String> {
         require(kind.spreadsheet)
         return sourceAttempt(context, privateSource, OfficeOptions(kind), cancelled, budget,
-            onWorkerStarted, serviceClass, true).use { it.sheetNames }
+            onWorkerStarted, serviceClass, true, OfficeResourceMonitor(context, budget.maxRssBytes)).use { it.sheetNames }
     }
 
     private fun sourceAttempt(context: Context, privateSource: File, options: OfficeOptions,
                               cancelled: () -> Boolean, budget: OfficeWorkBudget,
                               onWorkerStarted: (Int) -> Unit, serviceClass: Class<out OfficeWorkerService>,
-                              sheetsOnly: Boolean): OfficeWorkerOutput {
+                              sheetsOnly: Boolean, resourceMonitor: OfficeResourceMonitor): OfficeWorkerOutput {
         check(Looper.myLooper() != Looper.getMainLooper())
         requireCleanStartup()
         if (!slot.tryAcquire()) throw OfficeConversionFailure(OfficeFailure.BUSY)
         try { return Attempt(context.applicationContext, privateSource, options, cancelled, budget,
-            onWorkerStarted, serviceClass, sheetsOnly = sheetsOnly).execute() }
+            onWorkerStarted, serviceClass, sheetsOnly = sheetsOnly, resources = resourceMonitor).execute() }
         finally { if (!stopUncertain.get()) slot.release() }
     }
 
     private class Attempt(val context: Context, val source: File?, val options: OfficeOptions?,
                           val cancelled: () -> Boolean, val budget: OfficeWorkBudget,
                           val onWorkerStarted: (Int) -> Unit, val serviceClass: Class<out OfficeWorkerService>,
-                          val uri: Uri? = null, val sheetsOnly: Boolean = false) {
+                          val uri: Uri? = null, val sheetsOnly: Boolean = false,
+                          val resources: OfficeResourceMonitor = OfficeResourceMonitor(context, budget.maxRssBytes)) {
         val id = UUID.randomUUID().toString()
         val directory = OfficeWorkerProtocol.directory(context, id)
         val main = Handler(Looper.getMainLooper())
@@ -238,6 +244,8 @@ internal object OfficeWorkerClient {
                 }
                 if (serviceInfo.exported || !serviceInfo.enabled || serviceInfo.processName != "${context.packageName}:office")
                     throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE)
+                resources.before(if (uri != null) OfficeResourcePolicy.IMPORT_GROWTH
+                    else OfficeResourcePolicy.CONVERSION_GROWTH, cancelled)
                 check(directory.mkdirs())
                 budget.checkDisk(directory, directory.usableSpace)
                 if (uri == null) broker = OfficeSandbox.start(context, directory)
@@ -256,6 +264,7 @@ internal object OfficeWorkerClient {
                     budget.checkTime(SystemClock.elapsedRealtime() - started)
                     val workerPid = pid.get()
                     observeRss()
+                    resources.check(peakRss, cancelled)
                     budget.checkDisk(directory, directory.usableSpace)
                     if (connected.get() && workerPid != 0 && !dispatched && finished.count > 0) {
                         // Observe resident memory before any backend can finish a fast conversion.
@@ -272,6 +281,7 @@ internal object OfficeWorkerClient {
                 budget.checkTime(SystemClock.elapsedRealtime() - started)
                 budget.checkDisk(directory, directory.usableSpace)
                 observeRss()
+                resources.check(peakRss, cancelled, force = true)
                 val pdf = File(directory, when {
                     uri != null -> "source.bin"
                     sheetsOnly -> "source.${requireNotNull(options).kind.extension}"
@@ -297,7 +307,8 @@ internal object OfficeWorkerClient {
                     runCatching { OfficeKernelLimits.event(directory) }.getOrNull() else null
                 if (limit != null) throw OfficeConversionFailure(limit)
                 throw error
-            } catch (_: IOException) {
+            } catch (error: IOException) {
+                OfficeWorkerProtocol.resourceFailure(error)?.let { throw OfficeConversionFailure(it) }
                 throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION,
                     observation = OfficeObservation.WORKSPACE_IO)
             } catch (_: SecurityException) {
@@ -340,6 +351,8 @@ internal object OfficeWorkerClient {
                         catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
                         catch (_: IOException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
                         catch (_: SecurityException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
+                        try { resources.check(0, { false }, force = true) }
+                        catch (error: OfficeConversionFailure) { finalFailure = error.reason }
                         try { budget.checkTime(SystemClock.elapsedRealtime() - started) }
                         catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
                         sandboxCategory = broker?.diagnostic() ?: 0

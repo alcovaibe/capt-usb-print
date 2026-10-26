@@ -162,7 +162,13 @@ internal object PrintQueueRuntime {
 
     /** Worker-thread only; caller retains its preview source and owns no queue files. */
     @Synchronized fun enqueue(context: Context, source: DocumentSession,
-        plan: JobSpecification, deviceKey: String): Long {
+        plan: JobSpecification, deviceKey: String): Long =
+        enqueueChecked(context, source, plan, deviceKey) {}
+
+    /** Optional Office resource/cancellation checkpoint. Other entry points keep their contracts. */
+    @Synchronized fun enqueueChecked(context: Context, source: DocumentSession,
+        plan: JobSpecification, deviceKey: String, checkpoint: () -> Unit): Long {
+        checkpoint()
         initialize(context)
         check(hasRoom()) { "Queue full" }
         require(plan.pageIndices.all { it in 0 until source.overview.pageCount })
@@ -172,7 +178,8 @@ internal object PrintQueueRuntime {
         allocations[id] = 0
         var copied: DocumentSession? = null
         try {
-            copied = source.copyForPrint(directory) { reserve(id, it) }
+            copied = source.copyForPrint(directory) { checkpoint(); reserve(id, it) }
+            checkpoint()
             queue.add(QueueRecord(id, source.overview.format.name, plan.outputPageOrder.size, ready = false))
             sources[id] = Work(copied, plan, deviceKey, directory)
             persist()

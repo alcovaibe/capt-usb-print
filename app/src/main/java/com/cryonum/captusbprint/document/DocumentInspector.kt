@@ -102,14 +102,20 @@ object DocumentInspector {
      * The caller continues to own readyPdf; this session owns a separate bounded copy.
      */
     internal fun openPreparedPdf(context: Context, readyPdf: File,
-                                 cancelled: () -> Boolean = { false }): DocumentSession {
+                                 cancelled: () -> Boolean = { false }): DocumentSession =
+        openPreparedPdfChecked(context, readyPdf, cancelled) {}
+
+    internal fun openPreparedPdfChecked(context: Context, readyPdf: File,
+                                        cancelled: () -> Boolean,
+                                        checkpoint: () -> Unit): DocumentSession {
+        checkpoint()
         val privateRoot = File(context.applicationInfo.dataDir).canonicalFile.toPath()
         require(readyPdf.canonicalFile.toPath().startsWith(privateRoot)) { "PRIVATE_PDF_REQUIRED" }
         val directory = File(context.cacheDir, "stage-c-inspection").apply {
             if (!exists() && !mkdirs()) throw IOException("Private temp directory unavailable")
         }
         val temp = PrivateDocumentImport.copy(directory, { readyPdf.inputStream() },
-            { cancelled() }, { StatFs(directory.absolutePath).availableBytes })
+            { checkpoint(); cancelled() }, { StatFs(directory.absolutePath).availableBytes })
         var complete = false
         try {
             val descriptor = ParcelFileDescriptor.open(temp, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -119,11 +125,13 @@ object DocumentInspector {
             val sizes = renderer.use { pdf ->
                 require(pdf.pageCount in 1..1000) { "PREPARED_PDF_PAGE_LIMIT" }
                 (0 until pdf.pageCount).map { index ->
+                    checkpoint()
                     if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
                     pdf.openPage(index).use { it.width to it.height }
                 }
             }
             val layout = PreparedPdfLayout.fromPageSizes(sizes)
+            checkpoint()
             if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
             val overview = DocumentOverview(DocumentFormat.PDF, sizes.size, sizes[0].first,
                 sizes[0].second, "points", null, temp.length())

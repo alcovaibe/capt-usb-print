@@ -9,7 +9,8 @@ internal object OfficePreviewMessages {
         OfficeFailure.PASSWORD_REQUIRED -> R.string.office_error_password
         OfficeFailure.CORRUPT_DOCUMENT, OfficeFailure.BAD_INPUT -> R.string.office_error_corrupt
         OfficeFailure.UNSUPPORTED_DOCUMENT -> R.string.office_error_unsupported
-        OfficeFailure.DOCUMENT_LIMIT, OfficeFailure.DISK_LIMIT, OfficeFailure.MEMORY_LIMIT, OfficeFailure.FILE_LIMIT -> R.string.office_error_limit
+        OfficeFailure.DOCUMENT_LIMIT, OfficeFailure.DISK_LIMIT, OfficeFailure.FILE_LIMIT -> R.string.office_error_limit
+        OfficeFailure.MEMORY_LIMIT -> R.string.office_error_memory
         OfficeFailure.NO_SPACE -> R.string.document_import_no_space
         OfficeFailure.TIME_LIMIT, OfficeFailure.CPU_LIMIT -> R.string.office_error_time
         OfficeFailure.UNSUPPORTED_LAYOUT -> R.string.office_error_layout

@@ -11,7 +11,7 @@ int main(void) {
     alarm(15);
     struct rlimit before_file, before_cpu, before_as, after;
     require(!getrlimit(RLIMIT_FSIZE,&before_file) && !getrlimit(RLIMIT_CPU,&before_cpu) && !getrlimit(RLIMIT_AS,&before_as));
-    for (int mode=0;mode<3;mode++) {
+    for (int mode=0;mode<4;mode++) {
         int channel[2]; require(!pipe(channel));
         char path[]="/tmp/capt-limit-file-XXXXXX";
         int file=mkstemp(path); require(file>=0); unlink(path);
@@ -24,12 +24,15 @@ int main(void) {
                 for (;;) { ssize_t n=write(file,data,sizeof(data)); if (n<0) _exit(91); }
             } else if (mode==1) {
                 volatile uint64_t work=0; for (;;) work++;
-            } else {
+            } else if(mode==2) {
                 errno=0;
                 void *p=mmap(NULL,64ULL<<20,PROT_NONE,MAP_PRIVATE | MAP_ANONYMOUS,-1,0);
                 if (p==MAP_FAILED && errno==ENOMEM) _exit(0);
                 if (p!=MAP_FAILED) munmap(p,64ULL<<20);
                 _exit(92);
+            } else {
+                int64_t committed=capt_probe_committed_memory();
+                _exit(committed>0 && committed<=(8LL<<20)?0:93);
             }
         }
         close(channel[1]);
@@ -45,6 +48,9 @@ int main(void) {
     require(!getrlimit(RLIMIT_FSIZE,&after) && after.rlim_cur==before_file.rlim_cur && after.rlim_max==before_file.rlim_max);
     require(!getrlimit(RLIMIT_CPU,&after) && after.rlim_cur==before_cpu.rlim_cur && after.rlim_max==before_cpu.rlim_max);
     require(!getrlimit(RLIMIT_AS,&after) && after.rlim_cur==before_as.rlim_cur && after.rlim_max==before_as.rlim_max);
-    puts("CAPT_KERNEL_LIMITS_HOST_PASSED (file/CPU/address-space denial; parent unchanged)");
+    /* A real ENOSPC write without filling the host or emulator filesystem. */
+    int full=open("/dev/full",O_WRONLY|O_CLOEXEC);require(full>=0);
+    errno=0;require(write(full,"x",1)==-1 && errno==ENOSPC);close(full);
+    puts("CAPT_KERNEL_LIMITS_HOST_PASSED (file/CPU/address-space denial, bounded committed ENOMEM, real /dev/full ENOSPC; parent unchanged)");
     return 0;
 }

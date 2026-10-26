@@ -30,7 +30,9 @@ internal object OfficeKernelLimits {
     }
     fun snapshot(): LongArray = requireNotNull(snapshotNative()).also { check(it.size == 7) }
     fun deniedMapping(bytes: Long): Boolean = probeDeniedMappingNative(bytes)
+    fun committedMemoryUntilDenied(): Long = probeCommittedMemoryNative()
     private external fun installNative(marker: String, fileBytes: Long, cpuSeconds: Long, addressGrowth: Long): Int
     private external fun snapshotNative(): LongArray?
     private external fun probeDeniedMappingNative(bytes: Long): Boolean
+    private external fun probeCommittedMemoryNative(): Long
 }

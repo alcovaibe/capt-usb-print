@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t capt_limit_event_fd = -1;
@@ -35,6 +36,25 @@ static inline uint64_t capt_vm_bytes(void) {
     long unit = sysconf(_SC_PAGESIZE);
     if (errno || end == buffer || *end != ' ' || unit <= 0 || pages > UINT64_MAX/(uint64_t)unit) return 0;
     return (uint64_t)pages * (uint64_t)unit;
+}
+/* Bounded stress probe: commit real anonymous pages until RLIMIT_AS returns ENOMEM.
+ * At most 64 MiB is touched, then every mapping is released. Not global RAM OOM. */
+static inline int64_t capt_probe_committed_memory(void) {
+    void *blocks[32];
+    size_t count=0, bytes=2U<<20;
+    int denied=0;
+    for (;count<32;++count) {
+        void *block=mmap(NULL,bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+        if(block==MAP_FAILED) { denied=errno==ENOMEM;break; }
+        blocks[count]=block;
+        long page=sysconf(_SC_PAGESIZE);
+        if(page<=0) { munmap(block,bytes);break; }
+        for(size_t offset=0;offset<bytes;offset+=(size_t)page)
+            ((volatile unsigned char *)block)[offset]=(unsigned char)(offset/((size_t)page)+count);
+    }
+    int64_t committed=(int64_t)count*(int64_t)bytes;
+    for(size_t i=0;i<count;++i)munmap(blocks[i],bytes);
+    return denied && committed>0?committed:-1;
 }
 static inline int capt_lower_limit(int resource, uint64_t soft, uint64_t hard) {
     struct rlimit previous, desired, actual;

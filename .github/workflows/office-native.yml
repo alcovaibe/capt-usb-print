@@ -23,6 +23,9 @@ on:
       - 'tools/run-office-worker-smoke.sh'
       - 'tools/run-office-uri-owner-death.sh'
       - 'app/src/debug/java/com/cryonum/captusbprint/OfficeUriSmoke.kt'
+      - 'app/src/debug/java/com/cryonum/captusbprint/OfficeResourceStressSmoke.kt'
+      - 'tools/check-office-work-budget.sh'
+      - 'tools/OfficeWorkBudgetCheck.java'
       - 'office-uri-fixture/**'
       - 'tools/check-office-fit-pdfs.py'
       - 'tools/measure-office-probe-apk.py'
@@ -221,6 +224,7 @@ jobs:
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
             adb install app/build/outputs/apk/debug/app-debug.apk
             bash tools/run-office-engine-smoke.sh
+            bash tools/run-office-worker-smoke.sh resources
             bash tools/run-office-worker-smoke.sh
             bash tools/run-office-worker-smoke.sh sandbox
             python3 tools/check-office-fit-pdfs.py office-layout-synthetic.tar office-worker-results.json
@@ -242,6 +246,7 @@ jobs:
             office-formula-policy.json
             office-worker-*.txt
             office-sandbox-*.txt
+            office-resources-*.txt
             office-worker-results.json
             office-native-ui-*.txt
             office-layout-synthetic.tar
