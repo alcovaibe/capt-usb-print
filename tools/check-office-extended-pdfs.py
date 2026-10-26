@@ -23,7 +23,7 @@ def main():
             assert rows[f'{kind}-{suffix}']['failure'] == 'FIT_WIDTH_UNSUPPORTED'
         assert rows[f'{kind}-next']['pages'] == 1
     expected = {f'{name}.pdf':r for name,r in rows.items() if r['failure'] is None}
-    texts, raw_texts, xmls, fonts = {}, {}, {}, {}
+    texts, raw_texts, raw_pages, xmls, fonts = {}, {}, {}, {}, {}
     with tarfile.open(args.archive,'r:') as archive, tempfile.TemporaryDirectory(prefix='capt-extended-') as directory:
         for member in archive.getmembers():
             if member.isdir():
@@ -38,9 +38,11 @@ def main():
             texts[path.name] = [' '.join(p.split()) for p in pages]
             # Layout mode interleaves neighbouring columns across a wrapped
             # merged-cell label. Content-stream order keeps the cell together.
-            raw_texts[path.name] = ' '.join(subprocess.run(
-                ['pdftotext','-raw',str(pdf),'-'],check=True,capture_output=True,
-                text=True,timeout=30).stdout.split())
+            raw = subprocess.run(['pdftotext','-raw',str(pdf),'-'],check=True,
+                                 capture_output=True,text=True,timeout=30).stdout.split('\f')
+            assert not raw.pop().strip() and len(raw) == len(pages)
+            raw_pages[path.name] = [' '.join(page.split()) for page in raw]
+            raw_texts[path.name] = ' '.join(raw_pages[path.name])
             xml = subprocess.run(['pdftohtml','-xml','-i','-stdout',str(pdf)],check=True,
                                  capture_output=True,text=True,timeout=30).stdout
             root = ET.fromstring(xml); xmls[path.name] = root
@@ -84,13 +86,15 @@ def main():
         observed[kind] = font_map
     for kind in ('xls','xlsx'):
         tall = texts[f'{kind}-tall.pdf']; subset = texts[f'{kind}-subset.pdf']
-        assert len(tall)>1 and 'КОНЕЦ ВЫСОТЫ' in tall[-1]
-        assert 'КОНЕЦ ВЫСОТЫ' in subset[-2] and 'КОНЕЦ ЧИСЕЛ' in subset[-1]
+        assert len(tall)>1 and 'КОНЕЦ ВЫСОТЫ' in raw_pages[f'{kind}-tall.pdf'][-1]
+        assert 'КОНЕЦ ВЫСОТЫ' in raw_pages[f'{kind}-subset.pdf'][-2]
+        assert 'КОНЕЦ ЧИСЕЛ' in raw_pages[f'{kind}-subset.pdf'][-1]
         assert len(subset) == len(tall)+1
         for suffix in ('numbers-fit','numbers-saved','next'):
             page = ' '.join(texts[f'{kind}-{suffix}.pdf'])
             for term in ('29.02.2024','12.5%','ОТРИЦАТЕЛЬНОЕ','ОБЪЕДИНЕНИЕ','ВТОРАЯ СТРОКА','КОНЕЦ ЧИСЕЛ'):
-                assert term in page.replace('12,5%','12.5%'), (kind,suffix,term)
+                semantic = raw_texts[f'{kind}-{suffix}.pdf'].replace('12,5%','12.5%')
+                assert term in semantic, (kind,suffix,term)
             assert re.search(r'60[.,]00',page) and re.search(r'42[.,]00',page) and '#DIV/0!' in page
             assert re.search(r'[-−]1[\s,\u00a0]*234[.,]50',page)
             assert re.search(r'1[.,]25E\+0?8',page)
