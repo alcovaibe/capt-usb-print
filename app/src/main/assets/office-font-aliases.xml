@@ -1,0 +1,7 @@
+<!-- Added to the worker's private fontconfig before initialization. System glyph fallback remains available. -->
+<alias binding="strong"><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>
+<alias binding="strong"><family>Times New Roman</family><prefer><family>Liberation Serif</family></prefer></alias>
+<alias binding="strong"><family>Courier New</family><prefer><family>Liberation Mono</family></prefer></alias>
+<alias binding="strong"><family>Calibri</family><prefer><family>Carlito</family></prefer></alias>
+<alias binding="strong"><family>Cambria</family><prefer><family>Caladea</family></prefer></alias>
+<alias binding="strong"><family>Arial Narrow</family><prefer><family>Liberation Sans Narrow</family></prefer></alias>

@@ -108,9 +108,17 @@ internal object PrintQueueRuntime {
         val pages = json.getJSONArray("pages")
         check(pages.length() in 1..JobSpecification.MAX_SOURCE_PAGES)
         val indices = (0 until pages.length()).map { pages.getInt(it) }
+        val orientations = json.optJSONObject("pageOrientations")?.let { values ->
+            check(values.length() <= JobSpecification.MAX_SOURCE_PAGES)
+            values.keys().asSequence().associate { key ->
+                val index = key.toInt()
+                check(index.toString() == key)
+                index to Orientation.valueOf(values.getString(key))
+            }
+        } ?: emptyMap()
         val plan = JobSpecification.restorePrepared(indices, json.getInt("copies"),
             Orientation.valueOf(json.getString("orientation")), json.getInt("rotation"),
-            DocumentLayout.valueOf(json.getString("layout")))
+            DocumentLayout.valueOf(json.getString("layout")), orientations)
         check(plan.outputPageOrder.size == record.sheets)
         val sizes = json.getJSONObject("compressedBytes")
         val prepared = indices.associateWith { StoredCaptPage.open(File(directory, "page-$it.bin"), sizes.getInt(it.toString())) }
@@ -122,6 +130,7 @@ internal object PrintQueueRuntime {
             "resumeAllowed" to resumeAllowed, "confirmed" to confirmed,
             "pages" to work.plan.pageIndices, "copies" to work.plan.copies,
             "orientation" to work.plan.orientation.name, "rotation" to work.plan.contentRotationDegrees,
+            "pageOrientations" to work.plan.pageOrientations.mapKeys { it.key.toString() }.mapValues { it.value.name },
             "layout" to work.plan.layout.name, "systemPrint" to work.systemMetadata,
             "compressedBytes" to work.prepared!!.mapKeys { it.key.toString() }.mapValues { it.value.compressedBytes }))
     }
@@ -153,16 +162,24 @@ internal object PrintQueueRuntime {
 
     /** Worker-thread only; caller retains its preview source and owns no queue files. */
     @Synchronized fun enqueue(context: Context, source: DocumentSession,
-        plan: JobSpecification, deviceKey: String): Long {
+        plan: JobSpecification, deviceKey: String): Long =
+        enqueueChecked(context, source, plan, deviceKey) {}
+
+    /** Optional Office resource/cancellation checkpoint. Other entry points keep their contracts. */
+    @Synchronized fun enqueueChecked(context: Context, source: DocumentSession,
+        plan: JobSpecification, deviceKey: String, checkpoint: () -> Unit): Long {
+        checkpoint()
         initialize(context)
         check(hasRoom()) { "Queue full" }
         require(plan.pageIndices.all { it in 0 until source.overview.pageCount })
+        source.validatePlan(plan)
         val id = ids.incrementAndGet()
         val directory = File(root(), id.toString()).apply { check(mkdir()) }
         allocations[id] = 0
         var copied: DocumentSession? = null
         try {
-            copied = source.copyForPrint(directory) { reserve(id, it) }
+            copied = source.copyForPrint(directory) { checkpoint(); reserve(id, it) }
+            checkpoint()
             queue.add(QueueRecord(id, source.overview.format.name, plan.outputPageOrder.size, ready = false))
             sources[id] = Work(copied, plan, deviceKey, directory)
             persist()
@@ -397,6 +414,7 @@ internal object PrintQueueRuntime {
                     "format" to record.format, "sourcePageNumbers" to work.plan.pageIndices.map { it + 1 },
                     "copies" to work.plan.copies, "requestedSheets" to work.plan.outputPageOrder.size,
                     "orientation" to work.plan.orientation.name, "rotation" to work.plan.contentRotationDegrees,
+                    "pageOrientations" to work.plan.pageOrientations.mapKeys { it.key.toString() }.mapValues { it.value.name },
                     "paper" to "A4", "printerVidPid" to "04A9:2676", "automaticRetry" to false,
                     "documentLayout" to work.plan.layout.name, "systemPrint" to work.systemMetadata,
                     "confirmedBeforeAttempt" to record.confirmed, "manualContinuation" to (record.confirmed > 0),
@@ -416,9 +434,9 @@ internal object PrintQueueRuntime {
                     for (page in work.plan.pageIndices) {
                         if (cancelled(id)) throw CancellationException()
                         prepared[page] = StoredCaptPage.write(File(work.directory, "page-$page.bin"),
-                            produce = { accept -> requireNotNull(work.source).forEachPrintBand(page, work.plan.orientation,
+                            produce = { accept -> requireNotNull(work.source).forEachPrintBand(page, work.plan.orientationForPage(page),
                                 work.plan.contentRotationDegrees, { cancelled(id) }, accept,
-                                preservePdfLayout = work.plan.layout == DocumentLayout.ANDROID_PDF) },
+                                preservePdfLayout = work.plan.layout != DocumentLayout.APP_FIT) },
                             encode = { pixels, stride, lines, last -> HiscoaNative.encodeBand(pixels, stride, lines, last) },
                             cancelled = { cancelled(id) }, reserve = { synchronized(this) { reserve(id, it) } })
                     }

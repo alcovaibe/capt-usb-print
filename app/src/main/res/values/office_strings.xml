@@ -1,0 +1,36 @@
+<resources>
+    <string name="office_error_source_access">Нет доступа к документу. Выберите файл заново и разрешите чтение.</string>
+    <string name="office_error_source_failed">Поставщик файла не смог передать документ. Сохраните локальную копию и выберите её заново.</string>
+    <string name="office_title">Документ Word / Excel</string>
+    <string name="office_licenses">Лицензии и исходники движка</string>
+    <string name="office_licenses_unavailable">Сведения о лицензиях отсутствуют в этой сборке или не удалось открыть выбранный файл.</string>
+    <string name="office_fonts">Шрифты Microsoft не входят в приложение. Для Arial, Times New Roman и Courier New заданы свободные замены Liberation, для Calibri — Carlito, для Cambria — Caladea. Другие гарнитуры и отсутствующие символы могут заменяться системными шрифтами Android. Это может изменить переносы и число страниц. Список фактических замен для каждого фрагмента документа здесь не определяется.</string>
+    <string name="office_internal_fixture">Внутренняя проверка: встроенный тестовый документ. Пользовательское открытие Office ещё выключено.</string>
+    <string name="office_all_sheets">Выбрать все листы</string>
+    <string name="office_loading_sheets">Чтение списка листов книги…</string>
+    <string name="office_fit_width">Вписать таблицу по ширине A4</string>
+    <string name="office_retry">Подготовить заново</string>
+    <string name="office_select_sheet">Выберите хотя бы один лист книги.</string>
+    <string name="office_ready">Готово страниц: %1$d</string>
+    <string name="office_original_layout">Поля и ориентация сохраняются в подготовленном PDF.</string>
+    <string name="office_page_geometry">A4 · %1$s · раскладка предпросмотра и печати совпадает</string>
+    <string name="office_compatibility">LibreOffice может заменить отсутствующие шрифты и иначе обработать поля. Внешние файлы и изображения не загружаются, обновление связей и выполнение макросов запрещены. Результаты формул могут быть пересчитаны иначе или остаться сохранёнными и устаревшими. Абсолютное совпадение с Microsoft Office не проверено. Сверьте предпросмотр и значения с ожидаемым результатом. Для чрезвычайно широких таблиц режим вписывания имеет ограничения.</string>
+    <string name="office_reviewed">Я проверил предпросмотр и учитываю ограничения</string>
+    <string name="office_print_confirm">В общую очередь будет добавлено %1$d листов, копий: %2$d. Используется показанный готовый PDF A4. Начать печать?</string>
+    <string name="office_error_password">Документ зашифрован. Ввод пароля пока не поддерживается.</string>
+    <string name="office_error_corrupt">Повреждённый документ или некорректная структура Office.</string>
+    <string name="office_error_unsupported">Этот вариант Office пока не поддерживается. Возможны макросы, вложенные объекты или внешние связи.</string>
+    <string name="office_error_limit">Документ превышает допустимый размер, сложность или бюджет ресурсов.</string>
+    <string name="office_error_memory">Недостаточно доступной памяти для подготовки документа. Закройте другие приложения или выберите меньше листов и повторите. Документ не отправлен на принтер.</string>
+    <string name="office_error_time">Подготовка заняла слишком много времени и остановлена.</string>
+    <string name="office_error_layout">Движок не поддерживает требуемую раскладку этого документа на A4.</string>
+    <string name="office_error_fit_width">Таблица слишком широка или её области печати и разрывы не позволяют вписать её по ширине A4. Выключите вписывание и проверьте разбивку страниц либо измените раскладку исходного файла. Документ не отправлен на принтер.</string>
+    <string name="office_error_engine">Локальный движок Office недоступен в этой сборке.</string>
+    <string name="office_error_busy">Другая подготовка Office ещё завершается. Повторите подготовку.</string>
+    <string name="office_error_crash">Процесс Office завершился во время подготовки. Документ не отправлен на принтер.</string>
+    <string name="office_error_pdf">Движок не подготовил корректный многостраничный PDF A4. Документ не отправлен на принтер.</string>
+    <string name="office_error_cleanup">Не удалось надёжно проверить ресурсы, очистку или завершение процесса. Печать не запущена. Перезапустите приложение и попробуйте снова.</string>
+    <string name="office_error_failed">Не удалось подготовить документ Office. Документ не отправлен на принтер.</string>
+    <string name="office_error_sandbox">Не удалось включить изоляцию процесса Office. Документ не открыт и не отправлен на принтер.</string>
+    <string name="office_error_external">Документ попытался обратиться к недоступному внешнему файлу. Подготовка остановлена, печать не запущена.</string>
+</resources>

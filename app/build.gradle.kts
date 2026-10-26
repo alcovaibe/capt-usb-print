@@ -3,10 +3,12 @@ plugins {
 }
 
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
+// Explicit CI-only engine probe; ordinary debug/release APKs do not gain Office dependencies.
+val officeEngineDir = providers.gradleProperty("officeEngineDir").orNull?.let { file(it) }
 
 android {
     namespace = "com.cryonum.captusbprint"
-    compileSdk = 37
+    compileSdk = 36
     ndkVersion = "27.2.12479018"
     externalNativeBuild {
         cmake {
@@ -68,6 +70,24 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig = true }
+    // Compile the synthetic JNI probe in regular debug checks; never initialize it there.
+    sourceSets.getByName("debug") {
+        // AGP 9 built-in Kotlin ignores extra Kotlin roots registered as Java.
+        kotlin.directories += "src/officeProbe/java"
+        java.srcDir("src/officeProbe/java")
+        java.srcDir("src/officeProbe/upstream")
+    }
+    if (officeEngineDir != null) {
+        require(file("${officeEngineDir}/jniLibs/x86_64/liblo-native-code.so").isFile) {
+            "Pinned x86_64 Office probe package missing"
+        }
+        sourceSets.getByName("debug") {
+            assets.srcDir("${officeEngineDir}/assets")
+            assets.srcDir("${officeEngineDir}/assets_strippedUI")
+            jniLibs.srcDir("${officeEngineDir}/jniLibs")
+            manifest.srcFile("src/officeProbe/AndroidManifest.xml")
+        }
+    }
 }
 
 dependencies {

@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission android:name="com.cryonum.captusbprint.urifixture.READ" android:protectionLevel="signature" />
+    <application android:allowBackup="false" android:label="Synthetic Office URI fixture">
+        <provider android:name=".FixtureProvider" android:authorities="com.cryonum.captusbprint.urifixture"
+            android:exported="true" android:grantUriPermissions="true"
+            android:readPermission="com.cryonum.captusbprint.urifixture.READ" />
+    </application>
+</manifest>
