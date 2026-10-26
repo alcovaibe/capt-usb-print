@@ -65,7 +65,7 @@ internal class OfficePreviewPreparation(
                         java.nio.file.Files.move(imported.file.toPath(), input.toPath())
                     }
                 } else {
-                    // Fixed bundled assets only. External providers must use sourceUri above.
+                    // App-owned snapshots or bundled fixtures. Providers use sourceUri above.
                     val copy = PrivateDocumentImport.copy(sourceDirectory, { source() },
                         { cancelled() }, { sourceDirectory.usableSpace })
                     check(copy.renameTo(input))

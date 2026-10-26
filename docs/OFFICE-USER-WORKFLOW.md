@@ -1,5 +1,7 @@
 # Office в обычном приложении
 
+[Построчная сверка исходного ТЗ](OFFICE-TZ-AUDIT.md).
+
 Продолжение от main `a616647` после слияния PR №33. DOCX, DOC, XLS и XLSX
 проходят через полноценный локальный LibreOffice 26.2.6.3, а не извлечение текста
 или значений ячеек. Обоснование движка и альтернатив —
@@ -50,7 +52,10 @@ Java/JNI-адаптер и backend перенесены в main. И debug, и re
 3. Установить указанный в lock NDK и выполнить
    `python3 tools/assemble-office-engine.py office-packages office-engine`.
    Сценарий сверяет inventory/шрифты/лицензии, запрещает различия общих ресурсов
-   и сохраняет точные уведомления каждой ABI.
+   и сохраняет точные уведомления каждой ABI. Разрешены только подтверждённые
+   эквивалентности: одинаковое содержимое ZIP иконок при разных метаданных ZIP
+   и единственный пустой узел Common в main.xcd ARM32. Другие расхождения
+   останавливают сборку; исходные/эквивалентные SHA всех ABI записываются в assembled.json.
 4. `bash ./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :app:assembleRelease :app:lintRelease`.
    Нестандартный путь: `-PofficeEngineDir=/absolute/path`. Для отдельной CI-пробы
    допускается явный `-PofficeAbis=x86_64`; обычная сборка требует все три ABI.

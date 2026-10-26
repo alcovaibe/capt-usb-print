@@ -123,6 +123,13 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
                 ui { intake!!.finish() }; intake = null
                 await { folders("office-work") == workers }
             }
+            stage = "expired-private-source-after-restart"
+            val beforeExpired = PrintQueueRuntime.snapshot()
+            office = startActivitySync(Intent(targetContext,OfficeDocumentActivity::class.java)
+                .putExtra("office-source",java.util.UUID.randomUUID().toString())
+                .putExtra("office-kind","DOCX").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as OfficeDocumentActivity
+            check(PrintQueueRuntime.snapshot() == beforeExpired && folders("office-ui") == sources)
+            ui { office!!.finish() }; office = null
             stage = "cancel-blocked-intake"
             val uri = Uri.withAppendedPath(authority,"read-block"); uris.add(uri); control("grant",uri)
             val opens = control("state").getInt("opens")

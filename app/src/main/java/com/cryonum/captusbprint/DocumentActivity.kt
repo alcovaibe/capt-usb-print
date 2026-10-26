@@ -162,11 +162,11 @@ class DocumentActivity : Activity() {
         setContentView(root)
         ViewCompat.requestApplyInsets(root)
         val restored = savedInstanceState?.getString("uri")?.let { Uri.parse(it) }
-        val shared = if (intent?.action == Intent.ACTION_SEND) {
+        val shared = if (savedInstanceState == null && intent?.action == Intent.ACTION_SEND) {
             if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
             else { @Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) }
         } else null
-        (restored ?: shared ?: intent?.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri)?.let { inspect(it) }
+        (restored ?: shared ?: intent?.clipData?.takeIf { savedInstanceState == null && it.itemCount > 0 }?.getItemAt(0)?.uri)?.let { inspect(it) }
     }
     override fun onStart() { super.onStart(); visible = true }
     override fun onStop() {

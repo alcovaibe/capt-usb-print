@@ -48,6 +48,7 @@ jobs:
         run: |
           python3 -m py_compile tools/prepare-signing.py tools/signed-release.py tools/update-feed.py
           python3 -m unittest discover -s tools -p test_update_feed.py
+          python3 -m unittest discover -s tools -p test_office_packaging.py
           python3 tools/check-update-ui-runner.py
           bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
           # Reproduce duplicate partition-size entries from a device profile.
