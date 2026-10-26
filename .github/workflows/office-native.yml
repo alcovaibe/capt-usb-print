@@ -10,6 +10,7 @@ on:
       - 'app/src/main/java/com/cryonum/captusbprint/DocumentActivity.kt'
       - 'app/src/main/java/com/cryonum/captusbprint/DocumentIntake.kt'
       - '.github/workflows/office-packages.yml'
+      - '.github/workflows/office-sources.yml'
       - 'tools/assemble-office-engine.py'
       - 'app/src/main/java/com/cryonum/captusbprint/office/**'
       # These owners/geometry paths also change Office preview and held queue copies.
@@ -47,6 +48,9 @@ permissions:
 jobs:
   engine:
     uses: ./.github/workflows/office-packages.yml
+  sources:
+    needs: engine
+    uses: ./.github/workflows/office-sources.yml
   conversion-probe:
     name: LibreOffice synthetic conversion API ${{ matrix.api }}
     needs: engine

@@ -32,3 +32,6 @@ ANDROID_SIGNING.secret.json
 
 __pycache__/
 *.pyc
+
+/upgrade-baseline/
+/upgrade-check-input/

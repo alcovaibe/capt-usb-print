@@ -110,6 +110,19 @@ class OfficeUserWorkflowSmoke : Instrumentation() {
                 PrintQueueRuntime.cancel(requireNotNull(held)); held = null
                 check(targetContext.contentResolver.persistedUriPermissions.map { it.uri to it.isReadPermission } == grants)
             }
+            for ((extension,format) in listOf("pdf" to com.cryonum.captusbprint.document.DocumentFormat.PDF,
+                "png" to com.cryonum.captusbprint.document.DocumentFormat.PNG,
+                "jpg" to com.cryonum.captusbprint.document.DocumentFormat.JPEG)) {
+                stage = "ordinary-$extension-through-same-intake"
+                val uri = Uri.withAppendedPath(authority,"standard.$extension"); uris.add(uri); control("grant",uri)
+                intake = startActivitySync(Intent(targetContext,DocumentActivity::class.java)
+                    .setAction(Intent.ACTION_SEND).setType("application/msword").putExtra(Intent.EXTRA_STREAM,uri)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                await { ui { (intake as DocumentActivity).intakeSnapshot().ready } }
+                check(ui { (intake as DocumentActivity).intakeSnapshot().format } == format)
+                ui { intake!!.finish() }; intake = null
+                await { folders("office-work") == workers }
+            }
             stage = "cancel-blocked-intake"
             val uri = Uri.withAppendedPath(authority,"read-block"); uris.add(uri); control("grant",uri)
             val opens = control("state").getInt("opens")

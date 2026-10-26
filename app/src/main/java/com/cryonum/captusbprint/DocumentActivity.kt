@@ -195,6 +195,7 @@ class DocumentActivity : Activity() {
             old?.close()
             var officeSource: File? = null
             var officeKind: OfficeKind? = null
+            var candidateSession: DocumentSession? = null
             val result = runCatching {
                 OfficeWorkerClient.importSource(applicationContext, uri,
                     cancelled = { request != generation }, allowStandard = true).use { imported ->
@@ -210,11 +211,12 @@ class DocumentActivity : Activity() {
                         val directory = File(cacheDir, "stage-c-inspection").apply { check(isDirectory || mkdirs()) }
                         val target = File(directory, "${UUID.randomUUID()}.bin")
                         java.nio.file.Files.move(imported.file.toPath(), target.toPath())
-                        DocumentInspector.openCopiedSession(applicationContext, target) { request != generation }
+                        DocumentInspector.openCopiedSession(applicationContext, target) { request != generation }.also { candidateSession = it }
                     }
                 }
             }
             if (result.isFailure) {
+                candidateSession?.close()
                 officeSource?.let { OfficePrivateFiles.deleteTree(it) }; officeSource = null
             }
             runOnUiThread {
@@ -261,6 +263,9 @@ class DocumentActivity : Activity() {
             }
         }
     }
+    internal data class IntakeSnapshot(val format: DocumentFormat?, val ready: Boolean, val importing: Boolean)
+    internal fun intakeSnapshot() = IntakeSnapshot(session?.overview?.format, previewReady, importing)
+
     private fun selectedOrientation(): Orientation {
         val source = session ?: return Orientation.PORTRAIT
         return when (findViewById<RadioButton>(orientation.checkedRadioButtonId)?.tag as? Int ?: 0) {

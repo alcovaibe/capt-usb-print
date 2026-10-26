@@ -14,6 +14,9 @@ permissions:
 jobs:
   engine:
     uses: ./.github/workflows/office-packages.yml
+  sources:
+    needs: engine
+    uses: ./.github/workflows/office-sources.yml
   android:
     needs: engine
     permissions:
@@ -93,6 +96,22 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :app:assembleRelease :app:lintRelease :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
+      - name: Build the base-main debug APK for an actual in-place version upgrade
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --depth=1 origin "$BASE_SHA"
+          git worktree add --detach upgrade-baseline "$BASE_SHA"
+          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon -PofficeEngineDir="$PWD/office-engine" :app:assembleDebug
+          mkdir -p upgrade-check-input
+          cp upgrade-baseline/app/build/outputs/apk/debug/app-debug.apk upgrade-check-input/base-main-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request' && success()
+        with:
+          name: office-upgrade-base-debug
+          path: upgrade-check-input/base-main-debug.apk
+          retention-days: 7
       - name: Verify permissions and APK
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
@@ -157,6 +176,10 @@ jobs:
         with:
           name: synthetic-office-uri-provider
           path: uri-fixture-apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: office-upgrade-base-debug
+          path: upgrade-base
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
@@ -181,7 +204,7 @@ jobs:
           script: |
             adb shell getprop sys.boot_completed | tr -d '\r' | grep -x '1'
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
-            adb install pr-apk/app-debug.apk
+            bash tools/check-office-upgrade.sh upgrade-base/base-main-debug.apk pr-apk/app-debug.apk office-upgrade-evidence.txt
             adb install uri-fixture-apk/office-uri-fixture-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
             bash tools/run-update-ui-smoke.sh
@@ -243,7 +266,7 @@ jobs:
 
   signed-release:
     name: Permanent-key signed APK and in-place upgrade
-    needs: [android, signing-availability, engine]
+    needs: [android, signing-availability, sources]
     if: needs.signing-availability.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
