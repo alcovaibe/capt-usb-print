@@ -43,6 +43,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   engine:
     uses: ./.github/workflows/office-packages.yml
