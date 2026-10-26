@@ -235,6 +235,10 @@ class DocumentActivity : Activity() {
                             startActivity(Intent(this, OfficeDocumentActivity::class.java)
                                 .putExtra("office-source", directory.name.removePrefix("intake-"))
                                 .putExtra("office-kind", requireNotNull(officeKind).name))
+                        }.onSuccess {
+                            // The Office screen owns the private snapshot; the provider-facing
+                            // intake screen no longer needs to remain in the activity stack.
+                            finish()
                         }.onFailure {
                             worker.execute { OfficePrivateFiles.deleteTree(directory) }
                             message.setText(R.string.document_open_failed)
