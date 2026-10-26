@@ -166,7 +166,7 @@ Java_org_libreoffice_kit_Document_configureCalcFitWidth(JNIEnv* env, jobject obj
                 {
                     if (property.Name == u"SourceRange"_ustr)
                         hasRange = (property.Value >>= range);
-                    else if (property.Name == u"CalcPageSize"_ustr)
+                    else if (property.Name == u"CalcPageContentSize"_ustr)
                         hasSize = (property.Value >>= size);
                 }
                 // Without source geometry we cannot prove width, including a

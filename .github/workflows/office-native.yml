@@ -36,12 +36,23 @@ on:
 permissions:
   contents: read
 jobs:
+  native-inputs:
+    runs-on: ubuntu-24.04
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: key
+        run: echo "key=${{ hashFiles('config/office/**', 'tools/office/**') }}" >> "$GITHUB_OUTPUT"
   native:
     name: LibreOffice source ${{ matrix.abi }}
     runs-on: ubuntu-24.04
+    needs: native-inputs
     timeout-minutes: 180
     concurrency:
-      group: office-native-${{ github.event.pull_request.number || github.ref }}-${{ matrix.abi }}
+      group: office-native-${{ github.event.pull_request.number || github.ref }}-${{ matrix.abi }}-${{ needs.native-inputs.outputs.key }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
