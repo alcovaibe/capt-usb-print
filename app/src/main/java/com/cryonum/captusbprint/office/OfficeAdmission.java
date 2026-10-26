@@ -211,7 +211,11 @@ public final class OfficeAdmission {
             Part p = new Part(); p.flags=u16(h,8); p.method=u16(h,10); p.crc=u32(h,16);
             p.compressed=u32(h,20); p.size=u32(h,24); p.offset=u32(h,42);
             if ((p.flags & 1)!=0) fail(Reason.PASSWORD);
-            if ((p.flags & ~0x808)!=0 || (p.method!=0 && p.method!=8) || u16(h,34)!=0) fail(Reason.UNSUPPORTED);
+            // ZIP APPNOTE 4.4.4: bits 1/2 describe the Deflate compression level,
+            // including ordinary Microsoft Office packages. They do not change
+            // the inflater format. Keep every other flag/method restriction.
+            int allowedFlags = p.method == 8 ? 0x80e : 0x808;
+            if ((p.flags & ~allowedFlags)!=0 || (p.method!=0 && p.method!=8) || u16(h,34)!=0) fail(Reason.UNSUPPORTED);
             if (((u32(h,38) >>> 16) & 0xf000)==0xa000) fail(Reason.UNSUPPORTED);
             int nameLength=u16(h,28), extra=u16(h,30), comment=u16(h,32);
             require(nameLength>0 && nameLength<=512);

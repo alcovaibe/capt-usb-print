@@ -1,0 +1,30 @@
+{
+  "upstream": "https://github.com/LibreOffice/core",
+  "commit": "8221e31b3ac356a1623c672912a3d2b492f7e3d1",
+  "files": [
+    {
+      "file": "upstream-table.docx",
+      "path": "sw/qa/extras/ooxmlexport/data/1-table-1-page.docx",
+      "gitBlob": "d821c6698f390f103cac8e404f99bfbe8d935359",
+      "sha256": "e0331f24a1f2cc988ab41cb8956f1d90f5740f0680c9fb6d28894b9abd23cc2d"
+    },
+    {
+      "file": "upstream-borders.doc",
+      "path": "sw/qa/extras/ww8export/data/bordercolours.doc",
+      "gitBlob": "c442223ead3be50b791f26542051a7b4bdc558af",
+      "sha256": "9defc97a54a97ed6bc0484c114f71434a57afeef9375e3ba46f5bcf6f6e24686"
+    },
+    {
+      "file": "upstream-borders.xls",
+      "path": "sc/qa/unit/data/xls/cell-borders.xls",
+      "gitBlob": "5bdf57fc0108877befe2e32e9125f0629e896d56",
+      "sha256": "4722bfa239b04667d88a30a99ccb4eb09223dfa52373ccd3cfadcb4c26c34ceb"
+    },
+    {
+      "file": "upstream-borders.xlsx",
+      "path": "sc/qa/unit/data/xlsx/cell-borders.xlsx",
+      "gitBlob": "ed9c2e27ca15bc92c7a7bb8b0e5344fd18a7fc91",
+      "sha256": "edd882ecf3faaea2950c95d347a22b907918e6e2f883891cdfac8945778c4df7"
+    }
+  ]
+}

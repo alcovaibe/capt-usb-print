@@ -1,0 +1,17 @@
+Четыре файла upstream-* — неизменённые публичные регрессионные документы LibreOffice.
+The Document Foundation / LibreOffice contributors. Source code licensing: MPL 2.0;
+original copyright notices and additional source-tree terms remain applicable.
+Полный текст MPL 2.0: UPSTREAM-MPL-2.0.txt. Источники и точные blob/SHA-256:
+config/office-upstream-fixtures.json в репозитории CAPT USB Print.
+
+Закреплённый core: 8221e31b3ac356a1623c672912a3d2b492f7e3d1
+https://github.com/LibreOffice/core/tree/8221e31b3ac356a1623c672912a3d2b492f7e3d1
+
+upstream-table.docx: sw/qa/extras/ooxmlexport/data/1-table-1-page.docx
+upstream-borders.doc: sw/qa/extras/ww8export/data/bordercolours.doc
+upstream-borders.xls: sc/qa/unit/data/xls/cell-borders.xls
+upstream-borders.xlsx: sc/qa/unit/data/xlsx/cell-borders.xlsx
+
+Это файлы независимого тестового корпуса, не документы владельца CAPT.
+Они включаются только в debug/probe. Их успешное открытие не является
+сравнением с Microsoft Office или аппаратной приёмкой печати.

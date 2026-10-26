@@ -36,13 +36,25 @@ public final class OfficeAdmissionChecks {
     private void check(File fixtures) throws Exception {
         for (String name : new String[]{"word.docx","word.doc","workbook.xls","workbook.xlsx",
                 "word-flow.docx","word-flow.doc","word-fonts.docx","word-fonts.doc",
-                "workbook-edge.xlsx","workbook-edge.xls"}) {
+                "workbook-edge.xlsx","workbook-edge.xls","upstream-table.docx",
+                "upstream-borders.doc","upstream-borders.xls","upstream-borders.xlsx"}) {
             OfficeAdmission.Kind expected=OfficeAdmission.Kind.valueOf(name.substring(name.lastIndexOf('.')+1).toUpperCase(Locale.ROOT));
             same(OfficeAdmission.inspect(new File(fixtures,name),()->false)==expected);
             // The extension and the MIME do not participate in detection.
             accept(Files.readAllBytes(new File(fixtures,name).toPath()),expected);
         }
         byte[] zip=zip(packageParts());
+        for (int compressionOption : new int[]{0,2,4,6}) {
+            byte[] option=zip.clone();
+            int c=index(option,new byte[]{0x50,0x4b,1,2});
+            put16(option,6,u16(option,6)|compressionOption);
+            put16(option,c+8,u16(option,c+8)|compressionOption);
+            accept(option,OfficeAdmission.Kind.DOCX);
+        }
+        byte[] wrongMethod=zip.clone();
+        int c=index(wrongMethod,new byte[]{0x50,0x4b,1,2});
+        put16(wrongMethod,c+10,0); put16(wrongMethod,c+8,u16(wrongMethod,c+8)|6);
+        reject(wrongMethod,OfficeAdmission.Reason.UNSUPPORTED);
         accept(zip,OfficeAdmission.Kind.DOCX);
         reject(zip,OfficeAdmission.Reason.CANCELLED,OfficeAdmission.DEFAULT,()->true);
         AtomicInteger polls=new AtomicInteger();

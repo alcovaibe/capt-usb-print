@@ -17,7 +17,7 @@ def main():
     report = json.loads(args.report.read_text())
     assert report['syntheticOnly'] is True and report['hardwarePrintTest'] is False
     rows = {r['case']:r for r in report['attempts']}
-    assert len(rows) == 26
+    assert len(rows) == 30
     for kind in ('xls','xlsx'):
         for suffix in ('minimum','single-column','areas','all-rejected'):
             assert rows[f'{kind}-{suffix}']['failure'] == 'FIT_WIDTH_UNSUPPORTED'
@@ -86,13 +86,19 @@ def main():
             for term in ('29.02.2024','12.5%','ОТРИЦАТЕЛЬНОЕ','ОБЪЕДИНЕНИЕ','ВТОРАЯ СТРОКА','КОНЕЦ ЧИСЕЛ'):
                 assert term in page.replace('12,5%','12.5%'), (kind,suffix,term)
             assert re.search(r'60[.,]00',page) and re.search(r'42[.,]00',page) and '#DIV/0!' in page
+            assert re.search(r'[-−]1[\s,\u00a0]*234[.,]50',page)
+            assert re.search(r'1[.,]25E\+0?8',page)
+            assert re.search(r'1[.,]24\b',page)
         assert len(texts[f'{kind}-manual-saved.pdf']) >= 2
         fitted = texts.get(f'{kind}-manual-fit.pdf')
         if fitted is not None: assert len(fitted) == 1 and 'ПРАВЫЙ КРАЙ' in fitted[0]
     Path('office-font-fallback-observed.json').write_text(json.dumps({
         'syntheticOnly':True,'actualPdfLatinLabelFonts':observed,
         'allGlyphRunsVerified':False,'microsoftOfficeComparison':False},ensure_ascii=False,indent=2)+'\n')
-    print(f'CAPT_OFFICE_EXTENDED_PDF_PASSED pdfs={len(texts)} attempts=26 (synthetic, no USB)')
+    for kind in ('docx','doc','xls','xlsx'):
+        name=f'upstream-{kind}.pdf'
+        assert name in texts and len(texts[name])>=1 and any(page.strip() for page in texts[name])
+    print(f'CAPT_OFFICE_EXTENDED_PDF_PASSED pdfs={len(texts)} attempts=30 (generated and upstream corpus, no USB)')
 
 
 if __name__ == '__main__': main()

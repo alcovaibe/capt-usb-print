@@ -40,7 +40,10 @@ def main():
             target=downloads/name
             # Exact content digests from the real build, never mutable package-manager versions.
             last=None
-            for base in ('https://dev-www.libreoffice.org/src/','https://dev-www.libreoffice.org/src/'+entry['sha256']+'/'):
+            bases = ('https://dev-www.libreoffice.org/extern/',) if name.endswith('-opens___.ttf') else (
+                'https://dev-www.libreoffice.org/src/',
+                'https://dev-www.libreoffice.org/src/'+entry['sha256']+'/')
+            for base in bases:
                 try:
                     with urllib.request.urlopen(base+name,timeout=60) as src,target.open('wb') as dst:
                         total=0
@@ -50,14 +53,22 @@ def main():
                     last=None;break
                 except Exception as error: last=error;target.unlink(missing_ok=True)
             if last is not None: raise RuntimeError('Exact source input unavailable: '+name) from last
-        for repo,name in ((args.core,'libreoffice-core.tar'),(root,'capt-integration.tar'),(args.narrow,'liberation-narrow-source.tar')):
-            subprocess.run(['git','-C',str(repo),'archive','--format=tar','-o',str(directory/name),'HEAD'],check=True)
+        # Bare local snapshots preserve shallow boundary/commit IDs, unlike git archive:
+        # build-libreoffice.sh deliberately authenticates the original core commit.
+        for repo,name in ((args.core,'libreoffice-core.git'),(root,'capt-integration.git'),(args.narrow,'liberation-narrow-source.git')):
+            bare = directory/name
+            subprocess.run(['git','clone','--bare','--no-hardlinks',str(repo.resolve()),str(bare)],check=True)
+            subprocess.run(['git','--git-dir',str(bare),'config','--remove-section','remote.origin'],check=True)
+            revision=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
+            subprocess.run(['git','--git-dir',str(bare),'update-ref','refs/heads/source',revision],check=True)
+            subprocess.run(['git','--git-dir',str(bare),'symbolic-ref','HEAD','refs/heads/source'],check=True)
         narrow_commit=subprocess.check_output(['git','-C',str(args.narrow),'rev-parse','HEAD'],text=True).strip()
         (directory/'build-manifests.json').write_text(json.dumps({'abis':manifests,
             'narrowEditableSourceCommit':narrow_commit,'coreCommit':lock['commit']},indent=2)+'\n')
         (directory/'REBUILD.txt').write_text(
             'CAPT Office corresponding-source evidence\n\n'
-            'Extract libreoffice-core.tar and capt-integration.tar into sibling directories. '
+            'Clone the bundled snapshots into sibling directories: git clone libreoffice-core.git core; '
+            'git clone capt-integration.git capt; git clone liberation-narrow-source.git narrow. '
             'The exact external/tarballs inputs are in external-tarballs; copy them into the core checkout. '
             'Install the SDK/NDK/tool versions in config/office/libreoffice.json and .github/workflows/office-native.yml. '
             'Run tools/office/build-libreoffice.sh CORE ABI for each ABI. It applies the CAPT policy/Calc patches. '

@@ -10,7 +10,8 @@ from zipfile import ZipFile
 ROOT = Path(__file__).resolve().parents[1] / 'app/src/debug/assets/office-fixtures'
 FILES = ('word.docx', 'word.doc', 'workbook.xls', 'workbook.xlsx',
          'word-flow.docx', 'word-flow.doc', 'word-fonts.docx', 'word-fonts.doc',
-         'workbook-edge.xlsx', 'workbook-edge.xls')
+         'workbook-edge.xlsx', 'workbook-edge.xls', 'upstream-table.docx',
+         'upstream-borders.doc', 'upstream-borders.xls', 'upstream-borders.xlsx')
 S = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 W = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 

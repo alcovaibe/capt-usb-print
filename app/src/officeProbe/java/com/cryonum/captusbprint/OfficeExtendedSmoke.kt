@@ -109,10 +109,14 @@ class OfficeExtendedSmoke : Instrumentation() {
                 // Mandatory successful next conversion after the rejected all-sheet layout.
                 check(run(4,true,"next") == 1)
             }
-            check(rows.length() == 26)
+            check(attempt("upstream-table.docx",OfficeKind.DOCX,null,false,"upstream-docx") >= 1)
+            check(attempt("upstream-borders.doc",OfficeKind.DOC,null,false,"upstream-doc") >= 1)
+            check(attempt("upstream-borders.xls",OfficeKind.XLS,listOf(0),true,"upstream-xls") >= 1)
+            check(attempt("upstream-borders.xlsx",OfficeKind.XLSX,listOf(0),true,"upstream-xlsx") >= 1)
+            check(rows.length() == 30)
             report.writeText(JSONObject().put("syntheticOnly",true).put("hardwarePrintTest",false)
                 .put("attempts",rows).toString())
-            result.putString("stream","CAPT_OFFICE_EXTENDED_PASSED (26 attempts; real engine, fit refusals, prepared/held/spool, no USB)")
+            result.putString("stream","CAPT_OFFICE_EXTENDED_PASSED (30 attempts; generated and pinned upstream corpus, real engine, no USB)")
             outcome = Activity.RESULT_OK
         } catch (error: Throwable) {
             result.putString("stream","CAPT_OFFICE_EXTENDED_FAILED:$stage:${(error as? OfficeConversionFailure)?.reason?.name ?: error.javaClass.simpleName}")
