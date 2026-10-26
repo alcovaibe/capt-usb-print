@@ -3,6 +3,10 @@
 set -euo pipefail
 package=com.cryonum.captusbprint.debug
 case "${1:-conversion}" in
+  uri)
+    entry=OfficeUriSmoke
+    marker=CAPT_OFFICE_URI_LIFECYCLE_PASSED
+    prefix=office-uri ;;
   sandbox)
     entry=OfficeSandboxSmoke
     marker=CAPT_OFFICE_SANDBOX_ANDROID_PASSED
@@ -36,6 +40,7 @@ finish_probe() {
     if grep -F 'CAPT_OFFICE_PRIVATE_LOG_SENTINEL_933D' "$prefix-logcat.txt"; then outcome=1; fi
     if grep -F 'CAPT_PRIVATE_DOCUMENT_SENTINEL_63B1' "$prefix-logcat.txt"; then outcome=1; fi
   fi
+  if [[ "$entry" == OfficeUriSmoke ]] && grep -F 'CAPT_URI_PRIVATE_DETAIL_57C3' "$prefix-logcat.txt"; then outcome=1; fi
   timeout 15 adb logcat -b crash -d -v threadtime > "$prefix-crash.txt" 2>&1 || true
   if [[ "$entry" == OfficeWorkerSmoke ]]; then
     timeout 15 adb exec-out run-as "$package" cat files/office-worker-results.json > office-worker-results.json 2>/dev/null || true

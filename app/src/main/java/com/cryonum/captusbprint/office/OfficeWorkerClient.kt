@@ -3,6 +3,7 @@ package com.cryonum.captusbprint.office
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Binder
@@ -36,6 +37,22 @@ internal object OfficeWorkerClient {
     val DEFAULT_BUDGET = OfficeWorkBudget(120_000, 768L * 1024 * 1024,
         192L * 1024 * 1024, 8L * 1024 * 1024, 8192)
     private val slot = Semaphore(1)
+    val IMPORT_BUDGET = OfficeWorkBudget(30_000, 256L * 1024 * 1024,
+        PrivateDocumentImport.MAX_BYTES + 4096, PrivateDocumentImport.HEADROOM_BYTES, 8)
+
+    /** Immediate private snapshot under the caller's current read grant. No persisted grant,
+     * metadata query or provider work on main. Caller owns/ closes the returned directory. */
+    fun importSource(context: Context, uri: Uri, cancelled: () -> Boolean = { false },
+                     budget: OfficeWorkBudget = IMPORT_BUDGET,
+                     onWorkerStarted: (Int) -> Unit = {}): OfficeWorkerOutput {
+        check(Looper.myLooper() != Looper.getMainLooper())
+        if (uri.scheme != "content" || uri.authority.isNullOrEmpty() || uri.toString().length > 8192)
+            throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+        if (!slot.tryAcquire()) throw OfficeConversionFailure(OfficeFailure.BUSY)
+        try { return Attempt(context.applicationContext, null, null, cancelled, budget,
+            onWorkerStarted, OfficeImportService::class.java, uri).execute() }
+        finally { slot.release() }
+    }
 
     fun prepare(context: Context, privateSource: File, options: OfficeOptions,
                 cancelled: () -> Boolean = { false }, budget: OfficeWorkBudget = DEFAULT_BUDGET,
@@ -65,7 +82,7 @@ internal object OfficeWorkerClient {
     fun convert(context: Context, privateSource: File, options: OfficeOptions,
                 cancelled: () -> Boolean = { false }, budget: OfficeWorkBudget = DEFAULT_BUDGET,
                 onWorkerStarted: (Int) -> Unit = {},
-                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficeConvertedPdf {
+                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficeWorkerOutput {
         check(Looper.myLooper() != Looper.getMainLooper())
         if (!slot.tryAcquire()) throw OfficeConversionFailure(OfficeFailure.BUSY)
         try { return Attempt(context.applicationContext, privateSource, options, cancelled, budget,
@@ -73,9 +90,10 @@ internal object OfficeWorkerClient {
         finally { slot.release() }
     }
 
-    private class Attempt(val context: Context, val source: File, val options: OfficeOptions,
+    private class Attempt(val context: Context, val source: File?, val options: OfficeOptions?,
                           val cancelled: () -> Boolean, val budget: OfficeWorkBudget,
-                          val onWorkerStarted: (Int) -> Unit, val serviceClass: Class<out OfficeWorkerService>) {
+                          val onWorkerStarted: (Int) -> Unit, val serviceClass: Class<out OfficeWorkerService>,
+                          val uri: Uri? = null) {
         val id = UUID.randomUUID().toString()
         val directory = OfficeWorkerProtocol.directory(context, id)
         val main = Handler(Looper.getMainLooper())
@@ -88,6 +106,7 @@ internal object OfficeWorkerClient {
         val connected = AtomicBoolean(false)
         val failure = AtomicReference<OfficeFailure?>()
         val sheets = AtomicReference<List<String>>(emptyList())
+        val importedKind = AtomicReference<OfficeKind?>()
         @Volatile var bound = false
         @Volatile var birth: String? = null
         var peakRss = 0L
@@ -102,9 +121,13 @@ internal object OfficeWorkerClient {
                 val result = data.readInt()
                 val count = data.readInt().also { require(it in 0..256) }
                 val names = List(count) { requireNotNull(data.readString()).also { require(it.length <= 256) } }
+                val kind = data.readInt().also { require(it == -1 || it in OfficeKind.entries.indices) }
                 require(data.dataAvail() == 0)
                 if (!closed.get() && finished.count > 0) {
-                    if (result == -1) sheets.set(names)
+                    if (result == -1) {
+                        sheets.set(names)
+                        importedKind.set(OfficeKind.entries.getOrNull(kind))
+                    }
                     else failure.compareAndSet(null, OfficeFailure.entries.getOrNull(result) ?: OfficeFailure.INVALID_RESULT)
                     finished.countDown()
                 }
@@ -118,6 +141,7 @@ internal object OfficeWorkerClient {
                 val data = Parcel.obtain(); val reply = Parcel.obtain()
                 try {
                     data.writeInterfaceToken(OfficeWorkerProtocol.DESCRIPTOR)
+                    data.writeStrongBinder(callback)
                     check(service.transact(OfficeWorkerProtocol.HELLO, data, reply, 0))
                     reply.readException()
                     val workerPid = reply.readInt()
@@ -126,7 +150,7 @@ internal object OfficeWorkerClient {
                     birth = processBirth(workerPid)
                     check(birth != null)
                     pid.set(workerPid)
-                    requireNotNull(broker).attach(workerPid)
+                    broker?.attach(workerPid)
                     remote.set(service)
                     service.linkToDeath({
                         if (finished.count > 0) fail(OfficeFailure.WORKER_CRASHED)
@@ -147,16 +171,19 @@ internal object OfficeWorkerClient {
 
         fun fail(reason: OfficeFailure) { failure.compareAndSet(null, reason); finished.countDown() }
 
-        fun execute(): OfficeConvertedPdf {
+        fun execute(): OfficeWorkerOutput {
             var preserve = false
             val started = SystemClock.elapsedRealtime()
             try {
                 if (cancelled() || Thread.currentThread().isInterrupted)
                     throw OfficeConversionFailure(OfficeFailure.CANCELLED)
-                val appRoot = File(context.applicationInfo.dataDir).canonicalFile.toPath()
-                if (!source.canonicalFile.toPath().startsWith(appRoot) || !source.isFile ||
-                    source.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
-                    throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+                if (uri == null) {
+                    val local = requireNotNull(source)
+                    val appRoot = File(context.applicationInfo.dataDir).canonicalFile.toPath()
+                    if (!local.canonicalFile.toPath().startsWith(appRoot) || !local.isFile ||
+                        local.length() !in 1..PrivateDocumentImport.MAX_BYTES)
+                        throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+                }
                 val serviceInfo = try {
                     context.packageManager.getServiceInfo(ComponentName(context, serviceClass), 0)
                 } catch (_: PackageManager.NameNotFoundException) {
@@ -166,7 +193,7 @@ internal object OfficeWorkerClient {
                     throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE)
                 check(directory.mkdirs())
                 budget.checkDisk(directory, directory.usableSpace)
-                broker = OfficeSandbox.start(context, directory)
+                if (uri == null) broker = OfficeSandbox.start(context, directory)
                 main.post {
                     if (closed.get()) return@post
                     try {
@@ -198,12 +225,14 @@ internal object OfficeWorkerClient {
                 budget.checkTime(SystemClock.elapsedRealtime() - started)
                 budget.checkDisk(directory, directory.usableSpace)
                 observeRss()
-                val pdf = File(directory, "result.pdf")
+                val pdf = File(directory, if (uri == null) "result.pdf" else "source.bin")
                 if (Files.isSymbolicLink(pdf.toPath()) || !pdf.isFile ||
                     pdf.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
                     throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
+                if (uri != null && importedKind.get() == null)
+                    throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
                 preserve = true
-                return OfficeConvertedPdf(pdf, sheets.get(), pid.get(), peakRss, directory)
+                return OfficeWorkerOutput(pdf, sheets.get(), pid.get(), peakRss, directory, importedKind.get())
             } catch (error: OfficeWorkBudget.Exceeded) {
                 throw OfficeConversionFailure(OfficeWorkerProtocol.failure(error))
             } catch (_: InterruptedException) {
@@ -256,13 +285,18 @@ internal object OfficeWorkerClient {
                         catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
                         catch (_: IOException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
                         catch (_: SecurityException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
-                        sandboxCategory = requireNotNull(broker).diagnostic()
+                        sandboxCategory = broker?.diagnostic() ?: 0
                         if (sandboxCategory != 0) finalFailure = OfficeFailure.EXTERNAL_RESOURCE
                         if (finalFailure != null) preserve = false
                     }
                     val cleaned = !stopped || (preserve && unbound) || OfficePrivateFiles.deleteTree(directory)
                     if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
                     if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                    if (preserve && (cancelled() || interrupted)) {
+                        if (!OfficePrivateFiles.deleteTree(directory))
+                            throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                        throw OfficeConversionFailure(OfficeFailure.CANCELLED)
+                    }
                     finalFailure?.let { throw OfficeConversionFailure(it, sandboxCategory) }
                 } finally {
                     broker?.close(); broker = null
@@ -287,14 +321,24 @@ internal object OfficeWorkerClient {
         }
 
         fun dispatch(service: IBinder) {
-            ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+            if (uri != null) {
+                val request = Parcel.obtain()
+                try {
+                    request.writeInterfaceToken(OfficeWorkerProtocol.DESCRIPTOR)
+                    request.writeString(id); request.writeStrongBinder(callback)
+                    uri.writeToParcel(request, 0)
+                    check(service.transact(OfficeWorkerProtocol.IMPORT, request, null, IBinder.FLAG_ONEWAY))
+                } finally { request.recycle() }
+                return
+            }
+            ParcelFileDescriptor.open(requireNotNull(source), ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
                 val request = Parcel.obtain()
                 try {
                     request.writeInterfaceToken(OfficeWorkerProtocol.DESCRIPTOR)
                     request.writeString(id); request.writeStrongBinder(callback)
                     descriptor.writeToParcel(request, 0)
                     requireNotNull(broker).descriptor.writeToParcel(request, 0)
-                    options.write(request)
+                    requireNotNull(options).write(request)
                     check(service.transact(OfficeWorkerProtocol.START, request, null, IBinder.FLAG_ONEWAY))
                 } finally { request.recycle() }
             }

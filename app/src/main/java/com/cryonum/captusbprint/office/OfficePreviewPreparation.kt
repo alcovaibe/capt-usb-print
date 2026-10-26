@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import android.net.Uri
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
 import com.cryonum.captusbprint.document.PrivateDocumentImport
@@ -26,6 +27,7 @@ internal class OfficePreviewPreparation(
     private val sourceDirectory: File,
     private val source: () -> java.io.InputStream,
     private val service: Class<out OfficeWorkerService> = OfficeWorkerService::class.java,
+    private val sourceUri: Uri? = null,
     listener: (LatestPreparation.State<OfficePreviewMetadata, OfficeFailure>) -> Unit
 ) : Closeable {
     private val app = context.applicationContext
@@ -48,9 +50,24 @@ internal class OfficePreviewPreparation(
         check(options.kind == kind)
         if (!input.exists()) {
             check(sourceDirectory.isDirectory || sourceDirectory.mkdirs())
-            val copy = PrivateDocumentImport.copy(sourceDirectory, { source() },
-                { cancelled() }, { sourceDirectory.usableSpace })
-            check(copy.renameTo(input))
+            try {
+                if (sourceUri != null) {
+                    OfficeWorkerClient.importSource(app, sourceUri, cancelled).use { imported ->
+                        if (imported.importedKind != kind)
+                            throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_DOCUMENT)
+                        java.nio.file.Files.move(imported.file.toPath(), input.toPath())
+                    }
+                } else {
+                    // Fixed bundled assets only. External providers must use sourceUri above.
+                    val copy = PrivateDocumentImport.copy(sourceDirectory, { source() },
+                        { cancelled() }, { sourceDirectory.usableSpace })
+                    check(copy.renameTo(input))
+                }
+            } catch (error: Throwable) {
+                if (!OfficePrivateFiles.deleteTree(input))
+                    throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+                throw error
+            }
         }
         // BUSY is reported before backend work, so bounded retry cannot replay conversion/printing.
         val until = android.os.SystemClock.elapsedRealtime() + 8000

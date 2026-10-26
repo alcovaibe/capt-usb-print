@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries><provider android:authorities="com.cryonum.captusbprint.urifixture" /></queries>
     <application>
         <service android:name=".OfficeSandboxTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
         <service android:name=".OfficeFileLimitTestService" android:exported="false" android:process=":office" android:stopWithTask="true" />
@@ -12,6 +13,8 @@
         <service android:name=".OfficeFaultWorkerService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
     </application>
+    <instrumentation android:name="com.cryonum.captusbprint.OfficeUriSmoke"
+        android:targetPackage="${applicationId}" android:label="Separate UID URI grants and blocked provider lifecycle, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeSandboxSmoke"
         android:targetPackage="${applicationId}" android:label="Kernel file broker and log privacy, no USB" />
     <instrumentation android:name="com.cryonum.captusbprint.OfficeKernelLimitsSmoke"

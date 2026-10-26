@@ -74,7 +74,7 @@ jobs:
       - name: Build, lint and tests
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
+          ./gradlew --no-daemon -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
       - name: Verify permissions and APK
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
@@ -95,6 +95,13 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: synthetic-office-uri-provider
+          path: office-uri-fixture/build/outputs/apk/debug/office-uri-fixture-debug.apk
+          if-no-files-found: error
+          retention-days: 7
   emulator-preflight:
     name: Android API ${{ matrix.api }} install and offline raster smoke on PR
     needs: android
@@ -113,6 +120,10 @@ jobs:
         with:
           name: capt-usb-print-a1-debug
           path: pr-apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: synthetic-office-uri-provider
+          path: uri-fixture-apk
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
@@ -138,12 +149,15 @@ jobs:
             adb shell getprop sys.boot_completed | tr -d '\r' | grep -x '1'
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
             adb install pr-apk/app-debug.apk
+            adb install uri-fixture-apk/office-uri-fixture-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.UpdateSmoke | tee /tmp/capt-update-smoke.txt
             mkdir -p update-ui-evidence
             adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-main.png update-ui-evidence/
             adb pull /sdcard/Android/data/com.cryonum.captusbprint.debug/files/updates-result.png update-ui-evidence/
             grep -F 'CAPT_UPDATE_UI_SMOKE_PASSED' /tmp/capt-update-smoke.txt
+            bash tools/run-office-worker-smoke.sh uri
+            bash tools/run-office-uri-owner-death.sh
             bash tools/run-office-worker-smoke.sh lifecycle
             bash tools/run-office-worker-smoke.sh sandbox
             bash tools/run-office-worker-smoke.sh kernel

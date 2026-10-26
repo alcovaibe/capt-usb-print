@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "CAPT USB Print"
 include(":app")
+// A separate UID is essential for reproducible URI-grant tests; never part of the app APK.
+if (providers.gradleProperty("officeIntakeFixture").orNull == "true") include(":office-uri-fixture")

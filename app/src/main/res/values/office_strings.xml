@@ -1,4 +1,6 @@
 <resources>
+    <string name="office_error_source_access">Нет доступа к документу. Выберите файл заново и разрешите чтение.</string>
+    <string name="office_error_source_failed">Поставщик файла не смог передать документ. Сохраните локальную копию и выберите её заново.</string>
     <string name="office_title">Документ Word / Excel</string>
     <string name="office_internal_fixture">Внутренняя проверка: встроенный тестовый документ. Пользовательское открытие Office ещё выключено.</string>
     <string name="office_all_sheets">Выбрать все листы</string>

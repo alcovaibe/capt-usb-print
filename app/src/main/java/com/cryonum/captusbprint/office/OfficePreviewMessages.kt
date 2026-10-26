@@ -21,5 +21,7 @@ internal object OfficePreviewMessages {
         OfficeFailure.ENGINE_FAILED -> R.string.office_error_failed
         OfficeFailure.SANDBOX_UNAVAILABLE -> R.string.office_error_sandbox
         OfficeFailure.EXTERNAL_RESOURCE -> R.string.office_error_external
+        OfficeFailure.SOURCE_ACCESS -> R.string.office_error_source_access
+        OfficeFailure.SOURCE_FAILED -> R.string.office_error_source_failed
     }
 }

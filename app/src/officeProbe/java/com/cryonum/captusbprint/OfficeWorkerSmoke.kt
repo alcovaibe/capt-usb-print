@@ -7,6 +7,7 @@ import android.os.Process
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
+import androidx.core.content.FileProvider
 import com.cryonum.captusbprint.office.OfficeConversionFailure
 import com.cryonum.captusbprint.office.OfficeKind
 import com.cryonum.captusbprint.office.OfficeOptions
@@ -28,7 +29,7 @@ class OfficeWorkerSmoke : Instrumentation() {
         val result = Bundle()
         var outcome = Activity.RESULT_CANCELED
         var stage = "start"
-        val source = File(context.cacheDir, "office-worker-source.bin")
+        val source = File(context.cacheDir, "reports/office-worker-source.bin").apply { parentFile!!.mkdirs() }
         val spool = File(context.cacheDir, "office-worker-spool.capt")
         val root = File(context.noBackupFilesDir, "office-work")
         val baseline = root.listFiles()?.map { it.name }?.toSet() ?: emptySet()
@@ -43,6 +44,12 @@ class OfficeWorkerSmoke : Instrumentation() {
             fun convert(kind: OfficeKind, selected: List<Int>?, fitWidth: Boolean, expected: Int? = null): Int {
                 stage = "${kind.extension}-${if (fitWidth) "fit" else "saved"}-${selected?.joinToString("-") ?: "all"}"
                 val before = source.readBytes() // Fixed, small synthetic assets only.
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.reportprovider", source)
+                OfficeWorkerClient.importSource(context, uri).use { imported ->
+                    check(imported.importedKind == kind && imported.file.readBytes().contentEquals(before))
+                    imported.file.copyTo(source, overwrite = true)
+                }
+                check((root.listFiles()?.map { it.name }?.toSet() ?: emptySet()) == baseline)
                 var count = 0
                 OfficeWorkerClient.prepare(context, source, OfficeOptions(kind, selected, fitWidth)).use { prepared ->
                     check(prepared.workerPid != Process.myPid() && pids.add(prepared.workerPid))

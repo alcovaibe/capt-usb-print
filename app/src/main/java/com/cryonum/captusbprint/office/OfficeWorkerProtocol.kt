@@ -41,14 +41,16 @@ internal class OfficeOptions(kind: OfficeKind, selectedSheets: List<Int>? = null
 internal enum class OfficeFailure {
     ENGINE_UNAVAILABLE, CANCELLED, TIME_LIMIT, MEMORY_LIMIT, DISK_LIMIT, NO_SPACE,
     RESOURCE_OBSERVATION, WORKER_CRASHED, WORKER_STOP_FAILED, BAD_INPUT, UNSUPPORTED_LAYOUT,
-    ENGINE_FAILED, INVALID_RESULT, BUSY, PASSWORD_REQUIRED, UNSUPPORTED_DOCUMENT, CORRUPT_DOCUMENT, DOCUMENT_LIMIT, CPU_LIMIT, FILE_LIMIT, SANDBOX_UNAVAILABLE, EXTERNAL_RESOURCE
+    ENGINE_FAILED, INVALID_RESULT, BUSY, PASSWORD_REQUIRED, UNSUPPORTED_DOCUMENT, CORRUPT_DOCUMENT, DOCUMENT_LIMIT, CPU_LIMIT, FILE_LIMIT, SANDBOX_UNAVAILABLE, EXTERNAL_RESOURCE,
+    SOURCE_ACCESS, SOURCE_FAILED
 }
 
 internal class OfficeConversionFailure(val reason: OfficeFailure, val sandboxCategory: Int = 0) : IOException(reason.name)
 
-/** PDF ownership ends at close; a preview must first make its independent prepared-PDF copy. */
-internal class OfficeConvertedPdf(val file: File, sheets: List<String>, val workerPid: Int,
-                                  val peakObservedRssBytes: Long, private val directory: File) : Closeable {
+/** A stopped worker's private result. Closing deletes only this request's workspace. */
+internal class OfficeWorkerOutput(val file: File, sheets: List<String>, val workerPid: Int,
+                                  val peakObservedRssBytes: Long, private val directory: File,
+                                  val importedKind: OfficeKind? = null) : Closeable {
     val sheetNames: List<String> = Collections.unmodifiableList(sheets.toList())
     override fun close() {
         if (!OfficePrivateFiles.deleteTree(directory)) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
@@ -73,6 +75,7 @@ internal object OfficeWorkerProtocol {
     const val HELLO = IBinder.FIRST_CALL_TRANSACTION
     const val START = HELLO + 1
     const val RESULT = HELLO + 2
+    const val IMPORT = HELLO + 3
     const val BACKEND = "com.cryonum.captusbprint.office.LibreOfficeWorkerBackend"
     const val MAX_PDF_BYTES = 64L * 1024 * 1024
     fun directory(context: Context, id: String): File {
@@ -99,6 +102,7 @@ internal object OfficeWorkerProtocol {
         is com.cryonum.captusbprint.document.PrivateDocumentImport.Failure -> when (error.reason) {
             com.cryonum.captusbprint.document.PrivateDocumentImport.Reason.NO_SPACE -> OfficeFailure.NO_SPACE
             com.cryonum.captusbprint.document.PrivateDocumentImport.Reason.TIMED_OUT -> OfficeFailure.TIME_LIMIT
+            com.cryonum.captusbprint.document.PrivateDocumentImport.Reason.TOO_LARGE -> OfficeFailure.DOCUMENT_LIMIT
             else -> OfficeFailure.BAD_INPUT
         }
         is ClassNotFoundException -> OfficeFailure.ENGINE_UNAVAILABLE
