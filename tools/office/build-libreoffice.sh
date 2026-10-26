@@ -42,6 +42,7 @@ for notice_dir in instdir/share/readme instdir/share/license readlicense_oo/lice
   fi
 done
 git diff -- desktop/source/lib/init.cxx external/hsqldb/ExternalProject_hsqldb.mk > capt-office-package/load-policy.patch
+python3 "$capt_root/tools/office/collect-provenance.py" "$source_dir" capt-office-package
 python3 "$capt_root/tools/office/inspect-package.py" capt-office-package "$abi"
 tar -czf "capt-office-$abi.tar.gz" -C capt-office-package .
 echo "CAPT_OFFICE_NATIVE_SOURCE_BUILD_PASSED $abi (not integrated into app)"

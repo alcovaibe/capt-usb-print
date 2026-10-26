@@ -13,6 +13,7 @@ internal object OfficePreviewMessages {
         OfficeFailure.NO_SPACE -> R.string.document_import_no_space
         OfficeFailure.TIME_LIMIT, OfficeFailure.CPU_LIMIT -> R.string.office_error_time
         OfficeFailure.UNSUPPORTED_LAYOUT -> R.string.office_error_layout
+        OfficeFailure.FIT_WIDTH_UNSUPPORTED -> R.string.office_error_fit_width
         OfficeFailure.ENGINE_UNAVAILABLE -> R.string.office_error_engine
         OfficeFailure.BUSY -> R.string.office_error_busy
         OfficeFailure.WORKER_CRASHED -> R.string.office_error_crash

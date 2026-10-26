@@ -36,8 +36,13 @@ internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
             } else emptyList()
             if (options.selectedSheets?.any { it !in sheets.indices } == true)
                 throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
-            if (options.fitWidth && document.configureCalcFitWidth(options.selectedSheets?.toIntArray() ?: intArrayOf()) != 1)
-                throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_LAYOUT)
+            if (options.fitWidth) {
+                when (document.configureCalcFitWidth(options.selectedSheets?.toIntArray() ?: intArrayOf())) {
+                    1 -> Unit
+                    -1 -> throw OfficeConversionFailure(OfficeFailure.FIT_WIDTH_UNSUPPORTED)
+                    else -> throw OfficeConversionFailure(OfficeFailure.UNSUPPORTED_LAYOUT)
+                }
+            }
             val filter = if (options.kind.spreadsheet) JSONObject()
                 .put("SinglePageSheets", JSONObject().put("type", "boolean").put("value", false))
                 .apply { options.selectedSheets?.let { selected ->

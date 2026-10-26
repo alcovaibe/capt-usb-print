@@ -6,6 +6,8 @@
 #include <jni.h>
 #include <com/sun/star/container/XIndexAccess.hpp>
 #include <com/sun/star/sheet/XSpreadsheetDocument.hpp>
+#include <com/sun/star/view/XRenderable.hpp>
+#include <com/sun/star/table/CellRangeAddress.hpp>
 #include <vector>
 #include <set>
 
@@ -125,6 +127,63 @@ Java_org_libreoffice_kit_Document_configureCalcFitWidth(JNIEnv* env, jobject obj
                 || width < page.width - 2 || width > page.width + 2
                 || height < page.height - 2 || height > page.height + 2)
                 return 0;
+        }
+        // Inspect Calc's real page descriptors, not just the requested scale style.
+        // At ZOOM_MIN=10 Calc may still split horizontally. Manual column breaks
+        // and disjoint print areas can also defeat ScaleToPagesX=1. Reject such a
+        // layout before export; never silently call it fitted or shrink height.
+        uno::Reference<view::XRenderable> render(impl->mxComponent, uno::UNO_QUERY_THROW);
+        const uno::Sequence<beans::PropertyValue> options{
+            comphelper::makePropertyValue(u"IsPrinter"_ustr, false),
+            comphelper::makePropertyValue(u"IsSuppressEmptyPages"_ustr, true),
+            comphelper::makePropertyValue(u"SinglePageSheets"_ustr, false)
+        };
+        sal_Int32 totalPages = 0;
+        for (jint index : indices)
+        {
+            const uno::Any selection = sheets->getByIndex(index);
+            uno::Reference<beans::XPropertySet> sheet(selection, uno::UNO_QUERY_THROW);
+            OUString name;
+            if (!(sheet->getPropertyValue(u"PageStyle"_ustr) >>= name))
+                return 0;
+            uno::Reference<beans::XPropertySet> style(styles->getByName(name), uno::UNO_QUERY_THROW);
+            sal_Int32 width = 0, left = 0, right = 0;
+            if (!(style->getPropertyValue(u"Width"_ustr) >>= width)
+                || !(style->getPropertyValue(u"LeftMargin"_ustr) >>= left)
+                || !(style->getPropertyValue(u"RightMargin"_ustr) >>= right))
+                return 0;
+            const sal_Int32 countPages = render->getRendererCount(selection, options);
+            if (countPages < 1 || countPages > 1000 || totalPages > 1000 - countPages)
+                return -1;
+            totalPages += countPages;
+            sal_Int32 firstColumn = -1, lastColumn = -1;
+            for (sal_Int32 page = 0; page < countPages; ++page)
+            {
+                table::CellRangeAddress range;
+                awt::Size size;
+                bool hasRange = false, hasSize = false;
+                for (const auto& property : render->getRenderer(page, selection, options))
+                {
+                    if (property.Name == u"SourceRange"_ustr)
+                        hasRange = (property.Value >>= range);
+                    else if (property.Name == u"CalcPageSize"_ustr)
+                        hasSize = (property.Value >>= size);
+                }
+                // Without source geometry we cannot prove width, including a
+                // single overwide column that Calc might otherwise clip.
+                if (!hasRange || !hasSize || range.Sheet != index || size.Width <= 0
+                    || range.StartColumn < 0 || range.EndColumn < range.StartColumn
+                    || static_cast<sal_Int64>(size.Width) >
+                        static_cast<sal_Int64>(width - left - right) * 10 + 10)
+                    return -1;
+                if (page == 0)
+                {
+                    firstColumn = range.StartColumn;
+                    lastColumn = range.EndColumn;
+                }
+                else if (range.StartColumn != firstColumn || range.EndColumn != lastColumn)
+                    return -1;
+            }
         }
         return pages.empty() ? 0 : 1;
     }
