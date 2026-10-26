@@ -74,7 +74,17 @@ public final class FixtureProvider extends ContentProvider {
                 synchronized (held) { held.add(pipe[1]); }
             } else new Thread(() -> {
                 try (OutputStream out = new ParcelFileDescriptor.AutoCloseOutputStream(pipe[1])) {
-                    if ("oversized".equals(name)) {
+                    if ("standard.pdf".equals(name)) {
+                        android.graphics.pdf.PdfDocument pdf = new android.graphics.pdf.PdfDocument();
+                        android.graphics.pdf.PdfDocument.Page page = pdf.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(595,842,1).create());
+                        page.getCanvas().drawText("Synthetic PDF",40,60,new android.graphics.Paint());
+                        pdf.finishPage(page); pdf.writeTo(out); pdf.close();
+                    } else if ("standard.png".equals(name) || "standard.jpg".equals(name)) {
+                        android.graphics.Bitmap image = android.graphics.Bitmap.createBitmap(160,120,android.graphics.Bitmap.Config.ARGB_8888);
+                        image.eraseColor(android.graphics.Color.BLUE);
+                        image.compress("standard.png".equals(name) ? android.graphics.Bitmap.CompressFormat.PNG : android.graphics.Bitmap.CompressFormat.JPEG,90,out);
+                        image.recycle();
+                    } else if ("oversized".equals(name)) {
                         byte[] block = new byte[65536];
                         for (int i=0; i<1040; ++i) out.write(block);
                     } else if ("corrupt".equals(name)) out.write(new byte[]{1,2,3,4,5,6,7,8});

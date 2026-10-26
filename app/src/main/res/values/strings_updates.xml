@@ -14,7 +14,7 @@
     <string name="updates_downloading">Загрузка APK…</string>
     <string name="updates_downloading_percent">Загрузка APK: %1$d%%</string>
     <string name="updates_ready">APK проверен. Нажмите «Установить». Если Android запросит разрешение установки из этого источника, включите его, вернитесь и снова нажмите «Установить».</string>
-    <string name="updates_download_error">Не удалось загрузить APK. Можно повторить попытку.</string>
+    <string name="updates_download_error">Не удалось загрузить APK. Проверьте подключение и свободное место, затем повторите попытку.</string>
     <string name="updates_invalid_apk">APK не прошёл проверку пакета, версии или подписи. Установка не предложена.</string>
     <string name="updates_install_error">Не удалось открыть установщик. Можно повторить попытку.</string>
 </resources>

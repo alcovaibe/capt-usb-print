@@ -83,7 +83,7 @@ def main():
             'Clone the bundled snapshots into sibling directories: git clone libreoffice-core.git core; '
             'git clone capt-integration.git capt; git clone liberation-narrow-source.git narrow. '
             'The exact external/tarballs inputs are in external-tarballs; copy them into the core checkout. '
-            'Install the SDK/NDK/tool versions in config/office/libreoffice.json and .github/workflows/office-native.yml. '
+            'Install the SDK/NDK/tool versions in config/office/libreoffice.json and .github/workflows/office-packages.yml. '
             'Run tools/office/build-libreoffice.sh CORE ABI for each ABI. It applies the CAPT policy/Calc patches. '
             'config_host.mk and per-ABI inventories in build-manifests.json record the accepted build. '
             'The editable Liberation Sans Narrow source (GPLv2 plus Liberation exceptions) is included separately; '

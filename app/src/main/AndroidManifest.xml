@@ -18,6 +18,10 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.CaptUsbPrint">
+        <activity android:name=".office.OfficeDocumentActivity" android:exported="false"
+            android:label="@string/office_title" />
+        <service android:name=".office.OfficeWorkerService" android:exported="false"
+            android:process=":office" android:stopWithTask="true" />
         <service android:name=".office.OfficeImportService" android:exported="false"
             android:process=":office" android:stopWithTask="true" />
         <service android:name=".printservice.CaptPrintService"
@@ -61,6 +65,10 @@
                 <data android:mimeType="application/pdf" />
                 <data android:mimeType="image/jpeg" />
                 <data android:mimeType="image/png" />
+                <data android:mimeType="application/msword" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
             </intent-filter>
         </activity>
         <activity

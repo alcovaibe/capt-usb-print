@@ -68,6 +68,14 @@ def verify():
         print("First permanent-key release; no previous signed APK exists.")
     release_apk = OUTPUT / f"CAPT-USB-Print-0.1.0-a2-build-{RUN_NUMBER}.apk"
     release_apk.write_bytes(APK.read_bytes())
+    sources = ROOT / "release-office-sources/office-corresponding-sources.tar.gz"
+    checksum = ROOT / "release-office-sources/office-corresponding-sources.tar.gz.sha256"
+    assert sources.is_file() and checksum.is_file(), "Exact Office source bundle required before distribution"
+    with sources.open("rb") as stream:
+        assert hashlib.file_digest(stream, "sha256").hexdigest() == checksum.read_text().split()[0]
+    import shutil
+    shutil.copyfile(sources, OUTPUT / sources.name)
+    shutil.copyfile(checksum, OUTPUT / checksum.name)
     (OUTPUT / "release-name.txt").write_text(release_apk.name)
     (OUTPUT / "SHA256SUMS.txt").write_text(hashlib.sha256(release_apk.read_bytes()).hexdigest() + "  " + release_apk.name + "\n")
     print("Release signature, package, version and previous version validated:", release_apk.name)
@@ -81,13 +89,20 @@ def publish():
     existing = subprocess.run(["gh", "release", "view", TAG], capture_output=True)
     if existing.returncode == 0:
         raise RuntimeError("Signed release tag already exists; refusing to overwrite assets")
-    notes = """В CAPT USB Print добавлена доставка обновлений: приложение проверяет новые версии при открытии главного экрана не чаще раза в сутки, а кнопка с двумя стрелками справа внизу позволяет запустить проверку вручную. Её значок и оформление перенесены из Bluetooth Disable.
+    notes = """Локальное открытие DOCX, DOC, XLS и XLSX через LibreOffice, выбор листов и вписывание по ширине A4, единый PDF для предпросмотра и общей очереди. Шрифты могут заменяться, результаты формул — отличаться или оставаться сохранёнными. Физическая печать Office на Canon LBP2900 ещё требует аппаратной приёмки. Соответствующие исходники движка и инструкция повторной сборки приложены рядом с APK.
+
+В CAPT USB Print сохранена доставка обновлений: приложение проверяет новые версии при открытии главного экрана не чаще раза в сутки, а кнопка с двумя стрелками справа внизу позволяет запустить проверку вручную. Её значок и оформление перенесены из Bluetooth Disable.
 
 Доступны загрузка APK с прогрессом и отменой, проверка пакета, версии и подписи, а также установка через системный установщик Android. Сохранены Android 10+, постоянная подпись и обновление поверх приложения без удаления данных. Первую версию с новым механизмом нужно установить вручную; документы и отчёты при проверке обновлений не передаются.
 """
     note_path = OUTPUT / "notes.md"
     note_path.write_text(notes)
-    call("gh", "release", "create", TAG, release_apk, "--target", SOURCE, "--title",
+    sources = OUTPUT / "office-corresponding-sources.tar.gz"
+    checksum = OUTPUT / "office-corresponding-sources.tar.gz.sha256"
+    assert sources.is_file() and checksum.is_file()
+    with sources.open("rb") as stream:
+        assert hashlib.file_digest(stream, "sha256").hexdigest() == checksum.read_text().split()[0]
+    call("gh", "release", "create", TAG, release_apk, sources, checksum, "--target", SOURCE, "--title",
          f"CAPT USB Print · build {RUN_NUMBER}", "--notes-file", note_path,
          "--latest=true")
     print("PUBLISHED:", call("gh", "release", "view", TAG, "--json", "url", "--jq", ".url").strip())

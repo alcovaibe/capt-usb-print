@@ -1,0 +1,103 @@
+name: Pinned Office packages and corresponding sources
+on:
+  workflow_call:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-inputs:
+    runs-on: ubuntu-24.04
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: key
+        run: echo "key=${{ hashFiles('config/office/**', 'tools/office/**') }}" >> "$GITHUB_OUTPUT"
+  native:
+    name: LibreOffice source ${{ matrix.abi }}
+    runs-on: ubuntu-24.04
+    needs: native-inputs
+    timeout-minutes: 180
+    concurrency:
+      group: office-packages-v2-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ matrix.abi }}-${{ needs.native-inputs.outputs.key }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: capt
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/cache@v4
+        id: package
+        with:
+          path: native-output
+          key: office-native-v1-${{ runner.os }}-${{ matrix.abi }}-${{ hashFiles('capt/config/office/**', 'capt/tools/office/**') }}
+      # Bootstrap the new PR cache from the exact, already-audited PR #33 build.
+      # Expiration or changed engine inputs falls back to a complete source build.
+      - id: seed
+        if: steps.package.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, subprocess
+          run = json.loads(subprocess.check_output(['gh','api','repos/${{ github.repository }}/actions/runs/40338575655']))
+          expected = '1392b1a8dab91792956ec5ae0bd3d98a05ce5459'
+          valid = run['head_sha'] == expected and run['conclusion'] == 'success'
+          valid = valid and subprocess.run(['git','-C','capt','diff','--quiet',expected,'HEAD','--','config/office','tools/office']).returncode == 0
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('eligible=' + str(valid).lower() + '\n')
+          PYCODE
+      - uses: actions/download-artifact@v4
+        id: seed-download
+        if: steps.seed.outputs.eligible == 'true'
+        continue-on-error: true
+        with:
+          repository: ${{ github.repository }}
+          run-id: 40338575655
+          github-token: ${{ github.token }}
+          name: libreoffice-native-${{ matrix.abi }}
+          path: native-output
+      - uses: actions/setup-java@v4
+        if: steps.package.outputs.cache-hit != 'true' && steps.seed-download.outcome != 'success'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        if: steps.package.outputs.cache-hit != 'true' && steps.seed-download.outcome != 'success'
+        with:
+          packages: 'platform-tools'
+      - name: Free unused runner toolchains
+        if: steps.package.outputs.cache-hit != 'true' && steps.seed-download.outcome != 'success'
+        run: bash capt/tools/free-runner-disk.sh
+      - name: Install upstream build prerequisites
+        if: steps.package.outputs.cache-hit != 'true' && steps.seed-download.outcome != 'success'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ant autoconf automake bison build-essential flex gperf libfontconfig1-dev libkrb5-dev libnss3-dev libservlet-api-java libxml2-utils libxslt1-dev meson nasm ninja-build python3-dev xsltproc zip
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+      - uses: actions/checkout@v4
+        if: steps.package.outputs.cache-hit != 'true' && steps.seed-download.outcome != 'success'
+        with:
+          repository: LibreOffice/core
+          ref: 8221e31b3ac356a1623c672912a3d2b492f7e3d1
+          path: libreoffice
+          persist-credentials: false
+      - name: Build pinned upstream engine and inventory resources
+        if: steps.package.outputs.cache-hit != 'true' && steps.seed-download.outcome != 'success'
+        run: |
+          bash capt/tools/office/build-libreoffice.sh libreoffice '${{ matrix.abi }}'
+          mkdir -p native-output
+          cp libreoffice/capt-office-${{ matrix.abi }}.tar.gz native-output/
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: libreoffice-native-${{ matrix.abi }}
+          path: native-output/capt-office-${{ matrix.abi }}.tar.gz
+          retention-days: 7
+          if-no-files-found: error

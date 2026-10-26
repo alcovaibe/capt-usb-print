@@ -10,8 +10,15 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
+  engine:
+    uses: ./.github/workflows/office-packages.yml
+  sources:
+    needs: engine
+    uses: ./.github/workflows/office-sources.yml
   android:
+    needs: engine
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -41,6 +48,7 @@ jobs:
         run: |
           python3 -m py_compile tools/prepare-signing.py tools/signed-release.py tools/update-feed.py
           python3 -m unittest discover -s tools -p test_update_feed.py
+          python3 -m unittest discover -s tools -p test_office_packaging.py
           python3 tools/check-update-ui-runner.py
           bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
           # Reproduce duplicate partition-size entries from a device profile.
@@ -72,16 +80,52 @@ jobs:
         run: python3 tools/check-office-probe-runner.py
       - name: Verify synthetic Office fixture integrity
         run: python3 tools/check-office-fixtures.py
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: libreoffice-native-*
+          path: engine-archives
+          merge-multiple: true
+      - name: Assemble verified ordinary Office runtime for all supported ABIs
+        run: |
+          sdkmanager --install 'ndk;29.0.14206865'
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            mkdir -p "office-packages/$abi"
+            tar -xzf "engine-archives/capt-office-$abi.tar.gz" -C "office-packages/$abi"
+          done
+          python3 tools/assemble-office-engine.py office-packages office-engine
       - name: Build, lint and tests
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
+          ./gradlew --no-daemon -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :app:assembleRelease :app:lintRelease :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
+      - name: Build the base-main debug APK for an actual in-place version upgrade
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --depth=1 origin "$BASE_SHA"
+          git worktree add --detach upgrade-baseline "$BASE_SHA"
+          ln -s "$PWD/office-engine" upgrade-baseline/office-engine
+          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon :app:assembleDebug
+          mkdir -p upgrade-check-input
+          cp upgrade-baseline/app/build/outputs/apk/debug/app-debug.apk upgrade-check-input/base-main-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request' && success()
+        with:
+          name: office-upgrade-base-debug
+          path: upgrade-check-input/base-main-debug.apk
+          retention-days: 7
       - name: Verify permissions and APK
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcapt_hiscoa.so'
           unzip -l "$APK" | grep -q 'lib/x86_64/libcapt_hiscoa.so'
+          python3 tools/measure-office-probe-apk.py "$APK" office-debug-apk-size.json
+          python3 tools/measure-office-probe-apk.py app/build/outputs/apk/release/app-release-unsigned.apk office-release-apk-size.json
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l "$APK" | grep -F "lib/$abi/liblo-native-code.so"
+            unzip -l app/build/outputs/apk/release/app-release-unsigned.apk | grep -F "lib/$abi/liblo-native-code.so"
+          done
           if grep -E 'android.permission.READ_EXTERNAL_STORAGE|android.permission.MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
             echo "Unexpected permission in source manifest"; exit 1
           fi
@@ -95,6 +139,15 @@ jobs:
           name: capt-usb-print-a1-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: office-ordinary-build-evidence
+          path: |
+            office-debug-apk-size.json
+            office-release-apk-size.json
+            app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: success()
@@ -125,6 +178,10 @@ jobs:
         with:
           name: synthetic-office-uri-provider
           path: uri-fixture-apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: office-upgrade-base-debug
+          path: upgrade-base
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
@@ -149,10 +206,11 @@ jobs:
           script: |
             adb shell getprop sys.boot_completed | tr -d '\r' | grep -x '1'
             adb shell getprop ro.build.version.sdk | tr -d '\r' | grep -x '${{ matrix.api }}'
-            adb install pr-apk/app-debug.apk
+            bash tools/check-office-upgrade.sh upgrade-base/base-main-debug.apk pr-apk/app-debug.apk office-upgrade-evidence.txt
             adb install uri-fixture-apk/office-uri-fixture-debug.apk
             adb shell am start -W -n com.cryonum.captusbprint.debug/com.cryonum.captusbprint.MainActivity
             bash tools/run-update-ui-smoke.sh
+            bash tools/run-office-worker-smoke.sh user
             bash tools/run-office-worker-smoke.sh uri
             bash tools/run-office-uri-owner-death.sh
             bash tools/run-office-worker-smoke.sh lifecycle
@@ -210,7 +268,7 @@ jobs:
 
   signed-release:
     name: Permanent-key signed APK and in-place upgrade
-    needs: [android, signing-availability]
+    needs: [android, signing-availability, sources]
     if: needs.signing-availability.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -237,6 +295,23 @@ jobs:
         env:
           ANDROID_SIGNING: ${{ secrets.ANDROID_SIGNING }}
         run: python3 tools/prepare-signing.py
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: libreoffice-native-*
+          path: engine-archives
+          merge-multiple: true
+      - name: Assemble verified ordinary Office runtime for all supported ABIs
+        run: |
+          sdkmanager --install 'ndk;29.0.14206865'
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            mkdir -p "office-packages/$abi"
+            tar -xzf "engine-archives/capt-office-$abi.tar.gz" -C "office-packages/$abi"
+          done
+          python3 tools/assemble-office-engine.py office-packages office-engine
+      - uses: actions/download-artifact@v4
+        with:
+          name: office-corresponding-sources
+          path: release-office-sources
       - name: Lint and build signed non-debuggable APK
         run: |
           chmod +x ./gradlew

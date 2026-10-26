@@ -60,8 +60,18 @@ object DocumentInspector {
         val temp = PrivateDocumentImport.copy(directory,
             { context.contentResolver.openInputStream(uri) }, { cancelled() },
             { StatFs(directory.absolutePath).availableBytes })
+        return openCopiedSession(context, temp, cancelled)
+    }
+
+    /** Consumes an app-owned snapshot; never queries or reopens its original provider. */
+    internal fun openCopiedSession(context: Context, temp: File, cancelled: () -> Boolean): DocumentSession {
+        require(temp.canonicalFile.toPath().startsWith(File(context.applicationInfo.dataDir).canonicalFile.toPath()))
+        fun checkCancelled() {
+            if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
+        }
         try {
             checkCancelled()
+            require(temp.length() in 1..MAX_SOURCE_BYTES)
             val total = temp.length()
             val header = ByteArray(8)
             val read = FileInputStream(temp).use { it.read(header) }

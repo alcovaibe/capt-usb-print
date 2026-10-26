@@ -24,7 +24,7 @@ open class OfficeWorkerService : Service() {
     private val binder = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code != OfficeWorkerProtocol.HELLO && code != OfficeWorkerProtocol.START &&
-                code != OfficeWorkerProtocol.IMPORT && code != OfficeWorkerProtocol.SHEETS)
+                code != OfficeWorkerProtocol.IMPORT && code != OfficeWorkerProtocol.IMPORT_DOCUMENT && code != OfficeWorkerProtocol.SHEETS)
                 return super.onTransact(code, data, reply, flags)
             require(Binder.getCallingUid() == Process.myUid())
             data.enforceInterface(OfficeWorkerProtocol.DESCRIPTOR)
@@ -35,7 +35,7 @@ open class OfficeWorkerService : Service() {
                     writeNoException(); writeInt(Process.myPid()); writeInt(Process.myUid())
                     writeString(Application.getProcessName())
                 }
-            } else if (code == OfficeWorkerProtocol.IMPORT) {
+            } else if (code == OfficeWorkerProtocol.IMPORT || code == OfficeWorkerProtocol.IMPORT_DOCUMENT) {
                 val id = requireNotNull(data.readString())
                 val callback = requireNotNull(data.readStrongBinder())
                 val uri = Uri.CREATOR.createFromParcel(data)
@@ -43,7 +43,7 @@ open class OfficeWorkerService : Service() {
                 if (!started.compareAndSet(false, true)) report(callback, id, OfficeFailure.BUSY, emptyList())
                 else {
                     watchOwner(callback)
-                    executor.execute { runImport(id, uri, callback) }
+                    executor.execute { runImport(id, uri, callback, code == OfficeWorkerProtocol.IMPORT_DOCUMENT) }
                 }
             } else {
                 val id = requireNotNull(data.readString())
@@ -86,7 +86,7 @@ open class OfficeWorkerService : Service() {
         catch (_: android.os.RemoteException) { Process.killProcess(Process.myPid()) }
     }
 
-    private fun runImport(id: String, uri: Uri, callback: IBinder) {
+    private fun runImport(id: String, uri: Uri, callback: IBinder, allowStandard: Boolean) {
         var kind: OfficeKind? = null
         var failure: OfficeFailure? = null
         try {
@@ -105,7 +105,12 @@ open class OfficeWorkerService : Service() {
             }, { false }, { directory.usableSpace })
             val input = File(directory, "source.bin")
             check(copied.renameTo(input))
-            kind = OfficeKind.valueOf(OfficeAdmission.inspect(input) { false }.name)
+            val standard = input.inputStream().use { stream ->
+                val header = ByteArray(8); val count = stream.read(header)
+                com.cryonum.captusbprint.document.DocumentSignature.detect(header.copyOf(count.coerceAtLeast(0)))
+            }
+            if (!allowStandard || standard == null)
+                kind = OfficeKind.valueOf(OfficeAdmission.inspect(input) { false }.name)
         } catch (_: SecurityException) {
             failure = OfficeFailure.SOURCE_ACCESS
         } catch (error: Throwable) {

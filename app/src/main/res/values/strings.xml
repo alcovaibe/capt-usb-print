@@ -81,7 +81,7 @@
     <string name="document_landscape">альбомная</string>
     <string name="document_title">Документ и параметры печати</string>
     <string name="document_description">PDF, JPEG и PNG обрабатываются локально. Предпросмотр показывает чёрно-белый печатный растр. A4, вписывание с программным отступом около 11 мм; точность полей требует проверки отпечатка.</string>
-    <string name="document_pick">Выбрать PDF / JPEG / PNG</string>
+    <string name="document_pick">Выбрать PDF / фото / Word / Excel</string>
     <string name="document_pick_hint">Выбери локальный файл.</string>
     <string name="document_loading">Открываем документ…</string>
     <string name="document_cancel_import">Отменить открытие</string>

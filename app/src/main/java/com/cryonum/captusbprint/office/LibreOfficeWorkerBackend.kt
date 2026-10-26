@@ -8,7 +8,7 @@ import org.libreoffice.kit.LibreOfficeKit
 import org.libreoffice.kit.Office
 import java.io.File
 
-/** Opt-in debug backend. Not reachable from SAF/ACTION_SEND; file access is confined by the mandatory worker guard. */
+/** Production local backend; file access is confined by the mandatory worker guard. */
 internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
     override fun preload() = LibreOfficeKit.initializeLibrary()
     override fun inspectSheets(context: Context, input: File, directory: File, kind: OfficeKind): List<String> {

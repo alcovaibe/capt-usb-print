@@ -27,15 +27,17 @@ import java.io.InputStream
 import java.util.UUID
 
 /**
- * Internal Office workflow. No manifest/URI entry in ordinary builds.
+ * Shared production/synthetic Office workflow over a private source.
  * Debug/probe subclasses provide ONLY fixed synthetic assets; no Intent file paths or URIs.
- * User intake must remain gated until the engine resource policy/license audit are complete.
+ * User intake uses a validated private snapshot; no external path reaches the renderer.
  */
 internal abstract class OfficePreviewActivity : Activity() {
     protected abstract val officeKind: OfficeKind
     protected abstract fun openSource(): InputStream
     protected open val service: Class<out OfficeWorkerService> get() = OfficeWorkerService::class.java
     protected open val allowQueue: Boolean get() = false
+    protected open val sourceAvailable: Boolean get() = true
+    protected open val sourceDescription: Int get() = R.string.office_internal_fixture
     private lateinit var preparation: OfficePreviewPreparation
     private lateinit var preview: DocumentPreviewPanel
     private lateinit var message: TextView
@@ -66,12 +68,18 @@ internal abstract class OfficePreviewActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!sourceAvailable) {
+            AlertDialog.Builder(this).setMessage(R.string.office_source_expired)
+                .setPositiveButton(android.R.string.ok) { _, _ -> finish() }
+                .setOnCancelListener { finish() }.show()
+            return
+        }
         restored = savedInstanceState
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24,24,24,24) }
         fun text(res: Int) = TextView(this).apply { setText(res); textSize = 16f; body.addView(this) }
         text(R.string.office_title)
-        text(R.string.office_internal_fixture)
+        text(sourceDescription)
         message = text(R.string.document_loading).apply { tag = "office-status" }
         sheetRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "office-sheets" }
         body.addView(sheetRows)
@@ -196,7 +204,8 @@ internal abstract class OfficePreviewActivity : Activity() {
     }
     private fun invalidatePreview() {
         ++renderToken; previewReady = false
-        preview.clearImage(); bitmap?.recycle(); bitmap = null
+        if (::preview.isInitialized) preview.clearImage()
+        bitmap?.recycle(); bitmap = null
         if (::acknowledge.isInitialized) acknowledge.isChecked = false
     }
     private fun buildSheetRows() {
@@ -301,6 +310,7 @@ internal abstract class OfficePreviewActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         super.onSaveInstanceState(out)
         if (!initialAll) out.putIntArray("sheets",selected.toIntArray())
+        if (!::fit.isInitialized) return
         out.putBoolean("fit",fit.isChecked); out.putString("range",range.text.toString())
         out.putString("copies",copies.text.toString()); out.putInt("page",page)
     }

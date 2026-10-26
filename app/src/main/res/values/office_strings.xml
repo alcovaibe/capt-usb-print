@@ -1,4 +1,6 @@
 <resources>
+    <string name="office_local_document">Подготовка выполняется на устройстве. Документ не загружается на сервер.</string>
+    <string name="office_source_expired">Приватная копия документа уже удалена после перезапуска приложения. Откройте исходный файл заново.</string>
     <string name="office_error_source_access">Нет доступа к документу. Выберите файл заново и разрешите чтение.</string>
     <string name="office_error_source_failed">Поставщик файла не смог передать документ. Сохраните локальную копию и выберите её заново.</string>
     <string name="office_title">Документ Word / Excel</string>

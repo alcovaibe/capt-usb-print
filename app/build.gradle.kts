@@ -3,8 +3,12 @@ plugins {
 }
 
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
-// Explicit CI-only engine probe; ordinary debug/release APKs do not gain Office dependencies.
-val officeEngineDir = providers.gradleProperty("officeEngineDir").orNull?.let { file(it) }
+// Engine binaries are built from pinned sources outside Gradle. Missing packages fail closed.
+val officeEngineDir = file(providers.gradleProperty("officeEngineDir").getOrElse("${rootDir}/office-engine"))
+val officeAbis = providers.gradleProperty("officeAbis").getOrElse("arm64-v8a,armeabi-v7a,x86_64")
+    .split(",").also { require(it.isNotEmpty() && it.distinct().size == it.size &&
+        it.all { abi -> abi in listOf("arm64-v8a", "armeabi-v7a", "x86_64") }) }
+
 
 android {
     namespace = "com.cryonum.captusbprint"
@@ -21,7 +25,7 @@ android {
         applicationId = "com.cryonum.captusbprint"
         minSdk = 29
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += officeAbis
         }
         targetSdk = 36
         // The GitHub Actions run number is monotonically increasing for private CI APKs.
@@ -70,25 +74,35 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig = true }
+    // A universal APK otherwise stores three large engines uncompressed. Android
+    // extracts only the device ABI; verify both installation and JNI in API 29/36 CI.
+    packaging { jniLibs { useLegacyPackaging = true } }
     // Compile the synthetic JNI probe in regular debug checks; never initialize it there.
     sourceSets.getByName("debug") {
         // AGP 9 built-in Kotlin ignores extra Kotlin roots registered as Java.
         kotlin.directories += "src/officeProbe/java"
         java.srcDir("src/officeProbe/java")
-        java.srcDir("src/officeProbe/upstream")
     }
-    if (officeEngineDir != null) {
-        require(file("${officeEngineDir}/jniLibs/x86_64/liblo-native-code.so").isFile) {
-            "Pinned x86_64 Office probe package missing"
-        }
-        sourceSets.getByName("debug") {
-            assets.srcDir("${officeEngineDir}/assets")
-            assets.srcDir("${officeEngineDir}/assets_strippedUI")
-            jniLibs.srcDir("${officeEngineDir}/jniLibs")
-            manifest.srcFile("src/officeProbe/AndroidManifest.xml")
-        }
+    sourceSets.getByName("main") {
+        assets.srcDir("${officeEngineDir}/assets")
+        assets.srcDir("${officeEngineDir}/assets_strippedUI")
+        jniLibs.srcDir("${officeEngineDir}/jniLibs")
     }
 }
+
+tasks.register("verifyOfficeEngine") {
+    doLast {
+        officeAbis.forEach { abi ->
+            require(file("${officeEngineDir}/jniLibs/$abi/liblo-native-code.so").isFile) {
+                "Pinned Office engine missing for $abi. See docs/OFFICE-USER-WORKFLOW.md"
+            }
+        }
+        require(file("${officeEngineDir}/assets/office-licenses/index.json").isFile)
+        require(file("${officeEngineDir}/assets/unpack/etc/fonts/fonts.conf").isFile)
+    }
+}
+tasks.named("preBuild") { dependsOn("verifyOfficeEngine") }
+
 
 dependencies {
     implementation(libs.androidx.core)

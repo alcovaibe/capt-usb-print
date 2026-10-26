@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the CI-only built APK, never Office document contents or user files."""
+"""Measure the built APK, never Office document contents or user files."""
 import argparse
 import hashlib
 import json
@@ -15,20 +15,25 @@ def main():
     with zipfile.ZipFile(args.apk) as archive:
         entries = [item for item in archive.infolist() if not item.is_dir()]
         assert len(entries) < 65536 and len({item.filename for item in entries}) == len(entries)
-        assert any(item.filename == 'lib/x86_64/liblo-native-code.so' for item in entries), 'Opt-in Office APK required'
+        assert any(item.filename == 'lib/x86_64/liblo-native-code.so' for item in entries), 'Office engine required'
         assert any(item.filename.startswith('assets/unpack/') for item in entries)
         notice_index = json.loads(archive.read('assets/office-licenses/index.json'))
         for notice in notice_index:
             data = archive.read('assets/office-licenses/' + notice['file'])
             assert len(data) == notice['bytes'] and hashlib.sha256(data).hexdigest() == notice['sha256']
         assert {'ABOUT.txt','LICENSE','COPYING.MPL','COPYING.LGPL','CAPT-COPYING','fonts.json','source-inputs.json','native-runtime.json','ndk/NOTICE.toolchain'} <= {n['file'] for n in notice_index}
-        runtime = json.loads(archive.read('assets/office-licenses/native-runtime.json'))
+        runtime_paths = [n['file'] for n in notice_index if n['file'].endswith('native-runtime.json')]
         packaged_runtime = []
-        for library in runtime['libraries']:
-            name = f'lib/{runtime["abi"]}/{library["file"]}'
-            data = archive.read(name)
-            packaged_runtime.append({'file':name,'apkBytes':len(data),'apkSha256':hashlib.sha256(data).hexdigest(),
-                                     'preStripSha256':library['preStripSha256']})
+        seen = set()
+        for runtime_path in runtime_paths:
+            runtime = json.loads(archive.read('assets/office-licenses/' + runtime_path))
+            for library in runtime['libraries']:
+                name = f'lib/{runtime["abi"]}/{library["file"]}'
+                if name in seen: continue
+                seen.add(name)
+                data = archive.read(name)
+                packaged_runtime.append({'file':name,'apkBytes':len(data),'apkSha256':hashlib.sha256(data).hexdigest(),
+                                         'preStripSha256':library['preStripSha256']})
         def size(items):
             return {'files': len(items), 'uncompressedBytes': sum(item.file_size for item in items),
                     'zipPayloadBytes': sum(item.compress_size for item in items)}
@@ -41,7 +46,7 @@ def main():
         font_metadata = [{ 'asset': item.filename, 'bytes': item.file_size } for item in sorted(fonts, key=lambda item: item.filename)]
     with args.apk.open('rb') as content:
         digest = hashlib.file_digest(content, 'sha256').hexdigest()
-    result = {'ciOnlyDebugApk': True, 'releaseSizeMeasurement': False,
+    result = {'ciOnlyDebugApk': 'debug' in args.apk.name, 'releaseSizeMeasurement': 'release' in args.apk.name,
               'installedSizeMeasurement': False, 'ramMeasurement': False,
               'apkBytes': args.apk.stat().st_size, 'apkSha256': digest,
               'zipEntries': size(entries), 'nativeLibrariesByAbi': native,
@@ -49,7 +54,7 @@ def main():
               'workerEngineUnpackAssets': size(unpack), 'fontFiles': font_metadata,
               'limits': 'ZIP payload excludes ZIP/signing overhead. Native totals include CAPT libraries. Unpack assets exclude runtime profile/cache/source/PDF. Font filenames do not prove family coverage or license acceptance.'}
     args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
-    print(f'CAPT_OFFICE_PROBE_APK_MEASURED bytes={result["apkBytes"]} unpackAssets={result["workerEngineUnpackAssets"]["uncompressedBytes"]} fonts={len(fonts)} (debug only; not installed size/RAM/release)')
+    print(f'CAPT_OFFICE_PROBE_APK_MEASURED bytes={result["apkBytes"]} unpackAssets={result["workerEngineUnpackAssets"]["uncompressedBytes"]} fonts={len(fonts)} (not installed size/RAM)')
 
 
 if __name__ == '__main__':

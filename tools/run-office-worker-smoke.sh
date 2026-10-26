@@ -3,6 +3,10 @@
 set -euo pipefail
 package=com.cryonum.captusbprint.debug
 case "${1:-conversion}" in
+  user)
+    entry=OfficeUserWorkflowSmoke
+    marker=CAPT_OFFICE_USER_WORKFLOW_PASSED
+    prefix=office-user ;;
   resources)
     entry=OfficeResourceStressSmoke
     marker=CAPT_OFFICE_RESOURCE_STRESS_PASSED
