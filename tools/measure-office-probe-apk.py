@@ -21,7 +21,14 @@ def main():
         for notice in notice_index:
             data = archive.read('assets/office-licenses/' + notice['file'])
             assert len(data) == notice['bytes'] and hashlib.sha256(data).hexdigest() == notice['sha256']
-        assert {'ABOUT.txt','LICENSE','COPYING.MPL','COPYING.LGPL','CAPT-COPYING','fonts.json','source-inputs.json'} <= {n['file'] for n in notice_index}
+        assert {'ABOUT.txt','LICENSE','COPYING.MPL','COPYING.LGPL','CAPT-COPYING','fonts.json','source-inputs.json','native-runtime.json','ndk/NOTICE.toolchain'} <= {n['file'] for n in notice_index}
+        runtime = json.loads(archive.read('assets/office-licenses/native-runtime.json'))
+        packaged_runtime = []
+        for library in runtime['libraries']:
+            name = f'lib/{runtime["abi"]}/{library["file"]}'
+            data = archive.read(name)
+            packaged_runtime.append({'file':name,'apkBytes':len(data),'apkSha256':hashlib.sha256(data).hexdigest(),
+                                     'preStripSha256':library['preStripSha256']})
         def size(items):
             return {'files': len(items), 'uncompressedBytes': sum(item.file_size for item in items),
                     'zipPayloadBytes': sum(item.compress_size for item in items)}
@@ -38,6 +45,7 @@ def main():
               'installedSizeMeasurement': False, 'ramMeasurement': False,
               'apkBytes': args.apk.stat().st_size, 'apkSha256': digest,
               'zipEntries': size(entries), 'nativeLibrariesByAbi': native,
+              'officeRuntimeAfterAgpPackaging':packaged_runtime,
               'workerEngineUnpackAssets': size(unpack), 'fontFiles': font_metadata,
               'limits': 'ZIP payload excludes ZIP/signing overhead. Native totals include CAPT libraries. Unpack assets exclude runtime profile/cache/source/PDF. Font filenames do not prove family coverage or license acceptance.'}
     args.report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')

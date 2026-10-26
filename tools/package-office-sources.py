@@ -23,7 +23,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     lock = json.loads((root/'config/office/libreoffice.json').read_text())
     assert subprocess.check_output(['git','-C',str(args.core),'rev-parse','HEAD'],text=True).strip()==lock['commit']
-    manifests = {}; archives = {}
+    manifests = {}; archives = {}; non_source_records = []
     for package in sorted(args.packages.iterdir()):
         if not package.is_dir(): continue
         inventory = json.loads((package/'inventory.json').read_text())
@@ -32,6 +32,12 @@ def main():
         manifests[inventory['abi']] = {'nativeInventory':inventory,'sourceInputs':source}
         for archive in source['externalArchives']:
             assert Path(archive['file']).name == archive['file']
+            # Upstream also writes this local log into external/tarballs. It is
+            # neither a downloaded source nor stable between ABI builds.
+            if archive['file'] == 'fetch.log':
+                non_source_records.append({'abi':inventory['abi'], **archive,
+                    'reason':'Local upstream fetch log, not corresponding source content.'})
+                continue
             previous=archives.setdefault(archive['file'],archive)
             assert previous==archive
     assert set(manifests)=={'arm64-v8a','armeabi-v7a','x86_64'}
@@ -70,6 +76,7 @@ def main():
             subprocess.run(['git','--git-dir',str(bare),'symbolic-ref','HEAD','refs/heads/source'],check=True)
         narrow_commit=subprocess.check_output(['git','-C',str(args.narrow),'rev-parse','HEAD'],text=True).strip()
         (directory/'build-manifests.json').write_text(json.dumps({'abis':manifests,
+            'nonSourceBuildRecords':non_source_records,
             'narrowEditableSourceCommit':narrow_commit,'coreCommit':lock['commit']},indent=2)+'\n')
         (directory/'REBUILD.txt').write_text(
             'CAPT Office corresponding-source evidence\n\n'

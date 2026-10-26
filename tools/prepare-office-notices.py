@@ -66,12 +66,12 @@ def prepare(package, root, ndk=None):
         dynamic = subprocess.check_output(['readelf', '-d', str(path)], text=True)
         needed = sorted(re.findall(r'\(NEEDED\).*?\[(.*?)\]', dynamic))
         assert set(needed) <= bundled | platform, (path.name, needed)
-        libraries.append({'file':path.name, 'sha256':digest(path), 'bytes':path.stat().st_size,
+        libraries.append({'file':path.name, 'preStripSha256':digest(path), 'preStripBytes':path.stat().st_size,
                           'bundledDependencies':[n for n in needed if n in bundled],
                           'androidPlatformDependencies':[n for n in needed if n in platform]})
     (target / 'native-runtime.json').write_text(json.dumps({'abi':inventory['abi'],
         'ndkVersion':lock['ndk'], 'libraries':libraries,
-        'scope':'DT_NEEDED shared libraries; static components remain documented in LICENSE and build inputs.',
+        'scope':'Native package before AGP symbol stripping: DT_NEEDED shared libraries; static components remain documented in LICENSE and build inputs.',
         'libcxxSource':'https://android.googlesource.com/toolchain/llvm-project/; exact revisions in ndk/toolchains/llvm/prebuilt/linux-x86_64/clang_source_info.md'},indent=2)+'\n')
     text = (target / 'LICENSE').read_text()
     for term in ('Mozilla Public License Version 2.0', 'SIL Open Font License',
