@@ -56,6 +56,7 @@ internal object OfficeWorkerClient {
     }
 
     private fun requireCleanStartup() {
+        if (stopUncertain.get()) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
         if (!startupClean) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
     }
     val IMPORT_BUDGET = OfficeWorkBudget(30_000, 256L * 1024 * 1024,
@@ -381,7 +382,13 @@ internal object OfficeWorkerClient {
 
         fun processStopped(): Boolean {
             val workerPid = pid.get()
-            if (workerPid == 0) return true
+            if (workerPid == 0) {
+                // Cancellation can win before HELLO. Unbinding alone does not prove that
+                // a just-created service process has exited; wait for its absence too.
+                val children = context.getSystemService(ActivityManager::class.java).runningAppProcesses
+                    ?: return false
+                return children.none { it.uid == Process.myUid() && it.processName == "${context.packageName}:office" }
+            }
             val currentBirth = processBirth(workerPid)
             if (currentBirth != null && currentBirth != birth) return true
             return try { Os.kill(workerPid, 0); false }

@@ -85,6 +85,11 @@ class OfficeUriSmoke : Instrumentation() {
                 import(granted("read-block"), onStart = { pid ->
                     waitOpen(previous)
                     File(context.filesDir, "office-uri-owner-pids.txt").writeText("${Process.myPid()} $pid")
+                    Thread {
+                        Thread.sleep(2000)
+                        // Kill only this main process; the worker must exit via Binder death.
+                        Process.killProcess(Process.myPid())
+                    }.start()
                 }).close()
                 error("Owner-death probe must be stopped externally")
             }
@@ -108,6 +113,8 @@ class OfficeUriSmoke : Instrumentation() {
             }
             stage = "asset-offset-length"
             import(granted("slice")).use { check(it.importedKind == OfficeKind.DOCX) }; clean()
+            stage = "misleading-extension"
+            import(granted("misleading.xls")).use { check(it.importedKind == OfficeKind.DOCX) }; clean()
             stage = "revoked-grant"
             val revoked = granted("word.docx"); control("revoke", revoked)
             failure(OfficeFailure.SOURCE_ACCESS) { import(revoked).close() }

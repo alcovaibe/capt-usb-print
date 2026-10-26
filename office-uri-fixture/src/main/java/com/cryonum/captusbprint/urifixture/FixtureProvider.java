@@ -31,6 +31,14 @@ public final class FixtureProvider extends ContentProvider {
             for (ParcelFileDescriptor fd : held) try { fd.close(); } catch (Exception ignored) { }
             held.clear();
         }
+        else if ("process".equals(method)) {
+            int pid = Integer.parseInt(arg);
+            if (pid <= 1) throw new IllegalArgumentException();
+            boolean gone = false;
+            try { android.system.Os.kill(pid, 0); }
+            catch (android.system.ErrnoException error) { gone = error.errno == android.system.OsConstants.ESRCH; }
+            reply.putBoolean("gone", gone); // EPERM still means the other UID's PID exists.
+        }
         reply.putInt("opens", opens);
         reply.putInt("uid", android.os.Process.myUid());
         return reply;

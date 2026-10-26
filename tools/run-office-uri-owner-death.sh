@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kill only the owning main PID, not the entire package: prove Binder-owner death stops :office.
+# Instrumentation sends SIGKILL only to its main PID; independently observe both PIDs via kernel.
 set -euo pipefail
 package=com.cryonum.captusbprint.debug
 timeout 15 adb shell run-as "$package" rm -f files/office-uri-owner-pids.txt
@@ -15,10 +15,20 @@ done
 [[ "$pids" =~ ^[0-9]+\ [0-9]+$ ]]
 read -r owner worker <<< "$pids"
 [[ "$owner" != "$worker" && "$owner" -gt 1 && "$worker" -gt 1 ]]
-timeout 5 adb shell run-as "$package" kill -9 "$owner"
+process_state() {
+  timeout 5 adb shell content call --uri content://com.cryonum.captusbprint.urifixture --method process --arg "$1"
+}
+# Do not mistake /proc visibility/SELinux denial for exit: the helper uses kill(pid,0)/ESRCH.
+process_state "$worker" | grep -F 'gone=false'
+owner_gone=false
+for ((attempt=0; attempt<50; attempt++)); do
+  if process_state "$owner" | grep -F 'gone=true'; then owner_gone=true; break; fi
+  sleep 0.1
+done
+[[ "$owner_gone" == true ]]
 gone=false
 for ((attempt=0; attempt<50; attempt++)); do
-  if timeout 3 adb shell run-as "$package" test ! -d "/proc/$worker"; then gone=true; break; fi
+  if process_state "$worker" | grep -F 'gone=true'; then gone=true; break; fi
   sleep 0.1
 done
 [[ "$gone" == true ]]
