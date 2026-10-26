@@ -17,6 +17,11 @@ def main():
         assert len(entries) < 65536 and len({item.filename for item in entries}) == len(entries)
         assert any(item.filename == 'lib/x86_64/liblo-native-code.so' for item in entries), 'Opt-in Office APK required'
         assert any(item.filename.startswith('assets/unpack/') for item in entries)
+        notice_index = json.loads(archive.read('assets/office-licenses/index.json'))
+        for notice in notice_index:
+            data = archive.read('assets/office-licenses/' + notice['file'])
+            assert len(data) == notice['bytes'] and hashlib.sha256(data).hexdigest() == notice['sha256']
+        assert {'ABOUT.txt','LICENSE','COPYING.MPL','COPYING.LGPL','CAPT-COPYING','fonts.json','source-inputs.json'} <= {n['file'] for n in notice_index}
         def size(items):
             return {'files': len(items), 'uncompressedBytes': sum(item.file_size for item in items),
                     'zipPayloadBytes': sum(item.compress_size for item in items)}

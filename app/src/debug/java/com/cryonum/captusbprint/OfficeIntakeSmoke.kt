@@ -45,7 +45,9 @@ class OfficeIntakeSmoke : Instrumentation() {
                     check(sources() == before)
                     check(PrintQueueRuntime.snapshot() == queueBefore)
                 }
-                for (name in listOf("word.docx", "word.doc", "workbook.xls", "workbook.xlsx")) {
+                for (name in listOf("word.docx", "word.doc", "workbook.xls", "workbook.xlsx",
+                    "word-flow.docx", "word-flow.doc", "word-fonts.docx", "word-fonts.doc",
+                    "workbook-edge.xlsx", "workbook-edge.xls")) {
                     val source = File(fixtures, name)
                     context.assets.open("office-fixtures/$name").use { input ->
                         source.outputStream().use { input.copyTo(it) }
@@ -58,7 +60,7 @@ class OfficeIntakeSmoke : Instrumentation() {
                 val corrupt = File(directory, "corrupt.bin").apply { writeBytes(byteArrayOf(1, 2, 3)) }
                 rejectedByWorker(corrupt, OfficeKind.DOCX, OfficeFailure.CORRUPT_DOCUMENT)
                 val admissionChecks = OfficeAdmissionChecks.run(fixtures, directory)
-                check(admissionChecks >= 72)
+                check(admissionChecks >= 84)
                 for (name in listOf("word.docx", "word.doc", "workbook.xls", "workbook.xlsx")) {
                     // A misleading .pdf name/MIME must not turn a ZIP/OLE container into PDF.
                     val file = File(directory, "spoofed.pdf")

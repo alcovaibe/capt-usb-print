@@ -18,6 +18,7 @@ internal object OfficeLicenses {
             val ordered = preferred.filter { it in files } + files.filter { it !in preferred }.sorted()
             AlertDialog.Builder(activity).setTitle(R.string.office_licenses)
                 .setItems(ordered.toTypedArray()) { _, which ->
+                    try {
                     val name = ordered[which]
                     // Names originate only from our generated APK index, still reject traversal.
                     check(name.split('/').none { it.isEmpty() || it == "." || it == ".." })
@@ -36,10 +37,14 @@ internal object OfficeLicenses {
                     AlertDialog.Builder(activity).setTitle(name)
                         .setView(ScrollView(activity).apply { addView(text) })
                         .setPositiveButton(android.R.string.ok,null).show()
+                    } catch (_: Exception) { unavailable(activity) }
                 }.setNegativeButton(android.R.string.cancel,null).show()
         } catch (_: Exception) {
-            AlertDialog.Builder(activity).setMessage(R.string.office_error_engine)
-                .setPositiveButton(android.R.string.ok,null).show()
+            unavailable(activity)
         }
+    }
+    private fun unavailable(activity: Activity) {
+        AlertDialog.Builder(activity).setMessage(R.string.office_licenses_unavailable)
+            .setPositiveButton(android.R.string.ok,null).show()
     }
 }
