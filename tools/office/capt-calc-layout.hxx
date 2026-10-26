@@ -4,6 +4,7 @@
  * No CAPT/HISCOA protocol code, document contents or diagnostics belong here.
  */
 #include <jni.h>
+#include <com/sun/star/awt/Size.hpp>
 #include <com/sun/star/container/XIndexAccess.hpp>
 #include <com/sun/star/sheet/XSpreadsheetDocument.hpp>
 #include <com/sun/star/view/XRenderable.hpp>
