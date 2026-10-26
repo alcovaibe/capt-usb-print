@@ -19,6 +19,8 @@ import androidx.core.view.WindowInsetsCompat
 import com.cryonum.captusbprint.core.JobSpecification
 import com.cryonum.captusbprint.core.Orientation
 import com.cryonum.captusbprint.document.*
+import com.cryonum.captusbprint.office.*
+import java.util.UUID
 import com.cryonum.captusbprint.queue.PrintQueueActivity
 import com.cryonum.captusbprint.queue.PrintQueueRuntime
 import com.cryonum.captusbprint.queue.PrintQueueService
@@ -70,7 +72,7 @@ class DocumentActivity : Activity() {
             setOnClickListener {
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
-                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/pdf", "image/jpeg", "image/png"))
+                    putExtra(Intent.EXTRA_MIME_TYPES, DocumentIntake.MIME_TYPES)
                 }
                 runCatching { @Suppress("DEPRECATION") startActivityForResult(intent, 101) }
                     .onFailure { message.setText(R.string.document_open_failed) }
@@ -175,7 +177,6 @@ class DocumentActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 101 && resultCode == RESULT_OK) data?.data?.let {
-            runCatching { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             restoring = null; inspect(it)
         }
     }
@@ -192,16 +193,53 @@ class DocumentActivity : Activity() {
         preview.setLoading(); message.setText(R.string.document_loading)
         worker.execute {
             old?.close()
-            val result = runCatching { DocumentInspector.openSession(applicationContext, uri) {
-                request != generation
-            } }
+            var officeSource: File? = null
+            var officeKind: OfficeKind? = null
+            val result = runCatching {
+                OfficeWorkerClient.importSource(applicationContext, uri,
+                    cancelled = { request != generation }, allowStandard = true).use { imported ->
+                    val kind = imported.importedKind
+                    if (kind != null) {
+                        val directory = File(noBackupFilesDir, "office-ui/intake-${UUID.randomUUID()}")
+                        officeSource = directory
+                        check(directory.mkdirs())
+                        java.nio.file.Files.move(imported.file.toPath(), File(directory, "source.bin").toPath())
+                        officeKind = kind
+                        null
+                    } else {
+                        val directory = File(cacheDir, "stage-c-inspection").apply { check(isDirectory || mkdirs()) }
+                        val target = File(directory, "${UUID.randomUUID()}.bin")
+                        java.nio.file.Files.move(imported.file.toPath(), target.toPath())
+                        DocumentInspector.openCopiedSession(applicationContext, target) { request != generation }
+                    }
+                }
+            }
+            if (result.isFailure) {
+                officeSource?.let { OfficePrivateFiles.deleteTree(it) }; officeSource = null
+            }
             runOnUiThread {
                 if (isDestroyed || isFinishing || request != generation) {
-                    result.getOrNull()?.close(); return@runOnUiThread
+                    result.getOrNull()?.close()
+                    officeSource?.let { directory -> Thread { OfficePrivateFiles.deleteTree(directory) }.start() }
+                    return@runOnUiThread
                 }
                 importing = false
                 updatePrintActions()
                 result.fold({ source ->
+                    if (source == null) {
+                        val directory = requireNotNull(officeSource)
+                        sourceUri = null; restoring = null
+                        runCatching {
+                            startActivity(Intent(this, OfficeDocumentActivity::class.java)
+                                .putExtra("office-source", directory.name.removePrefix("intake-"))
+                                .putExtra("office-kind", requireNotNull(officeKind).name))
+                        }.onFailure {
+                            worker.execute { OfficePrivateFiles.deleteTree(directory) }
+                            message.setText(R.string.document_open_failed)
+                        }
+                        return@fold
+                    }
+                    runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                     session = source
                     val meta = source.overview
                     message.text = getString(R.string.document_meta, meta.format.label,
@@ -273,6 +311,7 @@ class DocumentActivity : Activity() {
     private fun importFailure(error: Throwable): Int = when (error) {
         is SecurityException -> R.string.document_access_failed
         is CancellationException -> R.string.document_import_cancelled
+        is OfficeConversionFailure -> OfficePreviewMessages.resource(error.reason)
         is PrivateDocumentImport.Failure -> when (error.reason) {
             PrivateDocumentImport.Reason.TOO_LARGE -> R.string.document_import_too_large
             PrivateDocumentImport.Reason.NO_SPACE -> R.string.document_import_no_space

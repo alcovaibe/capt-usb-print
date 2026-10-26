@@ -34,7 +34,7 @@ import com.cryonum.captusbprint.document.DocumentSession
 import com.cryonum.captusbprint.document.PrivateDocumentImport
 import java.util.concurrent.CancellationException
 
-/** Internal only: no SAF/Share route until the engine's external-resource policy is verified. */
+/** Bounded document intake and Office conversion in disposable processes. */
 internal object OfficeWorkerClient {
     val DEFAULT_BUDGET = OfficeWorkBudget(120_000, 768L * 1024 * 1024,
         192L * 1024 * 1024, 8L * 1024 * 1024, 8192)
@@ -67,14 +67,14 @@ internal object OfficeWorkerClient {
      * metadata query or provider work on main. Caller owns/ closes the returned directory. */
     fun importSource(context: Context, uri: Uri, cancelled: () -> Boolean = { false },
                      budget: OfficeWorkBudget = IMPORT_BUDGET,
-                     onWorkerStarted: (Int) -> Unit = {}): OfficeWorkerOutput {
+                     onWorkerStarted: (Int) -> Unit = {}, allowStandard: Boolean = false): OfficeWorkerOutput {
         check(Looper.myLooper() != Looper.getMainLooper())
         requireCleanStartup()
         if (uri.scheme != "content" || uri.authority.isNullOrEmpty() || uri.toString().length > 8192)
             throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
         if (!slot.tryAcquire()) throw OfficeConversionFailure(OfficeFailure.BUSY)
         try { return Attempt(context.applicationContext, null, null, cancelled, budget,
-            onWorkerStarted, OfficeImportService::class.java, uri).execute() }
+            onWorkerStarted, OfficeImportService::class.java, uri, allowStandard = allowStandard).execute() }
         finally { if (!stopUncertain.get()) slot.release() }
     }
 
@@ -141,7 +141,7 @@ internal object OfficeWorkerClient {
     private class Attempt(val context: Context, val source: File?, val options: OfficeOptions?,
                           val cancelled: () -> Boolean, val budget: OfficeWorkBudget,
                           val onWorkerStarted: (Int) -> Unit, val serviceClass: Class<out OfficeWorkerService>,
-                          val uri: Uri? = null, val sheetsOnly: Boolean = false,
+                          val uri: Uri? = null, val sheetsOnly: Boolean = false, val allowStandard: Boolean = false,
                           val resources: OfficeResourceMonitor = OfficeResourceMonitor(context, budget.maxRssBytes)) {
         val id = UUID.randomUUID().toString()
         val directory = OfficeWorkerProtocol.directory(context, id)
@@ -245,7 +245,8 @@ internal object OfficeWorkerClient {
                 }
                 if (serviceInfo.exported || !serviceInfo.enabled || serviceInfo.processName != "${context.packageName}:office")
                     throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE)
-                resources.before(if (uri != null) OfficeResourcePolicy.IMPORT_GROWTH
+                resources.before(if (uri != null && allowStandard) PrivateDocumentImport.MAX_BYTES
+                    else if (uri != null) OfficeResourcePolicy.IMPORT_GROWTH
                     else OfficeResourcePolicy.CONVERSION_GROWTH, cancelled)
                 check(directory.mkdirs())
                 budget.checkDisk(directory, directory.usableSpace)
@@ -291,7 +292,10 @@ internal object OfficeWorkerClient {
                 if (Files.isSymbolicLink(pdf.toPath()) || !pdf.isFile ||
                     pdf.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
                     throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
-                if (uri != null && importedKind.get() == null)
+                if (uri != null && importedKind.get() == null && (!allowStandard || !pdf.inputStream().use { stream ->
+                        val header = ByteArray(8); val count = stream.read(header)
+                        com.cryonum.captusbprint.document.DocumentSignature.detect(header.copyOf(count.coerceAtLeast(0))) != null
+                    }))
                     throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
                 if (sheetsOnly && (sheets.get().isEmpty() || File(directory, "result.pdf").exists()))
                     throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
@@ -406,7 +410,7 @@ internal object OfficeWorkerClient {
                     request.writeInterfaceToken(OfficeWorkerProtocol.DESCRIPTOR)
                     request.writeString(id); request.writeStrongBinder(callback)
                     uri.writeToParcel(request, 0)
-                    check(service.transact(OfficeWorkerProtocol.IMPORT, request, null, IBinder.FLAG_ONEWAY))
+                    check(service.transact(if (allowStandard) OfficeWorkerProtocol.IMPORT_DOCUMENT else OfficeWorkerProtocol.IMPORT, request, null, IBinder.FLAG_ONEWAY))
                 } finally { request.recycle() }
                 return
             }

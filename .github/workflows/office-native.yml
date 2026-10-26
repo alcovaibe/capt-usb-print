@@ -6,6 +6,11 @@ on:
       - 'tools/office/**'
       - '.github/workflows/office-native.yml'
       - 'app/src/officeProbe/**'
+      - 'app/src/main/java/org/libreoffice/**'
+      - 'app/src/main/java/com/cryonum/captusbprint/DocumentActivity.kt'
+      - 'app/src/main/java/com/cryonum/captusbprint/DocumentIntake.kt'
+      - '.github/workflows/office-packages.yml'
+      - 'tools/assemble-office-engine.py'
       - 'app/src/main/java/com/cryonum/captusbprint/office/**'
       # These owners/geometry paths also change Office preview and held queue copies.
       - 'app/src/main/java/com/cryonum/captusbprint/document/**'
@@ -39,128 +44,11 @@ on:
 permissions:
   contents: read
 jobs:
-  native-inputs:
-    runs-on: ubuntu-24.04
-    outputs:
-      key: ${{ steps.key.outputs.key }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - id: key
-        run: echo "key=${{ hashFiles('config/office/**', 'tools/office/**') }}" >> "$GITHUB_OUTPUT"
-  native:
-    name: LibreOffice source ${{ matrix.abi }}
-    runs-on: ubuntu-24.04
-    needs: native-inputs
-    timeout-minutes: 180
-    concurrency:
-      group: office-native-${{ github.event.pull_request.number || github.ref }}-${{ matrix.abi }}-${{ needs.native-inputs.outputs.key }}
-      cancel-in-progress: false
-    strategy:
-      fail-fast: false
-      matrix:
-        abi: [arm64-v8a, armeabi-v7a, x86_64]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: capt
-          persist-credentials: false
-      - uses: actions/cache@v4
-        id: package
-        with:
-          path: native-output
-          key: office-native-v1-${{ runner.os }}-${{ matrix.abi }}-${{ hashFiles('capt/config/office/**', 'capt/tools/office/**') }}
-      - uses: actions/setup-java@v4
-        if: steps.package.outputs.cache-hit != 'true'
-        with:
-          distribution: temurin
-          java-version: '21'
-      - uses: android-actions/setup-android@v3
-        if: steps.package.outputs.cache-hit != 'true'
-        with:
-          packages: 'platform-tools'
-      - name: Free unused runner toolchains
-        if: steps.package.outputs.cache-hit != 'true'
-        run: bash capt/tools/free-runner-disk.sh
-      - name: Install upstream build prerequisites
-        if: steps.package.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ant autoconf automake bison build-essential flex gperf libfontconfig1-dev libkrb5-dev libnss3-dev libservlet-api-java libxml2-utils libxslt1-dev meson nasm ninja-build python3-dev xsltproc zip
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
-      - uses: actions/checkout@v4
-        if: steps.package.outputs.cache-hit != 'true'
-        with:
-          repository: LibreOffice/core
-          ref: 8221e31b3ac356a1623c672912a3d2b492f7e3d1
-          path: libreoffice
-          persist-credentials: false
-      - name: Build pinned upstream engine and inventory resources
-        if: steps.package.outputs.cache-hit != 'true'
-        run: |
-          bash capt/tools/office/build-libreoffice.sh libreoffice '${{ matrix.abi }}'
-          mkdir -p native-output
-          cp libreoffice/capt-office-${{ matrix.abi }}.tar.gz native-output/
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: libreoffice-native-${{ matrix.abi }}
-          path: native-output/capt-office-${{ matrix.abi }}.tar.gz
-          retention-days: 7
-          if-no-files-found: error
-  corresponding-sources:
-    name: Exact native sources and notices
-    needs: native
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    steps:
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools'
-      - name: Install exact NDK runtime for notice and byte verification
-        run: sdkmanager --install 'ndk;29.0.14206865'
-      - uses: actions/checkout@v4
-        with:
-          path: capt
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: LibreOffice/core
-          ref: 8221e31b3ac356a1623c672912a3d2b492f7e3d1
-          path: libreoffice-source
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: liberationfonts/liberation-sans-narrow
-          ref: 5462920fee502b688604472e65af49af951bdd56 # 1.07.6, editable SFD source
-          path: narrow-source
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: libreoffice-native-*
-          path: native-archives
-          merge-multiple: true
-      - name: Verify all packages and bundle exact corresponding sources
-        run: |
-          mkdir packages
-          for abi in arm64-v8a armeabi-v7a x86_64; do
-            mkdir "packages/$abi"
-            tar -xzf "native-archives/capt-office-$abi.tar.gz" -C "packages/$abi"
-            python3 capt/tools/prepare-office-notices.py "packages/$abi"
-          done
-          python3 capt/tools/package-office-sources.py packages libreoffice-source narrow-source office-corresponding-sources.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: office-corresponding-sources
-          path: |
-            office-corresponding-sources.tar.gz
-            office-corresponding-sources.tar.gz.sha256
-          retention-days: 7
-          if-no-files-found: error
+  engine:
+    uses: ./.github/workflows/office-packages.yml
   conversion-probe:
     name: LibreOffice synthetic conversion API ${{ matrix.api }}
-    needs: native
+    needs: engine
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -197,7 +85,7 @@ jobs:
         run: |
           sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'ndk;29.0.14206865' 'cmake;3.22.1'
           python3 tools/prepare-office-notices.py office-engine
-          bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" :app:assembleDebug :app:lintDebug
+          bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" -PofficeAbis=x86_64 :app:assembleDebug :app:lintDebug
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions app/build/outputs/apk/debug/app-debug.apk > probe-permissions.txt
           grep -F 'android.permission.INTERNET' probe-permissions.txt
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" dex packages --defined-only app/build/outputs/apk/debug/app-debug.apk > probe-dex.txt

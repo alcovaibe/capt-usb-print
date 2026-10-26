@@ -67,7 +67,7 @@ internal class OfficePreparedDocument(val session: DocumentSession, sheets: List
     override fun close() = session.close()
 }
 
-/** Implementations must not be exposed to user documents until their resource policy is verified. */
+/** Local conversion behind mandatory admission, sandbox and resource policy. */
 internal interface OfficeWorkerBackend {
     fun preload() = Unit
     /** Open the workbook and enumerate parts only: no Fit or PDF export. */
@@ -84,6 +84,7 @@ internal object OfficeWorkerProtocol {
     const val RESULT = HELLO + 2
     const val IMPORT = HELLO + 3
     const val SHEETS = HELLO + 4
+    const val IMPORT_DOCUMENT = HELLO + 5
     const val BACKEND = "com.cryonum.captusbprint.office.LibreOfficeWorkerBackend"
     const val MAX_PDF_BYTES = 64L * 1024 * 1024
     /** Typed errno/cause only; never infer a resource error from private exception text. */
