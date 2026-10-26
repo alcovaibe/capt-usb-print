@@ -1,6 +1,8 @@
 package com.cryonum.captusbprint.office
 
 import android.content.ComponentName
+import android.app.ActivityManager
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -37,6 +39,25 @@ internal object OfficeWorkerClient {
     val DEFAULT_BUDGET = OfficeWorkBudget(120_000, 768L * 1024 * 1024,
         192L * 1024 * 1024, 8L * 1024 * 1024, 8192)
     private val slot = Semaphore(1)
+    private val stopUncertain = AtomicBoolean(false)
+    @Volatile private var startupClean = false
+
+    /** Called once by the main Application, before any preview can own these roots. */
+    fun cleanupAtStartup(context: Context) {
+        check(Application.getProcessName() == context.packageName)
+        startupClean = false
+        // Never remove files from under a surviving worker after an owner crash.
+        val children = context.getSystemService(ActivityManager::class.java).runningAppProcesses
+        if (children == null || children.any {
+                it.uid == Process.myUid() && it.processName == "${context.packageName}:office"
+            }) return
+        startupClean = OfficePrivateFiles.deleteTree(File(context.noBackupFilesDir, "office-work")) &&
+            OfficePrivateFiles.deleteTree(File(context.noBackupFilesDir, "office-ui"))
+    }
+
+    private fun requireCleanStartup() {
+        if (!startupClean) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
+    }
     val IMPORT_BUDGET = OfficeWorkBudget(30_000, 256L * 1024 * 1024,
         PrivateDocumentImport.MAX_BYTES + 4096, PrivateDocumentImport.HEADROOM_BYTES, 8)
 
@@ -46,12 +67,13 @@ internal object OfficeWorkerClient {
                      budget: OfficeWorkBudget = IMPORT_BUDGET,
                      onWorkerStarted: (Int) -> Unit = {}): OfficeWorkerOutput {
         check(Looper.myLooper() != Looper.getMainLooper())
+        requireCleanStartup()
         if (uri.scheme != "content" || uri.authority.isNullOrEmpty() || uri.toString().length > 8192)
             throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
         if (!slot.tryAcquire()) throw OfficeConversionFailure(OfficeFailure.BUSY)
         try { return Attempt(context.applicationContext, null, null, cancelled, budget,
             onWorkerStarted, OfficeImportService::class.java, uri).execute() }
-        finally { slot.release() }
+        finally { if (!stopUncertain.get()) slot.release() }
     }
 
     fun prepare(context: Context, privateSource: File, options: OfficeOptions,
@@ -84,10 +106,11 @@ internal object OfficeWorkerClient {
                 onWorkerStarted: (Int) -> Unit = {},
                 serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficeWorkerOutput {
         check(Looper.myLooper() != Looper.getMainLooper())
+        requireCleanStartup()
         if (!slot.tryAcquire()) throw OfficeConversionFailure(OfficeFailure.BUSY)
         try { return Attempt(context.applicationContext, privateSource, options, cancelled, budget,
             onWorkerStarted, serviceClass).execute() }
-        finally { slot.release() }
+        finally { if (!stopUncertain.get()) slot.release() }
     }
 
     private class Attempt(val context: Context, val source: File?, val options: OfficeOptions?,
@@ -285,12 +308,18 @@ internal object OfficeWorkerClient {
                         catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
                         catch (_: IOException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
                         catch (_: SecurityException) { finalFailure = OfficeFailure.RESOURCE_OBSERVATION }
+                        try { budget.checkTime(SystemClock.elapsedRealtime() - started) }
+                        catch (error: OfficeWorkBudget.Exceeded) { finalFailure = OfficeWorkerProtocol.failure(error) }
                         sandboxCategory = broker?.diagnostic() ?: 0
                         if (sandboxCategory != 0) finalFailure = OfficeFailure.EXTERNAL_RESOURCE
                         if (finalFailure != null) preserve = false
                     }
                     val cleaned = !stopped || (preserve && unbound) || OfficePrivateFiles.deleteTree(directory)
-                    if (!unbound || !stopped) throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
+                    if (!unbound || !stopped) {
+                        // Never bind a new request to an unverified surviving native process.
+                        stopUncertain.set(true)
+                        throw OfficeConversionFailure(OfficeFailure.WORKER_STOP_FAILED)
+                    }
                     if (!cleaned) throw OfficeConversionFailure(OfficeFailure.RESOURCE_OBSERVATION)
                     if (preserve && (cancelled() || interrupted)) {
                         if (!OfficePrivateFiles.deleteTree(directory))

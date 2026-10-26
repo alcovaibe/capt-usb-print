@@ -106,6 +106,7 @@ internal object OfficeWorkerProtocol {
             else -> OfficeFailure.BAD_INPUT
         }
         is ClassNotFoundException -> OfficeFailure.ENGINE_UNAVAILABLE
+        is OutOfMemoryError -> OfficeFailure.MEMORY_LIMIT
         else -> OfficeFailure.ENGINE_FAILED
     }
 }

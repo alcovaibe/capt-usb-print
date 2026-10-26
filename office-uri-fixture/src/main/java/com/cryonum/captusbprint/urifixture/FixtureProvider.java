@@ -35,6 +35,9 @@ public final class FixtureProvider extends ContentProvider {
         reply.putInt("uid", android.os.Process.myUid());
         return reply;
     }
+    @Override public AssetFileDescriptor openAssetFile(Uri uri, String mode) throws FileNotFoundException {
+        return openAssetFile(uri, mode, null);
+    }
     @Override public AssetFileDescriptor openAssetFile(Uri uri, String mode, CancellationSignal signal) throws FileNotFoundException {
         if (!"r".equals(mode)) throw new FileNotFoundException();
         opens++;

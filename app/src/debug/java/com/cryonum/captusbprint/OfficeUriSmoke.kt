@@ -18,7 +18,13 @@ import java.util.concurrent.atomic.AtomicReference
 /** Separate helper APK/UID, real Binder/provider/pipe/PID lifecycle; no USB or Office renderer claim. */
 class OfficeUriSmoke : Instrumentation() {
     private var ownerDeath = false
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); ownerDeath = arguments?.getString("ownerDeath") == "true"; start() }
+    private var startupBlocked = false
+    override fun onCreate(arguments: Bundle?) {
+        super.onCreate(arguments)
+        ownerDeath = arguments?.getString("ownerDeath") == "true"
+        startupBlocked = arguments?.getString("startupBlocked") == "true"
+        start()
+    }
     override fun onStart() {
         waitForIdleSync()
         val context = targetContext
@@ -68,6 +74,12 @@ class OfficeUriSmoke : Instrumentation() {
             }
         }
         try {
+            if (startupBlocked) {
+                failure(OfficeFailure.RESOURCE_OBSERVATION) { import(authority).close() }
+                result.putString("stream", "CAPT_OFFICE_STARTUP_CLEANUP_BLOCK_PASSED (unremoved private tree blocks Office)")
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             if (ownerDeath) {
                 val previous = control("state").getInt("opens")
                 import(granted("read-block"), onStart = { pid ->
