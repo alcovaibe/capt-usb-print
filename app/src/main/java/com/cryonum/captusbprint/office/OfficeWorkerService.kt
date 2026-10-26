@@ -23,7 +23,8 @@ open class OfficeWorkerService : Service() {
     private val ownerDeath = IBinder.DeathRecipient { Process.killProcess(Process.myPid()) }
     private val binder = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-            if (code != OfficeWorkerProtocol.HELLO && code != OfficeWorkerProtocol.START && code != OfficeWorkerProtocol.IMPORT)
+            if (code != OfficeWorkerProtocol.HELLO && code != OfficeWorkerProtocol.START &&
+                code != OfficeWorkerProtocol.IMPORT && code != OfficeWorkerProtocol.SHEETS)
                 return super.onTransact(code, data, reply, flags)
             require(Binder.getCallingUid() == Process.myUid())
             data.enforceInterface(OfficeWorkerProtocol.DESCRIPTOR)
@@ -54,11 +55,13 @@ open class OfficeWorkerService : Service() {
                     sandbox = channel
                     val options = OfficeOptions.read(data)
                     require(data.dataAvail() == 0)
+                    val sheetsOnly = code == OfficeWorkerProtocol.SHEETS
+                    require(!sheetsOnly || (options.kind.spreadsheet && options.selectedSheets == null && !options.fitWidth))
                     if (!started.compareAndSet(false, true)) {
                         source.close(); channel.close(); report(callback, id, OfficeFailure.BUSY, emptyList())
                     } else {
                         watchOwner(callback)
-                        executor.execute { runConversion(id, source, channel, options, callback) }
+                        executor.execute { runConversion(id, source, channel, options, callback, sheetsOnly) }
                     }
                 } catch (_: Throwable) {
                     source.close(); sandbox?.close(); report(callback, id, OfficeFailure.BAD_INPUT, emptyList())
@@ -114,7 +117,7 @@ open class OfficeWorkerService : Service() {
     }
 
     private fun runConversion(id: String, source: ParcelFileDescriptor, sandbox: ParcelFileDescriptor, options: OfficeOptions,
-                              callback: IBinder) {
+                              callback: IBinder, sheetsOnly: Boolean) {
         var failure: OfficeFailure? = null
         var sheets = emptyList<String>()
         try {
@@ -131,8 +134,10 @@ open class OfficeWorkerService : Service() {
             // Only trusted code/resources are loaded here; no native document import yet.
             backend.preload()
             OfficeSandbox.install(this, sandbox, directory)
-            sheets = backend.convert(this, input, File(directory, "result.pdf"), directory, options)
+            sheets = if (sheetsOnly) backend.inspectSheets(this, input, directory, options.kind)
+                else backend.convert(this, input, File(directory, "result.pdf"), directory, options)
             check(sheets.size <= 256 && sheets.all { it.length <= 256 })
+            check(!sheetsOnly || (sheets.isNotEmpty() && !File(directory, "result.pdf").exists()))
         } catch (error: Throwable) {
             failure = OfficeWorkerProtocol.failure(error)
         } finally {

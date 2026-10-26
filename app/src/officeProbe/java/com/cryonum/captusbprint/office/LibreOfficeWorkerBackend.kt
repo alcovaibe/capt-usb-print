@@ -11,31 +11,13 @@ import java.io.File
 /** Opt-in debug backend. Not reachable from SAF/ACTION_SEND; file access is confined by the mandatory worker guard. */
 internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
     override fun preload() = LibreOfficeKit.initializeLibrary()
+    override fun inspectSheets(context: Context, input: File, directory: File, kind: OfficeKind): List<String> {
+        require(kind.spreadsheet)
+        return withDocument(context, input, directory, kind) { _, sheets -> sheets }
+    }
     override fun convert(context: Context, input: File, output: File, directory: File,
-                         options: OfficeOptions): List<String> {
-        val engine = File(directory, "engine")
-        unpack(context.assets, "unpack", engine)
-        val fonts = File(engine, "etc/fonts/fonts.conf")
-        val configuration = fonts.readText()
-        check(configuration.contains("/data/data/org.documentfoundation.libreoffice/fontconfig"))
-        check(configuration.windowed("</fontconfig>".length).count { it == "</fontconfig>" } == 1)
-        val aliases = context.assets.open("office-font-aliases.xml").bufferedReader().use { it.readText() }
-        fonts.writeText(configuration.replace("/data/data/org.documentfoundation.libreoffice/fontconfig",
-            File(engine, "fontconfig").absolutePath).replace("</fontconfig>", "$aliases\n</fontconfig>"))
-        LibreOfficeKit.init(context, engine, false)
-        val office = Office(requireNotNull(LibreOfficeKit.getLibreOfficeKitHandle()))
-        val document = office.documentLoad(input.toURI().toASCIIString())
-            ?: throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
-        try {
-            if (document.getDocumentType() != if (options.kind.spreadsheet) Document.DOCTYPE_SPREADSHEET else Document.DOCTYPE_TEXT)
-                throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
-            val sheets = if (options.kind.spreadsheet) {
-                val count = document.getParts()
-                if (count !in 1..256) throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
-                List(count) { document.getPartName(it).also { name ->
-                    if (name.length > 256) throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
-                } }
-            } else emptyList()
+                         options: OfficeOptions): List<String> =
+        withDocument(context, input, directory, options.kind) { document, sheets ->
             if (options.selectedSheets?.any { it !in sheets.indices } == true)
                 throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
             if (options.fitWidth) {
@@ -54,7 +36,35 @@ internal class LibreOfficeWorkerBackend : OfficeWorkerBackend {
             check(!output.exists())
             if (document.saveAs(output.toURI().toASCIIString(), "pdf", filter) == 0)
                 throw OfficeConversionFailure(OfficeFailure.ENGINE_FAILED)
-            return sheets
+            sheets
+        }
+
+    private fun withDocument(context: Context, input: File, directory: File, kind: OfficeKind,
+                             action: (Document, List<String>) -> List<String>): List<String> {
+        val engine = File(directory, "engine")
+        unpack(context.assets, "unpack", engine)
+        val fonts = File(engine, "etc/fonts/fonts.conf")
+        val configuration = fonts.readText()
+        check(configuration.contains("/data/data/org.documentfoundation.libreoffice/fontconfig"))
+        check(configuration.windowed("</fontconfig>".length).count { it == "</fontconfig>" } == 1)
+        val aliases = context.assets.open("office-font-aliases.xml").bufferedReader().use { it.readText() }
+        fonts.writeText(configuration.replace("/data/data/org.documentfoundation.libreoffice/fontconfig",
+            File(engine, "fontconfig").absolutePath).replace("</fontconfig>", "$aliases\n</fontconfig>"))
+        LibreOfficeKit.init(context, engine, false)
+        val office = Office(requireNotNull(LibreOfficeKit.getLibreOfficeKitHandle()))
+        val document = office.documentLoad(input.toURI().toASCIIString())
+            ?: throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+        try {
+            if (document.getDocumentType() != if (kind.spreadsheet) Document.DOCTYPE_SPREADSHEET else Document.DOCTYPE_TEXT)
+                throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+            val sheets = if (kind.spreadsheet) {
+                val count = document.getParts()
+                if (count !in 1..256) throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+                List(count) { document.getPartName(it).also { name ->
+                    if (name.length > 256) throw OfficeConversionFailure(OfficeFailure.BAD_INPUT)
+                } }
+            } else emptyList()
+            return action(document, sheets)
         } finally { document.destroy() }
     }
 

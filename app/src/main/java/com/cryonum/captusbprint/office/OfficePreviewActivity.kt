@@ -143,15 +143,24 @@ internal abstract class OfficePreviewActivity : Activity() {
             when (state.phase) {
                 LatestPreparation.Phase.LOADING -> {
                     invalidatePreview(); metadata = null
-                    preview.showDocument(); preview.setLoading(); message.setText(R.string.document_loading)
+                    preview.showDocument(); preview.setLoading()
+                    message.setText(if (officeKind.spreadsheet && names.isEmpty())
+                        R.string.office_loading_sheets else R.string.document_loading)
                 }
                 LatestPreparation.Phase.READY -> {
-                    val next = requireNotNull(state.metadata); metadata = next
+                    val next = requireNotNull(state.metadata)
                     if (names != next.sheets) {
                         names = next.sheets
                         if (initialAll) { selected.clear(); selected.addAll(names.indices) }
                         buildSheetRows()
                     }
+                    if (next.sheetsOnly) {
+                        // Publish the list before attempting any sheet's print layout. Keep it
+                        // usable even if the subsequent all-sheet Fit/PDF conversion fails.
+                        reprepare(clearRange = false)
+                        return@OfficePreviewPreparation
+                    }
+                    metadata = next
                     message.text = getString(R.string.office_ready, next.pageCount)
                     val saved = restored; restored = null
                     muted = true; range.setText(saved?.getString("range") ?: ""); muted = false
@@ -183,7 +192,7 @@ internal abstract class OfficePreviewActivity : Activity() {
             override fun afterTextChanged(s: Editable?) = Unit
         }
         range.addTextChangedListener(watcher); copies.addTextChangedListener(watcher)
-        reprepare(clearRange = false)
+        if (officeKind.spreadsheet) inspectSheets() else reprepare(clearRange = false)
     }
     private fun invalidatePreview() {
         ++renderToken; previewReady = false
@@ -212,6 +221,7 @@ internal abstract class OfficePreviewActivity : Activity() {
     }
     private fun reprepare(clearRange: Boolean = true) {
         if (!::preparation.isInitialized || enqueuing) return
+        if (officeKind.spreadsheet && names.isEmpty()) { inspectSheets(); return }
         invalidatePreview(); metadata = null; lastFailure = null; loading = true
         if (clearRange) { muted = true; range.setText(""); muted = false; page = 0; restored = null }
         if (officeKind.spreadsheet && !initialAll && selected.isEmpty()) {
@@ -220,6 +230,12 @@ internal abstract class OfficePreviewActivity : Activity() {
             updateActions(); return
         }
         token = preparation.prepare(if (officeKind.spreadsheet && !initialAll) selected.toList() else null, fit.isChecked)
+        preview.showDocument(); preview.setLoading(); updateActions()
+    }
+    private fun inspectSheets() {
+        invalidatePreview(); metadata = null; lastFailure = null; loading = true
+        token = preparation.inspectSheets()
+        message.setText(R.string.office_loading_sheets)
         preview.showDocument(); preview.setLoading(); updateActions()
     }
     private fun render(index: Int) {
@@ -298,6 +314,6 @@ internal abstract class OfficePreviewActivity : Activity() {
         check(previewReady && acknowledge.isChecked && plan().pageIndices.first() == page)
         preparation.enqueueHeld(token,range.text.toString(),plan().copies,"offline-office-ui-no-usb",success,failure)
     }
-    internal data class Snapshot(val version: Long,val ready: Boolean,val page: Int,val pages: Int,val sheets: List<Int>,val fit: Boolean,val failure: OfficeFailure?,val loading: Boolean)
-    internal fun snapshot() = Snapshot(token,previewReady,page,metadata?.pageCount ?: 0,selected.toList(),fit.isChecked,lastFailure,loading)
+    internal data class Snapshot(val version: Long,val ready: Boolean,val page: Int,val pages: Int,val sheets: List<Int>,val fit: Boolean,val failure: OfficeFailure?,val loading: Boolean,val sheetCount: Int)
+    internal fun snapshot() = Snapshot(token,previewReady,page,metadata?.pageCount ?: 0,selected.toList(),fit.isChecked,lastFailure,loading,names.size)
 }

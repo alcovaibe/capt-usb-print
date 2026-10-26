@@ -70,6 +70,9 @@ internal class OfficePreparedDocument(val session: DocumentSession, sheets: List
 /** Implementations must not be exposed to user documents until their resource policy is verified. */
 internal interface OfficeWorkerBackend {
     fun preload() = Unit
+    /** Open the workbook and enumerate parts only: no Fit or PDF export. */
+    fun inspectSheets(context: Context, input: File, directory: File, kind: OfficeKind): List<String> =
+        throw OfficeConversionFailure(OfficeFailure.ENGINE_UNAVAILABLE)
     fun convert(context: Context, input: File, output: File, directory: File,
                 options: OfficeOptions): List<String>
 }
@@ -80,6 +83,7 @@ internal object OfficeWorkerProtocol {
     const val START = HELLO + 1
     const val RESULT = HELLO + 2
     const val IMPORT = HELLO + 3
+    const val SHEETS = HELLO + 4
     const val BACKEND = "com.cryonum.captusbprint.office.LibreOfficeWorkerBackend"
     const val MAX_PDF_BYTES = 64L * 1024 * 1024
     fun directory(context: Context, id: String): File {

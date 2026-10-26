@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
+import com.cryonum.captusbprint.office.OfficeFailure
 import com.cryonum.captusbprint.queue.PrintQueueRuntime
 import org.json.JSONObject
 import java.io.File
@@ -107,8 +108,42 @@ class OfficeNativeUiSmoke : Instrumentation() {
                 check(copiedPages()==1) // Closing the entire UI still cannot delete the queue's source.
                 PrintQueueRuntime.cancel(requireNotNull(held)); held=null
             }
+            for(kind in listOf("xls","xlsx")) {
+                stage="$kind-edge-discovery"
+                activity=startActivitySync(Intent(targetContext,OfficeFixturePreviewActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("kind",kind).putExtra("edge",true)) as OfficeFixturePreviewActivity
+                await { snapshot().failure==OfficeFailure.FIT_WIDTH_UNSUPPORTED && !snapshot().loading }
+                check(snapshot().sheetCount==6 && snapshot().sheets==(0..5).toList())
+                check(snapshot().pages==0 && !snapshot().ready)
+                check(!ui { current().findViewById<View>(android.R.id.content).findViewWithTag<View>("office-print").isEnabled })
+                check(PrintQueueRuntime.snapshot().none { !it.phase.terminal })
+                stage="$kind-edge-good-sheet"
+                for(index in listOf(0,1,2,3,5)) click("office-sheet-$index")
+                await { snapshot().ready && snapshot().pages==1 }
+                check(snapshot().sheets==listOf(4) && snapshot().fit)
+                stage="$kind-edge-all-fails-list-survives"
+                click("office-all")
+                await { snapshot().failure==OfficeFailure.FIT_WIDTH_UNSUPPORTED && !snapshot().loading }
+                check(snapshot().sheetCount==6 && !snapshot().ready)
+                for(index in listOf(5,3,1,0)) click("office-sheet-$index")
+                await { snapshot().ready && snapshot().pages>1 }
+                check(snapshot().sheets==listOf(2,4) && snapshot().fit)
+                val count=snapshot().pages
+                click("office-reviewed")
+                val id=AtomicLong(0)
+                ui { current().enqueueHeldForSmoke({ id.set(it) },{ error("EDGE_UI_HELD_FAILED") }) }
+                await { id.get()!=0L }; held=id.get()
+                val record=PrintQueueRuntime.snapshot().single { it.id==held }
+                check(!record.ready && !record.usbStarted && record.sheets==count)
+                val copy=File(targetContext.noBackupFilesDir,"print-queue/$held/source.bin")
+                check(PdfRenderer(ParcelFileDescriptor.open(copy,ParcelFileDescriptor.MODE_READ_ONLY)).use { it.pageCount }==count)
+                ui { current().finish() }
+                await { folders("office-ui")==sources && folders("office-work")==workers }
+                check(copy.isFile)
+                PrintQueueRuntime.cancel(requireNotNull(held)); held=null
+            }
             check(PrintQueueRuntime.snapshot().none { !it.phase.terminal })
-            result.putString("stream","CAPT_OFFICE_NATIVE_UI_PASSED (DOCX/DOC navigation/range/copies; XLS/XLSX sheets/fit; held copies/cleanup; no USB)")
+            result.putString("stream","CAPT_OFFICE_NATIVE_UI_PASSED (DOCX/DOC navigation/range/copies; XLS/XLSX discovery before rejected all-sheet Fit, safe subset recovery; held copies/cleanup; no USB)")
             outcome=Activity.RESULT_OK
         } catch(error:Throwable) {
             val state=runCatching { snapshot() }.getOrNull()

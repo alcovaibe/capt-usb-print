@@ -215,9 +215,11 @@ class OfficeUriSmoke : Instrumentation() {
                     check(SystemClock.elapsedRealtime()<until); Thread.sleep(20)
                 }
             }
-            ready(workflow.prepare(listOf(2,0), true))
+            ready(workflow.inspectSheets())
+            check(state.get().metadata.sheetsOnly && state.get().metadata.sheets.size == 3)
             control("revoke", uri)
             val importedOpens = control("state").getInt("opens")
+            ready(workflow.prepare(listOf(2,0), true))
             ready(workflow.prepare(listOf(0), false))
             check(control("state").getInt("opens") == importedOpens)
             workflow.close(); preparation = null

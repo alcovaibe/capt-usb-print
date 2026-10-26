@@ -12,6 +12,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import com.cryonum.captusbprint.office.OfficePreviewActivity
+import com.cryonum.captusbprint.office.OfficeFailure
 import com.cryonum.captusbprint.queue.PrintQueueRuntime
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
@@ -100,8 +101,36 @@ class OfficePreviewUiSmoke : Instrumentation() {
             await { ui { current().findViewById<View>(android.R.id.content).findViewWithTag<TextView>("office-status").text.toString() } == targetContext.getString(R.string.office_error_failed) }
             ui { current().finish() }
             await { files("office-ui")==sources }
+            stage = "cancel-sheet-discovery"
+            activity=startActivitySync(Intent(targetContext,OfficePreviewTestActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("rejectedSheet",true)) as OfficePreviewTestActivity
+            await { File(targetContext.noBackupFilesDir,"office-work").listFiles()?.any {
+                File(it,"sheet-scan-started").isFile } == true }
+            check(snapshot().loading && snapshot().sheetCount==0 && !snapshot().ready)
+            click("office-cancel")
+            await { !snapshot().loading && snapshot().sheetCount==0 }
+            await { files("office-work")==work }
+            check(snapshot().pages==0 && !snapshot().ready)
+            stage = "discover-before-rejected-layout"
+            click("office-retry")
+            await { snapshot().failure==OfficeFailure.FIT_WIDTH_UNSUPPORTED && !snapshot().loading }
+            check(snapshot().sheetCount==3 && snapshot().sheets==listOf(0,1,2))
+            check(snapshot().pages==0 && !snapshot().ready)
+            check(!ui { current().findViewById<View>(android.R.id.content).findViewWithTag<View>("office-print").isEnabled })
             check(PrintQueueRuntime.snapshot().none { !it.phase.terminal })
-            result.putString("stream","CAPT_OFFICE_PREVIEW_UI_PASSED (fake renderer; sheets/fit/pages/held copy/recreate/cleanup; no USB)")
+            stage = "select-after-rejected-layout"
+            click("office-sheet-0")
+            await { snapshot().ready && snapshot().pages==5 }
+            check(snapshot().sheets==listOf(1,2) && snapshot().sheetCount==3 && snapshot().fit)
+            click("office-all")
+            await { snapshot().failure==OfficeFailure.FIT_WIDTH_UNSUPPORTED && !snapshot().loading }
+            check(snapshot().sheetCount==3 && !snapshot().ready)
+            click("office-fit")
+            await { snapshot().ready && snapshot().pages==10 }
+            ui { current().finish() }
+            await { files("office-ui")==sources && files("office-work")==work }
+            check(PrintQueueRuntime.snapshot().none { !it.phase.terminal })
+            result.putString("stream","CAPT_OFFICE_PREVIEW_UI_PASSED (fake renderer; independent sheets/cancel/rejected layout recovery/fit/held copy/recreate/cleanup; no USB)")
             resultCode=Activity.RESULT_OK
         } catch (error: Throwable) {
             val state = runCatching { snapshot() }.getOrNull()

@@ -106,19 +106,36 @@ internal object OfficeWorkerClient {
     fun convert(context: Context, privateSource: File, options: OfficeOptions,
                 cancelled: () -> Boolean = { false }, budget: OfficeWorkBudget = DEFAULT_BUDGET,
                 onWorkerStarted: (Int) -> Unit = {},
-                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficeWorkerOutput {
+                serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): OfficeWorkerOutput =
+        sourceAttempt(context, privateSource, options, cancelled, budget, onWorkerStarted, serviceClass, false)
+
+    /** Metadata is published only after sandbox checks, verified process exit and workspace cleanup.
+     * No PDF/queue entry is produced. Names stay in private memory. */
+    fun inspectSheets(context: Context, privateSource: File, kind: OfficeKind,
+                      cancelled: () -> Boolean = { false }, budget: OfficeWorkBudget = DEFAULT_BUDGET,
+                      onWorkerStarted: (Int) -> Unit = {},
+                      serviceClass: Class<out OfficeWorkerService> = OfficeWorkerService::class.java): List<String> {
+        require(kind.spreadsheet)
+        return sourceAttempt(context, privateSource, OfficeOptions(kind), cancelled, budget,
+            onWorkerStarted, serviceClass, true).use { it.sheetNames }
+    }
+
+    private fun sourceAttempt(context: Context, privateSource: File, options: OfficeOptions,
+                              cancelled: () -> Boolean, budget: OfficeWorkBudget,
+                              onWorkerStarted: (Int) -> Unit, serviceClass: Class<out OfficeWorkerService>,
+                              sheetsOnly: Boolean): OfficeWorkerOutput {
         check(Looper.myLooper() != Looper.getMainLooper())
         requireCleanStartup()
         if (!slot.tryAcquire()) throw OfficeConversionFailure(OfficeFailure.BUSY)
         try { return Attempt(context.applicationContext, privateSource, options, cancelled, budget,
-            onWorkerStarted, serviceClass).execute() }
+            onWorkerStarted, serviceClass, sheetsOnly = sheetsOnly).execute() }
         finally { if (!stopUncertain.get()) slot.release() }
     }
 
     private class Attempt(val context: Context, val source: File?, val options: OfficeOptions?,
                           val cancelled: () -> Boolean, val budget: OfficeWorkBudget,
                           val onWorkerStarted: (Int) -> Unit, val serviceClass: Class<out OfficeWorkerService>,
-                          val uri: Uri? = null) {
+                          val uri: Uri? = null, val sheetsOnly: Boolean = false) {
         val id = UUID.randomUUID().toString()
         val directory = OfficeWorkerProtocol.directory(context, id)
         val main = Handler(Looper.getMainLooper())
@@ -255,11 +272,17 @@ internal object OfficeWorkerClient {
                 budget.checkTime(SystemClock.elapsedRealtime() - started)
                 budget.checkDisk(directory, directory.usableSpace)
                 observeRss()
-                val pdf = File(directory, if (uri == null) "result.pdf" else "source.bin")
+                val pdf = File(directory, when {
+                    uri != null -> "source.bin"
+                    sheetsOnly -> "source.${requireNotNull(options).kind.extension}"
+                    else -> "result.pdf"
+                })
                 if (Files.isSymbolicLink(pdf.toPath()) || !pdf.isFile ||
                     pdf.length() !in 1..OfficeWorkerProtocol.MAX_PDF_BYTES)
                     throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
                 if (uri != null && importedKind.get() == null)
+                    throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
+                if (sheetsOnly && (sheets.get().isEmpty() || File(directory, "result.pdf").exists()))
                     throw OfficeConversionFailure(OfficeFailure.INVALID_RESULT)
                 preserve = true
                 return OfficeWorkerOutput(pdf, sheets.get(), pid.get(), peakRss, directory, importedKind.get())
@@ -381,7 +404,8 @@ internal object OfficeWorkerClient {
                     descriptor.writeToParcel(request, 0)
                     requireNotNull(broker).descriptor.writeToParcel(request, 0)
                     requireNotNull(options).write(request)
-                    check(service.transact(OfficeWorkerProtocol.START, request, null, IBinder.FLAG_ONEWAY))
+                    check(service.transact(if (sheetsOnly) OfficeWorkerProtocol.SHEETS else OfficeWorkerProtocol.START,
+                        request, null, IBinder.FLAG_ONEWAY))
                 } finally { request.recycle() }
             }
         }

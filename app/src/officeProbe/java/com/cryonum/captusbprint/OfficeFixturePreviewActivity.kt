@@ -13,7 +13,9 @@ internal class OfficeFixturePreviewActivity : OfficePreviewActivity() {
     override val allowQueue get() = true // Only the synthetic assets below; still explicit USB permission/confirmation.
     override fun openSource(): java.io.InputStream {
         check(Looper.myLooper() != Looper.getMainLooper())
-        return applicationContext.assets.open("office-fixtures/${if (officeKind.spreadsheet) "workbook" else "word"}.${officeKind.extension}")
+        val fixture = if (officeKind.spreadsheet && intent.getBooleanExtra("edge", false)) "workbook-edge"
+            else if (officeKind.spreadsheet) "workbook" else "word"
+        return applicationContext.assets.open("office-fixtures/$fixture.${officeKind.extension}")
     }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); current = WeakReference(this) }
 }
