@@ -97,7 +97,8 @@ def main():
             assert re.search(r'1[.,]24\b',page)
         assert len(texts[f'{kind}-manual-saved.pdf']) >= 2
         fitted = texts.get(f'{kind}-manual-fit.pdf')
-        if fitted is not None: assert len(fitted) == 1 and 'ПРАВЫЙ КРАЙ' in fitted[0]
+        if fitted is not None:
+            assert len(fitted) == 1 and 'ПРАВЫЙ КРАЙ' in raw_texts[f'{kind}-manual-fit.pdf']
     Path('office-font-fallback-observed.json').write_text(json.dumps({
         'syntheticOnly':True,'actualPdfLatinLabelFonts':observed,
         'allGlyphRunsVerified':False,'microsoftOfficeComparison':False},ensure_ascii=False,indent=2)+'\n')

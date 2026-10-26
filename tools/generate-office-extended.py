@@ -124,6 +124,13 @@ def excel(output):
     ws['A12'].alignment = Alignment(wrap_text=True)
     ws['A12'].fill = PatternFill('solid', fgColor='DDDDDD')
     ws['D14'] = 'КОНЕЦ ЧИСЕЛ'
+    # The acceptance markers must be visible within their own source cells,
+    # rather than relying on overflow outside the sheet's print area.
+    for sheet, address in [('Разрывы','H12'), ('Высота','H100'), ('Числа','D14')]:
+        cell = wb[sheet][address]
+        cell.font = Font(name='Liberation Sans', size=8)
+        cell.alignment = Alignment(horizontal='right', vertical='center', wrap_text=True)
+        wb[sheet].row_dimensions[cell.row].height = 30
     ws = wb['Узкое поле']; ws.print_area = 'A1:A12'
     ws.column_dimensions['A'].width = 255
     ws.page_margins.left = ws.page_margins.right = 4.08  # ~2.7 mm usable, positive.
