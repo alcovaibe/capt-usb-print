@@ -127,8 +127,10 @@ internal class OfficePreviewPreparation(
             val id = PrintQueueRuntime.enqueueChecked(app, session, plan, device) {
                 resources.check(0, { stale.asBoolean })
             }
-            if (stale.asBoolean) { PrintQueueRuntime.cancel(id); throw CancellationException() }
-            id
+            try {
+                resources.check(0, { stale.asBoolean }, force = true)
+                id
+            } catch (error: Throwable) { PrintQueueRuntime.cancel(id); throw error }
         }, { success(it) }, { failure(it) }, { PrintQueueRuntime.cancel(it) })
     override fun close() = core.close()
 }

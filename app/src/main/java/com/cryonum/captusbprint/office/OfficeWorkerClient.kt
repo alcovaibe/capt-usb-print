@@ -92,6 +92,7 @@ internal object OfficeWorkerClient {
                     resourceMonitor.check(0, cancelled)
                 }
                 candidateSession = session
+                resourceMonitor.check(0, cancelled, force = true)
                 candidate = OfficePreparedDocument(session, raw.sheetNames, raw.workerPid, raw.peakObservedRssBytes)
             }
             return requireNotNull(candidate)
