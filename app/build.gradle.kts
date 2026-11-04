@@ -2,11 +2,13 @@ plugins {
     id("com.android.application")
 }
 
-// CI keeps its existing universal debug path; ordinary builds also emit per-ABI APKs.
-val splitApks = providers.gradleProperty("splitApks").map { it.toBooleanStrict() }.getOrElse(true)
-val minifyDebug = providers.gradleProperty("minifyDebug").map { it.toBooleanStrict() }.getOrElse(false)
+// Test-only release instrumentation lives in a separate output tree and uses the debug key.
+val r8Smoke = providers.gradleProperty("r8Smoke").map { it.toBooleanStrict() }.getOrElse(false)
+val splitApks = providers.gradleProperty("splitApks").map { it.toBooleanStrict() }.getOrElse(!r8Smoke)
+if (r8Smoke) layout.buildDirectory.set(rootProject.layout.projectDirectory.dir("r8-smoke-build/app"))
 
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
+require(!r8Smoke || releaseKeystorePath == null) { "Smoke APK must never use the permanent key" }
 // Engine binaries are built from pinned sources outside Gradle. Missing packages fail closed.
 val officeEngineDir = file(providers.gradleProperty("officeEngineDir").getOrElse("${rootDir}/office-engine"))
 val officeAbis = providers.gradleProperty("officeAbis").getOrElse("arm64-v8a,armeabi-v7a,x86_64")
@@ -63,17 +65,16 @@ android {
 
     buildTypes {
         release {
-            if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("permanent")
+            if (r8Smoke) {
+                signingConfig = signingConfigs.getByName("debug")
+                applicationIdSuffix = ".debug"
+            } else if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("permanent")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "true")
+            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", (!r8Smoke).toString())
         }
         debug {
-            // Exercise the same JNI/reflection rules with the existing real Office smoke corpus.
-            isMinifyEnabled = minifyDebug
-            isShrinkResources = minifyDebug
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             applicationIdSuffix = ".debug"
             buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "false")
         }
@@ -102,6 +103,13 @@ android {
         // AGP 9 built-in Kotlin ignores extra Kotlin roots registered as Java.
         kotlin.directories += "src/officeProbe/java"
         java.srcDir("src/officeProbe/java")
+    }
+    if (r8Smoke) sourceSets.getByName("release") {
+        // Only the opt-in CI APK receives synthetic documents and Instrumentation entries.
+        kotlin.directories += setOf("src/debug/java", "src/officeProbe/java")
+        java.srcDirs("src/debug/java", "src/officeProbe/java")
+        assets.srcDir("src/debug/assets")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
     }
     sourceSets.getByName("main") {
         assets.srcDir("${officeEngineDir}/assets")

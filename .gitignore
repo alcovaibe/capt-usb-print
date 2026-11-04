@@ -35,3 +35,5 @@ __pycache__/
 
 /upgrade-baseline/
 /upgrade-check-input/
+
+/r8-smoke-build/
