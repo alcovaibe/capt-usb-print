@@ -24,6 +24,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
+internal class MissingUpdateAsset : IOException("Update asset not found")
+
 internal class InvalidUpdateApk : IOException("Invalid update APK")
 
 internal interface UpdateDownloader {
@@ -37,8 +39,10 @@ internal class GithubUpdateDownloader(
     private val directory: File,
     private val verifier: suspend (File, UpdateManifest.Release) -> Unit,
     internal val client: OkHttpClient = newClient(),
+    private val abi: String? = null,
 ) : UpdateDownloader, AutoCloseable {
-    constructor(context: Context) : this(File(context.cacheDir, "updates"), { file, release -> verifyApk(context, file, release) })
+    constructor(context: Context) : this(File(context.cacheDir, "updates"),
+        { file, release -> verifyApk(context, file, release) }, abi = preferredAbi(Build.SUPPORTED_ABIS.toList()))
     private val installerFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
     override fun retainForInstaller(file: File) { installerFiles.add(file) }
     private val ownedFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
@@ -49,17 +53,27 @@ internal class GithubUpdateDownloader(
             File.createTempFile("update-", ".apk", directory).also { ownedFiles.add(it) }
         }
         try {
-            var url = downloadUrl(release)
-            repeat(6) {
-                currentCoroutineContext().ensureActive()
-                val redirect = downloadResponse(url, file, progress)
-                if (redirect == null) {
-                    verify(file, release)
-                    return file
+            // Releases before ABI splitting only have the universal asset. Only an actual
+            // HTTP 404 permits fallback; network, signature and redirect errors still fail.
+            val urls = listOfNotNull(abi?.let { downloadUrl(release, it) }, downloadUrl(release)).distinct()
+            for ((index, initial) in urls.withIndex()) {
+                try {
+                    var url = initial
+                    repeat(6) {
+                        currentCoroutineContext().ensureActive()
+                        val redirect = downloadResponse(url, file, progress)
+                        if (redirect == null) {
+                            verify(file, release)
+                            return file
+                        }
+                        url = redirect
+                    }
+                    throw IOException("Too many download redirects")
+                } catch (missing: MissingUpdateAsset) {
+                    if (index == urls.lastIndex) throw missing
                 }
-                url = redirect
             }
-            throw IOException("Too many download redirects")
+            throw IOException("Update asset unavailable")
         } catch (error: Exception) {
             withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { file.delete() }
             throw error
@@ -83,6 +97,7 @@ internal class GithubUpdateDownloader(
                                 val location = it.header("Location") ?: throw InvalidUpdateApk()
                                 validatedRedirect(url, location)
                             } else {
+                                if (it.code == 404) throw MissingUpdateAsset()
                                 if (it.code != 200) throw IOException("Download unavailable")
                                 val body = it.body ?: throw InvalidUpdateApk()
                                 val expected = body.contentLength().takeIf { length -> length >= 0 }
@@ -176,11 +191,15 @@ internal class GithubUpdateDownloader(
 
         // Universal Office APK contains three native engines. Still stream with a hard cap.
         const val MAX_APK_BYTES = 1024L * 1024 * 1024
-        fun downloadUrl(release: UpdateManifest.Release): HttpUrl {
+        val supportedAbis = setOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        fun preferredAbi(deviceAbis: List<String>): String? = deviceAbis.firstOrNull { it in supportedAbis }
+        fun downloadUrl(release: UpdateManifest.Release, abi: String? = null): HttpUrl {
+            require(abi == null || abi in supportedAbis)
             UpdateUrls.release(release.releaseUrl)
             require(release.releaseUrl.endsWith("/${UpdateUrls.tag(release.versionName)}"))
             val build = release.versionName.substringAfterLast('.')
-            return "https://github.com/alcovaibe/capt-usb-print/releases/download/${UpdateUrls.tag(release.versionName)}/CAPT-USB-Print-0.1.0-a2-build-$build.apk".toHttpUrl()
+            val suffix = abi?.let { "-$it" }.orEmpty()
+            return "https://github.com/alcovaibe/capt-usb-print/releases/download/${UpdateUrls.tag(release.versionName)}/CAPT-USB-Print-0.1.0-a2-build-$build$suffix.apk".toHttpUrl()
         }
         fun validatedRedirect(from: HttpUrl, location: String): HttpUrl {
             val url = from.resolve(location) ?: throw InvalidUpdateApk()

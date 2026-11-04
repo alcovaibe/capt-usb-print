@@ -1,21 +1,11 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# JNI resolves these classes, fields and callbacks by their original names.
+# The prebuilt LibreOffice engine cannot adapt to R8 renaming its Java bridge.
+-keep class org.libreoffice.kit.** { *; }
+-keep class com.cryonum.captusbprint.core.HiscoaNative { *; }
+-keep class com.cryonum.captusbprint.office.OfficeSandbox { *; }
+-keep class com.cryonum.captusbprint.office.OfficeKernelLimits { *; }
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# OfficeWorkerService instantiates this backend by name in the worker process.
+-keep,allowoptimization class com.cryonum.captusbprint.office.LibreOfficeWorkerBackend {
+    public <init>();
+}

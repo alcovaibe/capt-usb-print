@@ -9,6 +9,8 @@ import re
 import subprocess
 import tempfile
 
+from release_apks import MAX_APK_BYTES, release_assets, verify_native_layout
+
 REPO = "alcovaibe/capt-usb-print"
 APPID = "com.cryonum.captusbprint"
 BRANCH = "updates"
@@ -107,28 +109,32 @@ def publish():
     runs = api(f"actions/workflows/android.yml/runs?head_sha={commit}&status=success&per_page=100")["workflow_runs"]
     if not any(r["conclusion"] == "success" and r["head_branch"] == "main" and r["event"] in {"push", "workflow_dispatch"} for r in runs):
         raise RuntimeError("No successful trusted signed-release workflow for tag commit")
-    expected_name = f"CAPT-USB-Print-0.1.0-a2-build-{build}.apk"
-    assets = [a for a in release["assets"] if a["name"].endswith(".apk")]
-    if len(assets) != 1 or assets[0]["name"] != expected_name or assets[0]["state"] != "uploaded":
-        raise RuntimeError("Release needs exactly one expected uploaded APK")
+    assets = release_assets(release)
     tools = Path(os.environ["ANDROID_HOME"]) / "build-tools/36.0.0"
     expected = (ROOT / "config/release-certificate.sha256").read_text().strip().lower()
     if not re.fullmatch("[0-9a-f]{64}", expected):
         raise RuntimeError("Invalid pinned certificate")
     with tempfile.TemporaryDirectory() as tmp:
-        call("gh", "release", "download", tag, "--repo", REPO, "--pattern", expected_name, "--dir", tmp)
-        apk = Path(tmp) / expected_name
-        if not 10000 <= apk.stat().st_size <= 1024 * 1024 * 1024 or apk.stat().st_size != assets[0]["size"]:
-            raise RuntimeError("Invalid APK size")
-        output = call(tools / "apksigner", "verify", "--verbose", "--print-certs", apk)
-        signers = re.findall(r"Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F]+)", output)
-        if len(signers) != 1:
-            raise RuntimeError("Expected one APK signer")
-        candidate = manifest_from_apk(release, call(tools / "aapt", "dump", "badging", apk), signers[0].lower(), expected)
-        with apk.open("rb") as stream:
-            digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
-        if assets[0].get("digest") not in (None, digest):
-            raise RuntimeError("Asset digest mismatch")
+        call("gh", "release", "download", tag, "--repo", REPO, "--pattern", "*.apk", "--dir", tmp)
+        candidate = None
+        for variant, asset in assets.items():
+            apk = Path(tmp) / asset["name"]
+            if not 10000 <= apk.stat().st_size <= MAX_APK_BYTES or apk.stat().st_size != asset["size"]:
+                raise RuntimeError("Invalid APK size")
+            output = call(tools / "apksigner", "verify", "--verbose", "--print-certs", apk)
+            signers = re.findall(r"Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F]+)", output)
+            if len(signers) != 1:
+                raise RuntimeError("Expected one APK signer")
+            metadata = manifest_from_apk(release, call(tools / "aapt", "dump", "badging", apk), signers[0].lower(), expected)
+            if candidate is not None and candidate != metadata:
+                raise RuntimeError("APK variants advertise different identities")
+            candidate = metadata
+            if len(assets) > 1:
+                verify_native_layout(apk, variant)
+            with apk.open("rb") as stream:
+                digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+            if asset.get("digest") not in (None, digest):
+                raise RuntimeError("Asset digest mismatch")
     # Recheck the release/asset after inspecting the actual download.
     fresh = api(f"releases/{release['id']}")
     if release_snapshot(fresh) != release_snapshot(release):

@@ -2,6 +2,10 @@ plugins {
     id("com.android.application")
 }
 
+// CI keeps its existing universal debug path; ordinary builds also emit per-ABI APKs.
+val splitApks = providers.gradleProperty("splitApks").map { it.toBooleanStrict() }.getOrElse(true)
+val minifyDebug = providers.gradleProperty("minifyDebug").map { it.toBooleanStrict() }.getOrElse(false)
+
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
 // Engine binaries are built from pinned sources outside Gradle. Missing packages fail closed.
 val officeEngineDir = file(providers.gradleProperty("officeEngineDir").getOrElse("${rootDir}/office-engine"))
@@ -25,7 +29,7 @@ android {
         applicationId = "com.cryonum.captusbprint"
         minSdk = 29
         ndk {
-            abiFilters += officeAbis
+            if (!splitApks) abiFilters += officeAbis
         }
         targetSdk = 36
         // The GitHub Actions run number is monotonically increasing for private CI APKs.
@@ -60,12 +64,28 @@ android {
     buildTypes {
         release {
             if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("permanent")
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "true")
         }
         debug {
+            // Exercise the same JNI/reflection rules with the existing real Office smoke corpus.
+            isMinifyEnabled = minifyDebug
+            isShrinkResources = minifyDebug
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             applicationIdSuffix = ".debug"
             buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "false")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = splitApks
+            reset()
+            include(*officeAbis.toTypedArray())
+            // Legacy updaters still request the original universal asset name.
+            isUniversalApk = true
         }
     }
 

@@ -48,6 +48,7 @@ jobs:
         run: |
           python3 -m py_compile tools/prepare-signing.py tools/signed-release.py tools/update-feed.py
           python3 -m unittest discover -s tools -p test_update_feed.py
+          python3 -m unittest discover -s tools -p test_release_apks.py
           python3 -m unittest discover -s tools -p test_office_packaging.py
           python3 tools/check-update-ui-runner.py
           bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
@@ -96,7 +97,10 @@ jobs:
       - name: Build, lint and tests
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :app:assembleRelease :app:lintRelease :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
+          ./gradlew --no-daemon -PsplitApks=false -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
+          ./gradlew --no-daemon :app:assembleRelease :app:lintRelease
+          # Run the actual Office/HISCOA/worker/update corpus with R8 and resource shrinking too.
+          ./gradlew --no-daemon -PsplitApks=false -PminifyDebug=true :app:assembleDebug
       - name: Build the base-main debug APK for an actual in-place version upgrade
         if: github.event_name == 'pull_request'
         env:
@@ -105,7 +109,7 @@ jobs:
           git fetch --depth=1 origin "$BASE_SHA"
           git worktree add --detach upgrade-baseline "$BASE_SHA"
           ln -s "$PWD/office-engine" upgrade-baseline/office-engine
-          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon :app:assembleDebug
+          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon -PsplitApks=false :app:assembleDebug
           mkdir -p upgrade-check-input
           cp upgrade-baseline/app/build/outputs/apk/debug/app-debug.apk upgrade-check-input/base-main-debug.apk
       - uses: actions/upload-artifact@v4
@@ -121,10 +125,9 @@ jobs:
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcapt_hiscoa.so'
           unzip -l "$APK" | grep -q 'lib/x86_64/libcapt_hiscoa.so'
           python3 tools/measure-office-probe-apk.py "$APK" office-debug-apk-size.json
-          python3 tools/measure-office-probe-apk.py app/build/outputs/apk/release/app-release-unsigned.apk office-release-apk-size.json
+          python3 tools/check-release-apks.py
           for abi in arm64-v8a armeabi-v7a x86_64; do
             unzip -l "$APK" | grep -F "lib/$abi/liblo-native-code.so"
-            unzip -l app/build/outputs/apk/release/app-release-unsigned.apk | grep -F "lib/$abi/liblo-native-code.so"
           done
           if grep -E 'android.permission.READ_EXTERNAL_STORAGE|android.permission.MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
             echo "Unexpected permission in source manifest"; exit 1
@@ -146,8 +149,10 @@ jobs:
           name: office-ordinary-build-evidence
           path: |
             office-debug-apk-size.json
-            office-release-apk-size.json
-            app/build/outputs/apk/release/app-release-unsigned.apk
+            office-release-*-apk-size.json
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/mapping/release/
+            app/build/outputs/mapping/debug/
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: success()
@@ -320,7 +325,7 @@ jobs:
         run: python3 tools/signed-release.py verify
       - name: Verify forbidden Android permissions
         run: |
-          APK=app/build/outputs/apk/release/app-release.apk
+          APK=app/build/outputs/apk/release/app-universal-release.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" > release-output/permissions.txt
           if grep -E 'android.permission.(READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
             echo "Unexpected release APK permission"; exit 1
