@@ -119,7 +119,7 @@ class StageCRasterSmoke : Instrumentation() {
             result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_PASSED\nCAPT_QUEUE_REPORT_BUNDLE_SMOKE_PASSED\nCAPT_DIAGNOSTIC_SESSION_SMOKE_PASSED")
             finish(Activity.RESULT_OK,result)
         } catch (error: Throwable) {
-            result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_FAILED: ${error.javaClass.simpleName}: ${error.message}")
+            result.putString("stream", "CAPT_STAGE_C_RASTER_SMOKE_FAILED: ${error.stackTraceToString()}")
             finish(Activity.RESULT_CANCELED,result)
         }
     }

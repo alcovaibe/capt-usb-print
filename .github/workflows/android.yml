@@ -255,7 +255,11 @@ jobs:
             # Same test key/package: install the actual optimized, non-debuggable
             # release configuration over debug, then exercise JNI and reflection.
             adb shell am force-stop com.cryonum.captusbprint.debug
+            # Recovery above intentionally leaves requiresClear=true. Retain its evidence,
+            # then give the independent R8 raster scenario the same clean preconditions.
+            adb exec-out run-as com.cryonum.captusbprint.debug cat no_backup/capt-printer-state.json > office-r8-before-reset.json
             adb install -r r8-release-apk/app-release.apk
+            adb shell pm clear com.cryonum.captusbprint.debug | tr -d '\r' | grep -Fx Success
             bash tools/run-office-worker-smoke.sh user
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee office-r8-raster-smoke.txt
             grep -F 'CAPT_STAGE_C_RASTER_SMOKE_PASSED' office-r8-raster-smoke.txt
