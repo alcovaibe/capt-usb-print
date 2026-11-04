@@ -15,7 +15,8 @@ def main():
     with zipfile.ZipFile(args.apk) as archive:
         entries = [item for item in archive.infolist() if not item.is_dir()]
         assert len(entries) < 65536 and len({item.filename for item in entries}) == len(entries)
-        assert any(item.filename == 'lib/x86_64/liblo-native-code.so' for item in entries), 'Office engine required'
+        assert any(item.filename.startswith('lib/') and item.filename.endswith('/liblo-native-code.so') for item in entries), 'Office engine required'
+        packaged_abis = {item.filename.split('/')[1] for item in entries if item.filename.startswith('lib/') and item.filename.endswith('.so')}
         assert any(item.filename.startswith('assets/unpack/') for item in entries)
         notice_index = json.loads(archive.read('assets/office-licenses/index.json'))
         for notice in notice_index:
@@ -27,6 +28,8 @@ def main():
         seen = set()
         for runtime_path in runtime_paths:
             runtime = json.loads(archive.read('assets/office-licenses/' + runtime_path))
+            # Shared notices describe all shipped engines; an ABI APK only packages one.
+            if runtime['abi'] not in packaged_abis: continue
             for library in runtime['libraries']:
                 name = f'lib/{runtime["abi"]}/{library["file"]}'
                 if name in seen: continue
