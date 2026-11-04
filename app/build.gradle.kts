@@ -2,7 +2,13 @@ plugins {
     id("com.android.application")
 }
 
+// Test-only release instrumentation lives in a separate output tree and uses the debug key.
+val r8Smoke = providers.gradleProperty("r8Smoke").map { it.toBooleanStrict() }.getOrElse(false)
+val splitApks = providers.gradleProperty("splitApks").map { it.toBooleanStrict() }.getOrElse(!r8Smoke)
+if (r8Smoke) layout.buildDirectory.set(rootProject.layout.projectDirectory.dir("r8-smoke-build/app"))
+
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
+require(!r8Smoke || releaseKeystorePath == null) { "Smoke APK must never use the permanent key" }
 // Engine binaries are built from pinned sources outside Gradle. Missing packages fail closed.
 val officeEngineDir = file(providers.gradleProperty("officeEngineDir").getOrElse("${rootDir}/office-engine"))
 val officeAbis = providers.gradleProperty("officeAbis").getOrElse("arm64-v8a,armeabi-v7a,x86_64")
@@ -25,7 +31,7 @@ android {
         applicationId = "com.cryonum.captusbprint"
         minSdk = 29
         ndk {
-            abiFilters += officeAbis
+            if (!splitApks) abiFilters += officeAbis
         }
         targetSdk = 36
         // The GitHub Actions run number is monotonically increasing for private CI APKs.
@@ -43,6 +49,7 @@ android {
         val revision = providers.environmentVariable("GITHUB_SHA")
             .orElse("local-source").get().take(12)
         buildConfigField("String", "SOURCE_REVISION", "\"$revision\"")
+        buildConfigField("boolean", "R8_SMOKE", r8Smoke.toString())
     }
 
     signingConfigs {
@@ -59,13 +66,28 @@ android {
 
     buildTypes {
         release {
-            if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("permanent")
-            isMinifyEnabled = false
-            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "true")
+            if (r8Smoke) {
+                signingConfig = signingConfigs.getByName("debug")
+                applicationIdSuffix = ".debug"
+            } else if (releaseKeystorePath != null) signingConfig = signingConfigs.getByName("permanent")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", (!r8Smoke).toString())
         }
         debug {
             applicationIdSuffix = ".debug"
             buildConfigField("boolean", "PUBLIC_UPDATE_CHECKS", "false")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = splitApks
+            reset()
+            include(*officeAbis.toTypedArray())
+            // Legacy updaters still request the original universal asset name.
+            isUniversalApk = true
         }
     }
 
@@ -82,6 +104,13 @@ android {
         // AGP 9 built-in Kotlin ignores extra Kotlin roots registered as Java.
         kotlin.directories += "src/officeProbe/java"
         java.srcDir("src/officeProbe/java")
+    }
+    if (r8Smoke) sourceSets.getByName("release") {
+        // Only the opt-in CI APK receives synthetic documents and Instrumentation entries.
+        kotlin.directories += setOf("src/debug/java", "src/officeProbe/java")
+        java.srcDirs("src/debug/java", "src/officeProbe/java")
+        assets.srcDir("src/debug/assets")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
     }
     sourceSets.getByName("main") {
         assets.srcDir("${officeEngineDir}/assets")

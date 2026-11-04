@@ -212,7 +212,12 @@ internal object OfficeWorkerClient {
                     }, 0)
                     if (closed.get()) { kill(); return }
                     connected.set(true)
-                } catch (_: Throwable) { fail(OfficeFailure.ENGINE_UNAVAILABLE) }
+                } catch (error: Throwable) {
+                    // No provider/document has been opened at this handshake stage.
+                    if (com.cryonum.captusbprint.BuildConfig.R8_SMOKE)
+                        android.util.Log.w("CaptOfficeProbe", "Worker identity handshake failed", error)
+                    fail(OfficeFailure.ENGINE_UNAVAILABLE)
+                }
                 finally { data.recycle(); reply.recycle() }
             }
             override fun onServiceDisconnected(name: ComponentName) {

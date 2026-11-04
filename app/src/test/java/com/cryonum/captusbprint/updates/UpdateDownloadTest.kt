@@ -31,6 +31,52 @@ class UpdateDownloadTest {
         }
     }
 
+    @Test fun deviceAbiOrderChoosesTheFirstSupportedArchitecture() {
+        assertEquals("arm64-v8a", GithubUpdateDownloader.preferredAbi(listOf("arm64-v8a", "armeabi-v7a")))
+        assertEquals("armeabi-v7a", GithubUpdateDownloader.preferredAbi(listOf("armeabi-v7a", "armeabi")))
+        assertEquals("x86_64", GithubUpdateDownloader.preferredAbi(listOf("x86_64", "x86")))
+        assertEquals("armeabi-v7a", GithubUpdateDownloader.preferredAbi(listOf("unknown", "armeabi-v7a")))
+        assertNull(GithubUpdateDownloader.preferredAbi(emptyList()))
+        assertNull(GithubUpdateDownloader.preferredAbi(listOf("x86", "unknown")))
+        for (abi in GithubUpdateDownloader.supportedAbis) {
+            assertTrue(GithubUpdateDownloader.downloadUrl(release(), abi).toString().endsWith("-$abi.apk"))
+        }
+        assertThrows(IllegalArgumentException::class.java) { GithubUpdateDownloader.downloadUrl(release(), "../other") }
+    }
+
+    @Test fun selectsDeviceApkAndFallsBackToUniversalOnlyForMissingAssets() = runBlocking {
+        for (mode in listOf("split", "legacy", "server-error", "bad-signature", "both-missing")) {
+            val urls = mutableListOf<String>()
+            val folder = temp.newFolder()
+            val client = GithubUpdateDownloader.newClient().newBuilder().addInterceptor { chain ->
+                val url = chain.request().url.toString()
+                urls.add(url)
+                val code = when {
+                    mode == "server-error" -> 500
+                    mode == "both-missing" -> 404
+                    mode == "legacy" && url.endsWith("-arm64-v8a.apk") -> 404
+                    else -> 200
+                }
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).message("Fixture")
+                    .code(code).body(byteArrayOf(1, 2, 3).toResponseBody()).build()
+            }.build()
+            GithubUpdateDownloader(folder, { file, _ ->
+                if (mode == "bad-signature") throw InvalidUpdateApk()
+                assertArrayEquals(byteArrayOf(1, 2, 3), file.readBytes())
+            }, client, abi = "arm64-v8a").use { downloader ->
+                if (mode in listOf("split", "legacy")) {
+                    assertTrue(downloader.download(release()) { _, _ -> }.isFile)
+                } else {
+                    try { downloader.download(release()) { _, _ -> }; fail(mode) } catch (_: IOException) { }
+                    assertEquals(0, folder.listFiles()!!.size)
+                }
+                assertEquals(GithubUpdateDownloader.downloadUrl(release(), "arm64-v8a").toString(), urls.first())
+                assertEquals(if (mode in listOf("legacy", "both-missing")) 2 else 1, urls.size)
+                if (urls.size == 2) assertEquals(GithubUpdateDownloader.downloadUrl(release()).toString(), urls.last())
+            }
+        }
+    }
+
     @Test fun downloadFollowsValidatedRedirectStreamsProgressAndVerifiesBeforeReturning() = runBlocking {
         var calls = 0
         var verified = false

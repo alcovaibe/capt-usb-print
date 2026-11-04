@@ -1,10 +1,18 @@
 """Офлайн-проверки канала; не создают релизы и не обращаются к GitHub."""
+import base64
+import contextlib
+import io
+import json
+import os
+import zipfile
+import hashlib
 import copy
 import importlib.util
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
+from release_apks import ABIS, VARIANTS, asset_name
 
 spec = importlib.util.spec_from_file_location("feed", Path(__file__).with_name("update-feed.py"))
 feed = importlib.util.module_from_spec(spec)
@@ -75,6 +83,57 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(old, feed.merge_feed(empty, old))
         conflict = copy.deepcopy(old); conflict["release"]["notes"]["ru"] = "other"
         with self.assertRaises(ValueError): feed.merge_feed(old, conflict)
+
+    def test_publication_verifies_every_variant_and_rejects_one_bad_apk(self):
+        expected = (feed.ROOT / "config/release-certificate.sha256").read_text().strip()
+        environment = {"GITHUB_REPOSITORY": feed.REPO, "GITHUB_REF": "refs/heads/main", "ANDROID_HOME": "/sdk"}
+        for mode in ("legacy", "split", "digest", "signature", "layout", "version"):
+            with self.subTest(mode=mode):
+                variants = ["universal"] if mode == "legacy" else VARIANTS
+                payloads = {}
+                for variant in variants:
+                    stream = io.BytesIO()
+                    with zipfile.ZipFile(stream, "w") as archive:
+                        for abi in ABIS if variant == "universal" else [variant]:
+                            for library in ("liblo-native-code.so", "libcapt_hiscoa.so", "libcapt_office_limits.so", "libcapt_office_sandbox.so"):
+                                archive.writestr(f"lib/{abi}/{library}", b"fixture")
+                        archive.writestr("assets/padding", b"x" * 10000)
+                        if mode == "layout" and variant == "armeabi-v7a":
+                            archive.writestr("lib/x86_64/unexpected.so", b"bad")
+                    payloads[asset_name(150, variant)] = stream.getvalue()
+                release = dict(self.release(), id=1, assets=[
+                    {"name": name, "state": "uploaded", "size": len(data),
+                     "digest": "sha256:" + hashlib.sha256(data).hexdigest()} for name, data in payloads.items()])
+                if mode == "digest": release["assets"][2]["digest"] = "sha256:" + "0" * 64
+                verified = []
+                def call(*args):
+                    if args[:2] == ("gh", "api"): return json.dumps([[release]])
+                    if args[:3] == ("gh", "release", "download"):
+                        for name, data in payloads.items(): (Path(args[-1]) / name).write_bytes(data)
+                        return ""
+                    name = Path(args[-1]).name
+                    if Path(args[0]).name == "apksigner":
+                        verified.append(name)
+                        signer = "0" * 64 if mode == "signature" and name.endswith("-armeabi-v7a.apk") else expected
+                        return "Signer #1 certificate SHA-256 digest: " + signer
+                    if Path(args[0]).name == "aapt":
+                        return self.badging(151 if mode == "version" and name.endswith("-x86_64.apk") else 150)
+                    raise AssertionError(args)
+                def api(endpoint, *args, **kwargs):
+                    if endpoint.startswith("commits/"): return {"sha": "a" * 40}
+                    if endpoint.startswith("actions/"):
+                        return {"workflow_runs": [{"conclusion": "success", "head_branch": "main", "event": "push"}]}
+                    if endpoint == "releases/1": return release
+                    raise AssertionError("Unexpected publication: " + endpoint)
+                previous = {"content": base64.b64encode(json.dumps(self.candidate()).encode()).decode()}
+                with patch.dict(os.environ, environment), patch.object(feed, "call", side_effect=call), \
+                        patch.object(feed, "api", side_effect=api), patch.object(feed, "read_optional", return_value=previous), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    if mode in ("legacy", "split"):
+                        feed.publish()
+                        self.assertEqual(set(payloads), set(verified))
+                    else:
+                        with self.assertRaises((ValueError, RuntimeError)): feed.publish()
 
     def test_malformed_previous_feed_cannot_be_treated_as_empty(self):
         for key, value in [("applicationId", "other.app"), ("schemaVersion", 2), ("channel", "stable"), ("release", {})]:

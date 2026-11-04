@@ -48,6 +48,7 @@ jobs:
         run: |
           python3 -m py_compile tools/prepare-signing.py tools/signed-release.py tools/update-feed.py
           python3 -m unittest discover -s tools -p test_update_feed.py
+          python3 -m unittest discover -s tools -p test_release_apks.py
           python3 -m unittest discover -s tools -p test_office_packaging.py
           python3 tools/check-update-ui-runner.py
           bash -n tools/prepare-emulator.sh tools/free-runner-disk.sh
@@ -96,7 +97,14 @@ jobs:
       - name: Build, lint and tests
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :app:assembleRelease :app:lintRelease :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
+          ./gradlew --no-daemon -PsplitApks=false -PofficeIntakeFixture=true :app:assembleDebug :app:lintDebug :app:testDebugUnitTest :office-uri-fixture:assembleDebug :office-uri-fixture:lintDebug
+          ./gradlew --no-daemon :app:assembleRelease :app:lintRelease
+          # A debuggable APK disables R8 optimization/obfuscation. Use a non-debuggable
+          # release with only CI fixtures/debug signing in its own output directory.
+          ./gradlew --no-daemon -Pr8Smoke=true -PofficeAbis=x86_64 :app:assembleRelease
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging r8-smoke-build/app/outputs/apk/release/app-release.apk > r8-smoke-badging.txt
+          if grep -F application-debuggable r8-smoke-badging.txt; then exit 1; fi
+          test -s r8-smoke-build/app/outputs/mapping/release/mapping.txt
       - name: Build the base-main debug APK for an actual in-place version upgrade
         if: github.event_name == 'pull_request'
         env:
@@ -105,7 +113,7 @@ jobs:
           git fetch --depth=1 origin "$BASE_SHA"
           git worktree add --detach upgrade-baseline "$BASE_SHA"
           ln -s "$PWD/office-engine" upgrade-baseline/office-engine
-          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon :app:assembleDebug
+          APP_VERSION_CODE=1000 bash upgrade-baseline/gradlew -p upgrade-baseline --no-daemon -PsplitApks=false :app:assembleDebug
           mkdir -p upgrade-check-input
           cp upgrade-baseline/app/build/outputs/apk/debug/app-debug.apk upgrade-check-input/base-main-debug.apk
       - uses: actions/upload-artifact@v4
@@ -121,10 +129,9 @@ jobs:
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcapt_hiscoa.so'
           unzip -l "$APK" | grep -q 'lib/x86_64/libcapt_hiscoa.so'
           python3 tools/measure-office-probe-apk.py "$APK" office-debug-apk-size.json
-          python3 tools/measure-office-probe-apk.py app/build/outputs/apk/release/app-release-unsigned.apk office-release-apk-size.json
+          python3 tools/check-release-apks.py
           for abi in arm64-v8a armeabi-v7a x86_64; do
             unzip -l "$APK" | grep -F "lib/$abi/liblo-native-code.so"
-            unzip -l app/build/outputs/apk/release/app-release-unsigned.apk | grep -F "lib/$abi/liblo-native-code.so"
           done
           if grep -E 'android.permission.READ_EXTERNAL_STORAGE|android.permission.MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml; then
             echo "Unexpected permission in source manifest"; exit 1
@@ -146,8 +153,18 @@ jobs:
           name: office-ordinary-build-evidence
           path: |
             office-debug-apk-size.json
-            office-release-apk-size.json
-            app/build/outputs/apk/release/app-release-unsigned.apk
+            r8-smoke-badging.txt
+            office-release-*-apk-size.json
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/mapping/release/
+            r8-smoke-build/app/outputs/mapping/release/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: capt-r8-release-smoke
+          path: r8-smoke-build/app/outputs/apk/release/app-release.apk
+          if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: success()
@@ -182,6 +199,10 @@ jobs:
         with:
           name: office-upgrade-base-debug
           path: upgrade-base
+      - uses: actions/download-artifact@v4
+        with:
+          name: capt-r8-release-smoke
+          path: r8-release-apk
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
@@ -231,6 +252,18 @@ jobs:
             grep -F 'CAPT_QUEUE_RECOVERY_SMOKE_PASSED' /tmp/capt-recovery-smoke.txt
             adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.PreparedPdfSmoke | tee /tmp/capt-prepared-smoke.txt
             grep -F 'CAPT_PREPARED_PDF_LAYOUT_SMOKE_PASSED' /tmp/capt-prepared-smoke.txt
+            # Same test key/package: install the actual optimized, non-debuggable
+            # release configuration over debug, then exercise JNI and reflection.
+            adb shell am force-stop com.cryonum.captusbprint.debug
+            # Recovery above intentionally leaves requiresClear=true. Retain its evidence,
+            # then give the independent R8 raster scenario the same clean preconditions.
+            adb exec-out run-as com.cryonum.captusbprint.debug cat no_backup/capt-printer-state.json > office-r8-before-reset.json
+            adb install -r r8-release-apk/app-release.apk
+            adb shell pm clear com.cryonum.captusbprint.debug | tr -d '\r' | grep -Fx Success
+            bash tools/run-office-worker-smoke.sh user
+            adb shell am instrument -w com.cryonum.captusbprint.debug/com.cryonum.captusbprint.StageCRasterSmoke | tee office-r8-raster-smoke.txt
+            grep -F 'CAPT_STAGE_C_RASTER_SMOKE_PASSED' office-r8-raster-smoke.txt
+            bash tools/run-update-ui-smoke.sh
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -320,7 +353,7 @@ jobs:
         run: python3 tools/signed-release.py verify
       - name: Verify forbidden Android permissions
         run: |
-          APK=app/build/outputs/apk/release/app-release.apk
+          APK=app/build/outputs/apk/release/app-universal-release.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" > release-output/permissions.txt
           if grep -E 'android.permission.(READ_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE)' release-output/permissions.txt; then
             echo "Unexpected release APK permission"; exit 1

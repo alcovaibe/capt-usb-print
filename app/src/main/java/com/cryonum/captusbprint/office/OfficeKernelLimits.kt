@@ -13,6 +13,14 @@ internal object OfficeKernelLimits {
                                val cpuSeconds: Long = 90,
                                val addressGrowthBytes: Long = if (Process.is64Bit()) 1536L * 1024 * 1024 else 768L * 1024 * 1024)
     private const val EVENT = "kernel-limit-event"
+    fun enableOwnerObservation(context: Context) {
+        check(Application.getProcessName() == "${context.packageName}:office")
+        val previous = enableOwnerObservationNative()
+        check(previous >= 0) { "Worker identity observation unavailable" }
+        if (com.cryonum.captusbprint.BuildConfig.R8_SMOKE)
+            android.util.Log.i("CaptOfficeProbe", "Worker dumpable=$previous->1; own-UID identity/RSS observation enabled")
+    }
+    private external fun enableOwnerObservationNative(): Int
     fun install(context: Context, directory: File, limits: Limits = Limits()) {
         check(Application.getProcessName() == "${context.packageName}:office")
         check(directory.isDirectory && directory.canonicalFile == directory.absoluteFile)

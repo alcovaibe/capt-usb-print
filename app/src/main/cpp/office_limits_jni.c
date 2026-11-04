@@ -3,6 +3,7 @@
 #include <jni.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include "office_limits_core.h"
 
 static int installed = 0;
@@ -15,6 +16,21 @@ static int office_process(void) {
     name[n] = '\0';
     size_t length = strlen(name);
     return length >= 7 && !strcmp(name+length-7, ":office");
+}
+/* Non-debuggable Android processes may hide /proc identity/RSS even from the
+ * same app UID. Only the disposable worker opts into same-UID observation;
+ * the UI process stays non-dumpable and the worker's sandbox/limits still apply. */
+JNIEXPORT jint JNICALL Java_com_cryonum_captusbprint_office_OfficeKernelLimits_enableOwnerObservationNative
+  (JNIEnv *env, jobject self) {
+    (void)env; (void)self;
+    if (!office_process()) return -1;
+    int previous = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
+    // Observation must not enable raw document-containing core files.
+    struct rlimit core = {0, 0};
+    if (setrlimit(RLIMIT_CORE, &core) != 0) return -1;
+    if (previous < 0 || prctl(PR_SET_DUMPABLE, 1, 0, 0, 0) != 0 ||
+        prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) != 1) return -1;
+    return previous;
 }
 JNIEXPORT jint JNICALL Java_com_cryonum_captusbprint_office_OfficeKernelLimits_installNative
   (JNIEnv *env, jobject self, jstring marker, jlong file_bytes, jlong cpu_seconds, jlong growth) {

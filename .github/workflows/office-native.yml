@@ -90,7 +90,7 @@ jobs:
         run: |
           sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'ndk;29.0.14206865' 'cmake;3.22.1'
           python3 tools/prepare-office-notices.py office-engine
-          bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" -PofficeAbis=x86_64 :app:assembleDebug :app:lintDebug
+          bash ./gradlew --no-daemon -PofficeEngineDir="$PWD/office-engine" -PofficeAbis=x86_64 -PsplitApks=false :app:assembleDebug :app:lintDebug
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions app/build/outputs/apk/debug/app-debug.apk > probe-permissions.txt
           grep -F 'android.permission.INTERNET' probe-permissions.txt
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" dex packages --defined-only app/build/outputs/apk/debug/app-debug.apk > probe-dex.txt
