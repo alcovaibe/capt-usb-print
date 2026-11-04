@@ -74,6 +74,8 @@ open class OfficeWorkerService : Service() {
     override fun onCreate() {
         super.onCreate()
         check(Application.getProcessName() == "$packageName:office")
+        // Required before HELLO: the parent verifies PID birth and observes RSS via /proc.
+        OfficeKernelLimits.enableOwnerObservation(this)
     }
     override fun onBind(intent: Intent?): IBinder = binder
 

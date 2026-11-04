@@ -49,6 +49,7 @@ android {
         val revision = providers.environmentVariable("GITHUB_SHA")
             .orElse("local-source").get().take(12)
         buildConfigField("String", "SOURCE_REVISION", "\"$revision\"")
+        buildConfigField("boolean", "R8_SMOKE", r8Smoke.toString())
     }
 
     signingConfigs {
